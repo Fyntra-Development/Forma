@@ -309,18 +309,8 @@ jobs:
           )
 
           dropdown_click_start = source.index('        DropdownOuter.InputBegan:Connect(function(Input)')
-          old_toggle = '''                if ListOuter.Visible then
-                      Dropdown:CloseDropdown();
-                  else
-                      Dropdown:OpenDropdown();
-                  end;'''
-          new_toggle = '''                if Dropdown.Opened then
-                      Dropdown:CloseDropdown();
-                  else
-                      Dropdown:OpenDropdown();
-                  end;'''
-          toggle_pos = source.index(old_toggle, dropdown_click_start)
-          source = source[:toggle_pos] + new_toggle + source[toggle_pos + len(old_toggle):]
+          toggle_pos = source.index('if ListOuter.Visible then', dropdown_click_start)
+          source = source[:toggle_pos] + 'if Dropdown.Opened then' + source[toggle_pos + len('if ListOuter.Visible then'):]
 
           outside_start = source.index('        InputService.InputBegan:Connect(function(Input)', dropdown_click_start)
           old_outside = '            if Input.UserInputType == Enum.UserInputType.MouseButton1 then'
