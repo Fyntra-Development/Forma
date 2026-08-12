@@ -18,28 +18,35 @@ jobs:
       - run: |
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path('Library.lua')
           s = p.read_text()
-          block = """    local WindowGlowFrame = Library:Create('Frame', {
-              BackgroundTransparency = 1;
-              BorderSizePixel = 0;
-              Position = UDim2.fromOffset(-1, -1);
-              Size = UDim2.new(1, 2, 1, 2);
-              ZIndex = 0;
-              Parent = Outer;
-          });"""
-          duplicate = block + "\n\n" + block
-          if duplicate not in s:
-              raise SystemExit('duplicate glow frame block not found')
-          s = s.replace(duplicate, block, 1)
-          if s.count("local WindowGlowFrame = Library:Create('Frame'") != 1:
-              raise SystemExit('WindowGlowFrame count is not 1')
-          if s.count("local HttpService = game:GetService('HttpService');") != 1:
-              raise SystemExit('HttpService count is not 1')
-          if s.count('local Fonts = {') != 1:
-              raise SystemExit('Fonts table count is not 1')
-          if s.count('local WindowGlowLayers = {') != 1:
-              raise SystemExit('WindowGlowLayers count is not 1')
+
+          marker = "    local WindowGlowFrame = Library:Create('Frame', {"
+          layers_marker = "    local WindowGlowLayers = {"
+
+          first = s.find(marker)
+          second = s.find(marker, first + len(marker)) if first >= 0 else -1
+          layers = s.find(layers_marker, second) if second >= 0 else -1
+
+          if first < 0 or second < 0 or layers < 0 or not (first < second < layers):
+              raise SystemExit('could not isolate duplicate glow frame')
+
+          s = s[:second] + s[layers:]
+
+          checks = {
+              "WindowGlowFrame": s.count("local WindowGlowFrame = Library:Create('Frame'"),
+              "WindowGlowLayers": s.count("local WindowGlowLayers = {"),
+              "HttpService": s.count("local HttpService = game:GetService('HttpService');"),
+              "Fonts": s.count("local Fonts = {"),
+              "FontLoader": s.count("function Library:LoadFont(Name)"),
+              "TweenProperty": s.count("function Library:TweenProperty(Instance, Property, Value, Duration)"),
+          }
+
+          for name, count in checks.items():
+              if count != 1:
+                  raise SystemExit(f'{name} count is {count}, expected 1')
+
           p.write_text(s)
           PY
       - run: |
