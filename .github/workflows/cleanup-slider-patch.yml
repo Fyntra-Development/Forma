@@ -1,0 +1,42 @@
+name: Cleanup slider patch
+
+on:
+  push:
+    branches:
+      - agent/smooth-controls
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/smooth-controls
+          fetch-depth: 0
+      - name: Remove duplicated slider tail
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('Library.lua')
+          source = path.read_text()
+          start_marker = '        Slider:Display(true);'
+          end_marker = '        Groupbox:AddBlank(Info.BlankSize or 6);'
+          start = source.index(start_marker) + len(start_marker)
+          end = source.index(end_marker, start)
+          source = source[:start] + '\n' + source[end:]
+          path.write_text(source)
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Library.lua
+          git commit -m "Clean up smooth slider implementation"
+          git push origin HEAD:agent/smooth-controls
