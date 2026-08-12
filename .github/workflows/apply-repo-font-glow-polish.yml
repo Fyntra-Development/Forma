@@ -1,0 +1,25 @@
+name: Apply repo font and glow polish
+
+on:
+  push:
+    branches: [agent/tight-glow-repo-fonts]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tight-glow-repo-fonts
+          fetch-depth: 0
+      - run: python3 .github/scripts/apply_repo_font_glow_polish.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Library.lua
+          git commit -m "Tighten glow round window and use repo fonts"
+          git push origin HEAD:agent/tight-glow-repo-fonts
