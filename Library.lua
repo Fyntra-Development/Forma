@@ -10,12 +10,13 @@ local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
 
-local RepoFontBaseUrl = "https://raw.githubusercontent.com/Fyntra-Development/Forma/main/fonts/";
+local RepoFontBaseUrl = "https://raw.githubusercontent.com/Fyntra-Development/Forma/main/";
 
 local Fonts = {
     Rubik = {
         Ttf = "Rubik.ttf",
         RepoPath = "fonts/Rubik.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Rubik.ttf",
     },
 };
 
@@ -120,6 +121,7 @@ function Library:RegisterRepoFont(Name, FileName)
     Fonts[Name] = {
         Ttf = CleanFileName;
         RepoPath = 'fonts/' .. CleanFileName;
+        Url = RepoFontBaseUrl .. 'fonts/' .. CleanFileName;
     };
 
     if not table.find(FontOrder, Name) then
@@ -168,7 +170,7 @@ function Library:LoadFont(Name)
     local Info = Fonts[Name];
     local GetCustomAsset = getcustomasset or getsynasset;
 
-    if not Info or not GetCustomAsset or not writefile or not isfile then
+    if not Info or not GetCustomAsset or not writefile then
         return false;
     end;
 
@@ -185,11 +187,9 @@ function Library:LoadFont(Name)
 
         local TtfPath = 'FormaAssets/Fonts/' .. Info.Ttf;
         local RepoPath = Info.RepoPath or ('fonts/' .. Info.Ttf);
-        local FontUrl = RepoFontBaseUrl .. RepoPath:match('([^/]+)$');
+        local FontUrl = Info.Url or (RepoFontBaseUrl .. RepoPath);
 
-        if not isfile(TtfPath) then
-            writefile(TtfPath, game:HttpGet(FontUrl));
-        end;
+        writefile(TtfPath, game:HttpGet(FontUrl));
 
         local TtfAsset = GetCustomAsset(TtfPath);
         local FamilyPath = TtfPath:gsub('%.ttf$', '.font');
@@ -236,6 +236,8 @@ end;
 function Library:SetFont(Name)
     return Library:LoadFont(Name);
 end;
+
+Library:LoadFont('Rubik');
 
 function Library:TweenProperty(Instance, Property, Value, Duration)
     if not Instance then
