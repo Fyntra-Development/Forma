@@ -411,7 +411,7 @@ function Library:AddTopCorners(Instance, Radius)
         BorderSizePixel = 0;
         Position = UDim2.new(0, 0, 1, -Radius);
         Size = UDim2.new(1, 0, 0, Radius);
-        ZIndex = Instance.ZIndex + 1;
+        ZIndex = Instance.ZIndex;
         Parent = Instance;
     });
 
