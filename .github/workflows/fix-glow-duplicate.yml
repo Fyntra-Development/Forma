@@ -1,0 +1,50 @@
+name: Fix duplicate glow frame
+
+on:
+  push:
+    branches: [agent/fix-glow-duplicate]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-glow-duplicate
+          fetch-depth: 0
+      - run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Library.lua')
+          s = p.read_text()
+          block = """    local WindowGlowFrame = Library:Create('Frame', {
+              BackgroundTransparency = 1;
+              BorderSizePixel = 0;
+              Position = UDim2.fromOffset(-1, -1);
+              Size = UDim2.new(1, 2, 1, 2);
+              ZIndex = 0;
+              Parent = Outer;
+          });"""
+          duplicate = block + "\n\n" + block
+          if duplicate not in s:
+              raise SystemExit('duplicate glow frame block not found')
+          s = s.replace(duplicate, block, 1)
+          if s.count("local WindowGlowFrame = Library:Create('Frame'") != 1:
+              raise SystemExit('WindowGlowFrame count is not 1')
+          if s.count("local HttpService = game:GetService('HttpService');") != 1:
+              raise SystemExit('HttpService count is not 1')
+          if s.count('local Fonts = {') != 1:
+              raise SystemExit('Fonts table count is not 1')
+          if s.count('local WindowGlowLayers = {') != 1:
+              raise SystemExit('WindowGlowLayers count is not 1')
+          p.write_text(s)
+          PY
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Library.lua
+          git commit -m "Remove duplicate glow frame"
+          git push origin HEAD:agent/fix-glow-duplicate
