@@ -346,6 +346,22 @@ function Library:Create(Class, Properties)
     return _Instance;
 end;
 
+function Library:AddCorner(Instance, Radius)
+    if not Instance then
+        return nil;
+    end;
+
+    local Corner = Instance:FindFirstChildOfClass('UICorner');
+    if not Corner then
+        Corner = Library:Create('UICorner', {
+            Parent = Instance;
+        });
+    end;
+
+    Corner.CornerRadius = UDim.new(0, Radius or 3);
+    return Corner;
+end;
+
 function Library:ApplyTextStroke(Inst)
     Inst.TextStrokeTransparency = 1;
 
@@ -1934,6 +1950,9 @@ do
                 Parent = Outer;
             });
 
+            Library:AddCorner(Outer, 3);
+            Library:AddCorner(Inner, 3);
+
             local Label = Library:CreateLabel({
                 Size = UDim2.new(1, 0, 1, 0);
                 TextSize = 14;
@@ -2161,6 +2180,9 @@ do
             Parent = TextBoxOuter;
         });
 
+        Library:AddCorner(TextBoxOuter, 3);
+        Library:AddCorner(TextBoxInner, 3);
+
         Library:AddToRegistry(TextBoxInner, {
             BackgroundColor3 = 'MainColor';
             BorderColor3 = 'OutlineColor';
@@ -2333,6 +2355,9 @@ do
             Parent = ToggleOuter;
         });
 
+        Library:AddCorner(ToggleOuter, 3);
+        Library:AddCorner(ToggleInner, 3);
+
         Library:AddToRegistry(ToggleInner, {
             BackgroundColor3 = 'MainColor';
             BorderColor3 = 'OutlineColor';
@@ -2450,10 +2475,15 @@ do
             Min = Info.Min;
             Max = Info.Max;
             Rounding = Info.Rounding;
-            MaxSize = 232;
+            MaxSize = 1;
+            Step = tonumber(Info.Step or Info.Increment);
             Type = 'Slider';
             Callback = Info.Callback or function(Value) end;
         };
+
+        if not Slider.Step or Slider.Step <= 0 then
+            Slider.Step = Slider.Rounding == 0 and 1 or (10 ^ -Slider.Rounding);
+        end;
 
         local Groupbox = self;
         local Container = Groupbox.Container;
@@ -2472,25 +2502,88 @@ do
             Groupbox:AddBlank(3);
         end
 
-        local SliderOuter = Library:Create('Frame', {
-            BackgroundColor3 = Color3.new(0, 0, 0);
-            BorderColor3 = Color3.new(0, 0, 0);
+        local SliderRow = Library:Create('Frame', {
+            BackgroundTransparency = 1;
             Size = UDim2.new(1, -4, 0, 13);
             ZIndex = 5;
             Parent = Container;
         });
 
-        Library:AddToRegistry(SliderOuter, {
-            BorderColor3 = 'Black';
+        local function CreateNudgeButton(Text, Position, AnchorPoint)
+            local Outer = Library:Create('Frame', {
+                AnchorPoint = AnchorPoint;
+                BackgroundColor3 = Color3.new(0, 0, 0);
+                BorderColor3 = Color3.new(0, 0, 0);
+                Position = Position;
+                Size = UDim2.fromOffset(17, 13);
+                ZIndex = 6;
+                Parent = SliderRow;
+            });
+
+            local Inner = Library:Create('Frame', {
+                BackgroundColor3 = Library.MainColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Inset;
+                Size = UDim2.fromScale(1, 1);
+                ZIndex = 7;
+                Parent = Outer;
+            });
+
+            Library:AddCorner(Outer, 3);
+            Library:AddCorner(Inner, 3);
+
+            Library:AddToRegistry(Outer, {
+                BorderColor3 = 'Black';
+            });
+
+            Library:AddToRegistry(Inner, {
+                BackgroundColor3 = 'MainColor';
+                BorderColor3 = 'OutlineColor';
+            });
+
+            Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Size = UDim2.fromScale(1, 1);
+                Text = Text;
+                TextSize = 14;
+                ZIndex = 8;
+                Parent = Inner;
+            });
+
+            Library:OnHighlight(Outer, Outer,
+                { BorderColor3 = 'AccentColor' },
+                { BorderColor3 = 'Black' }
+            );
+
+            return Outer;
+        end;
+
+        local DecreaseOuter = CreateNudgeButton('−', UDim2.new(0, 0, 0.5, 0), Vector2.new(0, 0.5));
+        local IncreaseOuter = CreateNudgeButton('+', UDim2.new(1, 0, 0.5, 0), Vector2.new(1, 0.5));
+
+        local SliderOuter = Library:Create('Frame', {
+            BackgroundColor3 = Color3.new(0, 0, 0);
+            BorderColor3 = Color3.new(0, 0, 0);
+            Position = UDim2.fromOffset(20, 0);
+            Size = UDim2.new(1, -40, 0, 13);
+            ZIndex = 5;
+            Parent = SliderRow;
         });
 
         local SliderInner = Library:Create('Frame', {
             BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
-            Size = UDim2.new(1, 0, 1, 0);
+            Size = UDim2.fromScale(1, 1);
             ZIndex = 6;
             Parent = SliderOuter;
+        });
+
+        Library:AddCorner(SliderOuter, 3);
+        Library:AddCorner(SliderInner, 3);
+
+        Library:AddToRegistry(SliderOuter, {
+            BorderColor3 = 'Black';
         });
 
         Library:AddToRegistry(SliderInner, {
@@ -2506,30 +2599,65 @@ do
             Parent = SliderInner;
         });
 
+        Library:AddCorner(Fill, 3);
         Library:AddToRegistry(Fill, {
             BackgroundColor3 = 'AccentColor';
             BorderColor3 = 'AccentColorDark';
         });
 
-        local HideBorderRight = Library:Create('Frame', {
+        if Info.Compact then
+            Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(5, 0);
+                Size = UDim2.new(1, -10, 1, 0);
+                Text = Info.Text;
+                TextSize = 13;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 8;
+                Parent = SliderInner;
+            });
+        end;
+
+        local Thumb = Library:Create('Frame', {
+            AnchorPoint = Vector2.new(0.5, 0.5);
             BackgroundColor3 = Library.AccentColor;
-            BorderSizePixel = 0;
-            Position = UDim2.new(1, 0, 0, 0);
-            Size = UDim2.new(0, 1, 1, 0);
-            ZIndex = 8;
-            Parent = Fill;
+            BorderColor3 = Library.AccentColorDark;
+            Position = UDim2.new(0, 20, 0.5, 0);
+            Size = UDim2.fromOffset(7, 13);
+            ZIndex = 10;
+            Parent = SliderRow;
         });
 
-        Library:AddToRegistry(HideBorderRight, {
+        Library:AddCorner(Thumb, 3);
+        Library:AddToRegistry(Thumb, {
             BackgroundColor3 = 'AccentColor';
+            BorderColor3 = 'AccentColorDark';
         });
 
-        local DisplayLabel = Library:CreateLabel({
-            Size = UDim2.new(1, 0, 1, 0);
-            TextSize = 14;
-            Text = 'Infinite';
-            ZIndex = 9;
-            Parent = SliderInner;
+        local ValueBadge = Library:Create('Frame', {
+            AnchorPoint = Vector2.new(0, 0.5);
+            BackgroundColor3 = Library.BackgroundColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
+            Position = UDim2.new(0, 27, 0.5, 0);
+            Size = UDim2.fromOffset(46, 13);
+            ZIndex = 11;
+            Parent = SliderRow;
+        });
+
+        Library:AddCorner(ValueBadge, 3);
+        Library:AddToRegistry(ValueBadge, {
+            BackgroundColor3 = 'BackgroundColor';
+            BorderColor3 = 'OutlineColor';
+        });
+
+        local ValueLabel = Library:CreateLabel({
+            BackgroundTransparency = 1;
+            Size = UDim2.fromScale(1, 1);
+            Text = tostring(Slider.Value);
+            TextSize = 13;
+            ZIndex = 12;
+            Parent = ValueBadge;
         });
 
         Library:OnHighlight(SliderOuter, SliderOuter,
@@ -2538,83 +2666,84 @@ do
         );
 
         if type(Info.Tooltip) == 'string' or type(Info.Tooltip) == 'table' then
-            Library:AddToolTip(Info.Tooltip, SliderOuter)
+            Library:AddToolTip(Info.Tooltip, SliderRow);
         end
 
         function Slider:UpdateColors()
             Fill.BackgroundColor3 = Library.AccentColor;
             Fill.BorderColor3 = Library.AccentColorDark;
+            Thumb.BackgroundColor3 = Library.AccentColor;
+            Thumb.BorderColor3 = Library.AccentColorDark;
         end;
 
-        local VisualX = 0
-        local TargetX = 0
-        local VisualConnection
-        local IsDragging = false
+        local VisualX = 0;
+        local TargetX = 0;
+        local VisualConnection;
+        local IsDragging = false;
+
+        local function TrackWidth()
+            local Width = SliderInner.AbsoluteSize.X;
+            if Width <= 0 then
+                Width = math.max(SliderRow.AbsoluteSize.X - 40, 1);
+            end;
+
+            Slider.MaxSize = math.max(Width, 1);
+            return Slider.MaxSize;
+        end;
 
         local function RenderSliderVisual()
-            Fill.Size = UDim2.new(0, VisualX, 1, 0)
-            HideBorderRight.Visible = VisualX > 0.05 and VisualX < (Slider.MaxSize - 0.05)
-        end
+            local Width = TrackWidth();
+            VisualX = math.clamp(VisualX, 0, Width);
+            Fill.Size = UDim2.new(0, VisualX, 1, 0);
+
+            local ThumbX = SliderOuter.Position.X.Offset + VisualX;
+            Thumb.Position = UDim2.new(0, ThumbX, 0.5, 0);
+
+            local BadgeWidth = ValueBadge.Size.X.Offset;
+            local RowWidth = SliderRow.AbsoluteSize.X;
+            local PutRight = (ThumbX + 7 + BadgeWidth) <= RowWidth;
+
+            if PutRight then
+                ValueBadge.AnchorPoint = Vector2.new(0, 0.5);
+                ValueBadge.Position = UDim2.new(0, ThumbX + 7, 0.5, 0);
+            else
+                ValueBadge.AnchorPoint = Vector2.new(1, 0.5);
+                ValueBadge.Position = UDim2.new(0, ThumbX - 7, 0.5, 0);
+            end;
+        end;
 
         local function StopVisualAnimation()
             if VisualConnection then
-                VisualConnection:Disconnect()
-                VisualConnection = nil
-            end
-        end
+                VisualConnection:Disconnect();
+                VisualConnection = nil;
+            end;
+        end;
 
         local function StartVisualAnimation()
             if VisualConnection then
-                return
-            end
+                return;
+            end;
 
             VisualConnection = RenderStepped:Connect(function(Delta)
                 if not Fill.Parent then
-                    StopVisualAnimation()
-                    return
-                end
+                    StopVisualAnimation();
+                    return;
+                end;
 
-                local Speed = IsDragging and 38 or 24
-                local Alpha = 1 - math.exp(-Delta * Speed)
-                VisualX = VisualX + ((TargetX - VisualX) * Alpha)
+                local Speed = IsDragging and 38 or 24;
+                local Alpha = 1 - math.exp(-Delta * Speed);
+                VisualX = VisualX + ((TargetX - VisualX) * Alpha);
 
                 if math.abs(TargetX - VisualX) <= 0.05 then
-                    VisualX = TargetX
-                end
+                    VisualX = TargetX;
+                end;
 
-                RenderSliderVisual()
+                RenderSliderVisual();
 
                 if not IsDragging and VisualX == TargetX then
-                    StopVisualAnimation()
-                end
-            end)
-        end
-
-        function Slider:Display(Instant)
-            local Suffix = Info.Suffix or '';
-
-            if Info.Compact then
-                DisplayLabel.Text = Info.Text .. ': ' .. Slider.Value .. Suffix
-            elseif Info.HideMax then
-                DisplayLabel.Text = string.format('%s', Slider.Value .. Suffix)
-            else
-                DisplayLabel.Text = string.format('%s/%s', Slider.Value .. Suffix, Slider.Max .. Suffix);
-            end
-
-            TargetX = math.ceil(Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, Slider.MaxSize))
-
-            if Instant then
-                StopVisualAnimation()
-                VisualX = TargetX
-                RenderSliderVisual()
-            else
-                StartVisualAnimation()
-            end
-        end;
-
-        function Slider:OnChanged(Func)
-            Slider.Changed = Func;
-            Func(Slider.Value);
+                    StopVisualAnimation();
+                end;
+            end);
         end;
 
         local function Round(Value)
@@ -2622,21 +2751,44 @@ do
                 return math.floor(Value);
             end;
 
-            return tonumber(string.format('%.' .. Slider.Rounding .. 'f', Value))
+            return tonumber(string.format('%.' .. Slider.Rounding .. 'f', Value));
+        end;
+
+        function Slider:Display(Instant)
+            local Suffix = Info.Suffix or '';
+            ValueLabel.Text = tostring(Slider.Value) .. Suffix;
+
+            local LabelWidth = math.clamp(ValueLabel.TextBounds.X + 12, 32, 72);
+            ValueBadge.Size = UDim2.fromOffset(LabelWidth, 13);
+
+            local Width = TrackWidth();
+            TargetX = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, Width);
+
+            if Instant then
+                StopVisualAnimation();
+                VisualX = TargetX;
+                RenderSliderVisual();
+            else
+                StartVisualAnimation();
+            end;
+        end;
+
+        function Slider:OnChanged(Func)
+            Slider.Changed = Func;
+            Func(Slider.Value);
         end;
 
         function Slider:GetValueFromXOffset(X)
-            return Round(Library:MapValue(X, 0, Slider.MaxSize, Slider.Min, Slider.Max));
+            return Round(Library:MapValue(X, 0, TrackWidth(), Slider.Min, Slider.Max));
         end;
 
         function Slider:SetValue(Str)
             local Num = tonumber(Str);
-
-            if (not Num) then
+            if not Num then
                 return;
             end;
 
-            Num = math.clamp(Num, Slider.Min, Slider.Max);
+            Num = Round(math.clamp(Num, Slider.Min, Slider.Max));
             Slider.Value = Num;
             Slider:Display(false);
 
@@ -2644,47 +2796,57 @@ do
             Library:SafeCallback(Slider.Changed, Slider.Value);
         end;
 
-        SliderInner.InputBegan:Connect(function(Input)
+        local function Nudge(Direction)
+            Slider:SetValue(Slider.Value + (Slider.Step * Direction));
+            Library:AttemptSave();
+        end;
+
+        DecreaseOuter.InputBegan:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
-                IsDragging = true
-
-                local function UpdateFromMouse()
-                    local nX = math.clamp(Mouse.X - SliderInner.AbsolutePosition.X, 0, Slider.MaxSize)
-                    TargetX = nX
-                    StartVisualAnimation()
-
-                    local nValue = Slider:GetValueFromXOffset(nX)
-                    local OldValue = Slider.Value
-
-                    if nValue ~= OldValue then
-                        Slider.Value = nValue
-
-                        local Suffix = Info.Suffix or ''
-                        if Info.Compact then
-                            DisplayLabel.Text = Info.Text .. ': ' .. Slider.Value .. Suffix
-                        elseif Info.HideMax then
-                            DisplayLabel.Text = string.format('%s', Slider.Value .. Suffix)
-                        else
-                            DisplayLabel.Text = string.format('%s/%s', Slider.Value .. Suffix, Slider.Max .. Suffix)
-                        end
-
-                        Library:SafeCallback(Slider.Callback, Slider.Value)
-                        Library:SafeCallback(Slider.Changed, Slider.Value)
-                    end
-                end
-
-                UpdateFromMouse()
-
-                while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                    UpdateFromMouse()
-                    RenderStepped:Wait()
-                end
-
-                IsDragging = false
-                TargetX = math.ceil(Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, Slider.MaxSize))
-                StartVisualAnimation()
-                Library:AttemptSave();
+                Nudge(-1);
             end;
+        end);
+
+        IncreaseOuter.InputBegan:Connect(function(Input)
+            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
+                Nudge(1);
+            end;
+        end);
+
+        local function BeginDrag(Input)
+            if Input.UserInputType ~= Enum.UserInputType.MouseButton1 or Library:MouseIsOverOpenedFrame() then
+                return;
+            end;
+
+            IsDragging = true;
+
+            local function UpdateFromMouse()
+                local Width = TrackWidth();
+                local nX = math.clamp(Mouse.X - SliderInner.AbsolutePosition.X, 0, Width);
+                local nValue = Slider:GetValueFromXOffset(nX);
+
+                if nValue ~= Slider.Value then
+                    Slider:SetValue(nValue);
+                end;
+            end;
+
+            UpdateFromMouse();
+
+            while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                UpdateFromMouse();
+                RenderStepped:Wait();
+            end;
+
+            IsDragging = false;
+            Slider:Display(false);
+            Library:AttemptSave();
+        end;
+
+        SliderInner.InputBegan:Connect(BeginDrag);
+        Thumb.InputBegan:Connect(BeginDrag);
+
+        SliderInner:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()
+            Slider:Display(true);
         end);
 
         Slider:Display(true);
@@ -2692,7 +2854,6 @@ do
         Groupbox:Resize();
 
         Options[Idx] = Slider;
-
         return Slider;
     end;
 
@@ -2766,6 +2927,9 @@ do
             ZIndex = 6;
             Parent = DropdownOuter;
         });
+
+        Library:AddCorner(DropdownOuter, 3);
+        Library:AddCorner(DropdownInner, 3);
 
         Library:AddToRegistry(DropdownInner, {
             BackgroundColor3 = 'MainColor';
@@ -3606,7 +3770,7 @@ function Library:CreateWindow(...)
         BorderColor3 = 'AccentColor';
     });
 
-    local WindowCornerRadius = UDim.new(0, 2);
+    local WindowCornerRadius = UDim.new(0, 3);
 
     Library:Create('UICorner', {
         CornerRadius = WindowCornerRadius;
