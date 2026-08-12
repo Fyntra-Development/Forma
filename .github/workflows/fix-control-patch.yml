@@ -1,0 +1,38 @@
+name: Fix control patch
+
+on:
+  push:
+    branches:
+      - agent/smooth-controls
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/smooth-controls
+          fetch-depth: 0
+      - name: Fix matcher
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('.github/workflows/patch-control-animations.yml')
+          source = path.read_text()
+          old = "          toggle_pos = source.index(old_toggle, dropdown_click_start)\n          source = source[:toggle_pos] + new_toggle + source[toggle_pos + len(old_toggle):]"
+          new = "          toggle_pos = source.index('if ListOuter.Visible then', dropdown_click_start)\n          source = source[:toggle_pos] + 'if Dropdown.Opened then' + source[toggle_pos + len('if ListOuter.Visible then'):]"
+          if old not in source:
+              raise RuntimeError('matcher block not found')
+          path.write_text(source.replace(old, new, 1))
+      - name: Commit matcher fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/patch-control-animations.yml
+          git commit -m "Fix control animation patch matcher"
+          git push origin HEAD:agent/smooth-controls
