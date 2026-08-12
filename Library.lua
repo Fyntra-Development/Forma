@@ -2303,7 +2303,51 @@ do
             Fill.BorderColor3 = Library.AccentColorDark;
         end;
 
-        function Slider:Display()
+        local VisualX = 0
+        local TargetX = 0
+        local VisualConnection
+        local IsDragging = false
+
+        local function RenderSliderVisual()
+            Fill.Size = UDim2.new(0, VisualX, 1, 0)
+            HideBorderRight.Visible = VisualX > 0.05 and VisualX < (Slider.MaxSize - 0.05)
+        end
+
+        local function StopVisualAnimation()
+            if VisualConnection then
+                VisualConnection:Disconnect()
+                VisualConnection = nil
+            end
+        end
+
+        local function StartVisualAnimation()
+            if VisualConnection then
+                return
+            end
+
+            VisualConnection = RenderStepped:Connect(function(Delta)
+                if not Fill.Parent then
+                    StopVisualAnimation()
+                    return
+                end
+
+                local Speed = IsDragging and 38 or 24
+                local Alpha = 1 - math.exp(-Delta * Speed)
+                VisualX = VisualX + ((TargetX - VisualX) * Alpha)
+
+                if math.abs(TargetX - VisualX) <= 0.05 then
+                    VisualX = TargetX
+                end
+
+                RenderSliderVisual()
+
+                if not IsDragging and VisualX == TargetX then
+                    StopVisualAnimation()
+                end
+            end)
+        end
+
+        function Slider:Display(Instant)
             local Suffix = Info.Suffix or '';
 
             if Info.Compact then
@@ -2314,10 +2358,15 @@ do
                 DisplayLabel.Text = string.format('%s/%s', Slider.Value .. Suffix, Slider.Max .. Suffix);
             end
 
-            local X = math.ceil(Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, Slider.MaxSize));
-            Fill.Size = UDim2.new(0, X, 1, 0);
+            TargetX = math.ceil(Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, Slider.MaxSize))
 
-            HideBorderRight.Visible = not (X == Slider.MaxSize or X == 0);
+            if Instant then
+                StopVisualAnimation()
+                VisualX = TargetX
+                RenderSliderVisual()
+            else
+                StartVisualAnimation()
+            end
         end;
 
         function Slider:OnChanged(Func)
@@ -2345,9 +2394,57 @@ do
             end;
 
             Num = math.clamp(Num, Slider.Min, Slider.Max);
-
             Slider.Value = Num;
-            Slider:Display();
+            Slider:Display(false);
+
+            Library:SafeCallback(Slider.Callback, Slider.Value);
+            Library:SafeCallback(Slider.Changed, Slider.Value);
+        end;
+
+        SliderInner.InputBegan:Connect(function(Input)
+            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
+                IsDragging = true
+
+                local function UpdateFromMouse()
+                    local nX = math.clamp(Mouse.X - SliderInner.AbsolutePosition.X, 0, Slider.MaxSize)
+                    TargetX = nX
+                    StartVisualAnimation()
+
+                    local nValue = Slider:GetValueFromXOffset(nX)
+                    local OldValue = Slider.Value
+
+                    if nValue ~= OldValue then
+                        Slider.Value = nValue
+
+                        local Suffix = Info.Suffix or ''
+                        if Info.Compact then
+                            DisplayLabel.Text = Info.Text .. ': ' .. Slider.Value .. Suffix
+                        elseif Info.HideMax then
+                            DisplayLabel.Text = string.format('%s', Slider.Value .. Suffix)
+                        else
+                            DisplayLabel.Text = string.format('%s/%s', Slider.Value .. Suffix, Slider.Max .. Suffix)
+                        end
+
+                        Library:SafeCallback(Slider.Callback, Slider.Value)
+                        Library:SafeCallback(Slider.Changed, Slider.Value)
+                    end
+                end
+
+                UpdateFromMouse()
+
+                while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                    UpdateFromMouse()
+                    RenderStepped:Wait()
+                end
+
+                IsDragging = false
+                TargetX = math.ceil(Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, Slider.MaxSize))
+                StartVisualAnimation()
+                Library:AttemptSave();
+            end;
+        end);
+
+        Slider:Display(true);
 
             Library:SafeCallback(Slider.Callback, Slider.Value);
             Library:SafeCallback(Slider.Changed, Slider.Value);
@@ -2510,17 +2607,22 @@ do
         local ListOuter = Library:Create('Frame', {
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
+            ClipsDescendants = true;
+            Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, 0);
             ZIndex = 20;
             Visible = false;
             Parent = ScreenGui;
         });
+
+        local ListHeight = MAX_DROPDOWN_ITEMS * 20 + 2
 
         local function RecalculateListPosition()
             ListOuter.Position = UDim2.fromOffset(DropdownOuter.AbsolutePosition.X, DropdownOuter.AbsolutePosition.Y + DropdownOuter.Size.Y.Offset + 1);
         end;
 
         local function RecalculateListSize(YSize)
-            ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, YSize or (MAX_DROPDOWN_ITEMS * 20 + 2))
+            ListHeight = YSize or (MAX_DROPDOWN_ITEMS * 20 + 2)
+            ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, Dropdown.Opened and ListHeight or 0)
         end;
 
         RecalculateListPosition();
@@ -2530,6 +2632,7 @@ do
 
         local ListInner = Library:Create('Frame', {
             BackgroundColor3 = Library.MainColor;
+            BackgroundTransparency = 1;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
             BorderSizePixel = 0;
@@ -2728,16 +2831,83 @@ do
             Dropdown:BuildDropdownList();
         end;
 
+        local DropdownTweens = {}
+        local DropdownAnimationId = 0
+
+        local function CancelDropdownTweens()
+            for _, Tween in next, DropdownTweens do
+                pcall(function()
+                    Tween:Cancel()
+                end)
+            end
+            table.clear(DropdownTweens)
+        end
+
+        local function PlayDropdownTween(Instance, InfoValue, Properties)
+            local Tween = TweenService:Create(Instance, InfoValue, Properties)
+            table.insert(DropdownTweens, Tween)
+            Tween:Play()
+            return Tween
+        end
+
         function Dropdown:OpenDropdown()
-            ListOuter.Visible = true;
-            Library.OpenedFrames[ListOuter] = true;
-            DropdownArrow.Rotation = 180;
+            if Dropdown.Opened then
+                return
+            end
+
+            Dropdown.Opened = true
+            DropdownAnimationId = DropdownAnimationId + 1
+            CancelDropdownTweens()
+            ListOuter.Visible = true
+            Library.OpenedFrames[ListOuter] = true
+
+            local ExpandInfo = TweenInfo.new(0.26, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+            local FadeInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local ArrowInfo = TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+            PlayDropdownTween(ListOuter, ExpandInfo, {
+                Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, ListHeight),
+            })
+            PlayDropdownTween(ListInner, FadeInfo, {
+                BackgroundTransparency = 0,
+            })
+            PlayDropdownTween(DropdownArrow, ArrowInfo, {
+                Rotation = 180,
+            })
         end;
 
         function Dropdown:CloseDropdown()
-            ListOuter.Visible = false;
-            Library.OpenedFrames[ListOuter] = nil;
-            DropdownArrow.Rotation = 0;
+            if not Dropdown.Opened and not ListOuter.Visible then
+                return
+            end
+
+            Dropdown.Opened = false
+            DropdownAnimationId = DropdownAnimationId + 1
+            local CurrentId = DropdownAnimationId
+            CancelDropdownTweens()
+            Library.OpenedFrames[ListOuter] = nil
+
+            local CollapseInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+            local FadeInfo = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local ArrowInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+            local CollapseTween = PlayDropdownTween(ListOuter, CollapseInfo, {
+                Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, 0),
+            })
+            PlayDropdownTween(ListInner, FadeInfo, {
+                BackgroundTransparency = 1,
+            })
+            PlayDropdownTween(DropdownArrow, ArrowInfo, {
+                Rotation = 0,
+            })
+
+            CollapseTween.Completed:Connect(function()
+                if CurrentId ~= DropdownAnimationId or Dropdown.Opened then
+                    return
+                end
+                ListOuter.Visible = false
+                table.clear(DropdownTweens)
+            end)
         end;
 
         function Dropdown:OnChanged(Func)
@@ -2772,7 +2942,7 @@ do
 
         DropdownOuter.InputBegan:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
-                if ListOuter.Visible then
+                if Dropdown.Opened then
                     Dropdown:CloseDropdown();
                 else
                     Dropdown:OpenDropdown();
@@ -2781,7 +2951,7 @@ do
         end);
 
         InputService.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Input.UserInputType == Enum.UserInputType.MouseButton1 and Dropdown.Opened then
                 local AbsPos, AbsSize = ListOuter.AbsolutePosition, ListOuter.AbsoluteSize;
 
                 if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
