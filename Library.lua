@@ -10,30 +10,17 @@ local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
 
+local RepoFontBaseUrl = "https://raw.githubusercontent.com/Fyntra-Development/Forma/main/fonts/";
+
 local Fonts = {
-    ProggyTiny = {
-        Ttf = "ProggyTiny.ttf",
-        Url = "https://github.com/ocornut/imgui/raw/master/misc/fonts/ProggyTiny.ttf",
-    },
-    ProggyClean = {
-        Ttf = "ProggyClean.ttf",
-        Url = "https://github.com/ocornut/imgui/raw/master/misc/fonts/ProggyClean.ttf",
-    },
-    ["XP Tahoma"] = {
-        Ttf = "XP Tahoma.ttf",
-        Url = "https://github.com/sametexe001/luas/raw/refs/heads/main/fonts/TAHOMA-8PT-BOLD-WINDOWS-XP.TTF",
-    },
-    ["Smallest Pixel"] = {
-        Ttf = "smallest_pixel-7.ttf",
-        Url = "https://raw.githubusercontent.com/sametexe001/luas/main/smallest_pixel-7.ttf",
+    Rubik = {
+        Ttf = "Rubik.ttf",
+        RepoPath = "fonts/Rubik.ttf",
     },
 };
 
 local FontOrder = {
-    "ProggyClean",
-    "ProggyTiny",
-    "XP Tahoma",
-    "Smallest Pixel",
+    "Rubik",
 };
 
 
@@ -122,6 +109,25 @@ end;
 
 Library.Fonts = Fonts;
 Library.FontOrder = FontOrder;
+
+function Library:RegisterRepoFont(Name, FileName)
+    assert(type(Name) == 'string' and Name ~= '', 'RegisterRepoFont: invalid font name');
+    assert(type(FileName) == 'string' and FileName ~= '', 'RegisterRepoFont: invalid file name');
+
+    local CleanFileName = FileName:gsub('\\', '/'):match('([^/]+)$');
+    assert(CleanFileName and CleanFileName:lower():match('%.ttf$'), 'RegisterRepoFont: expected a .ttf file');
+
+    Fonts[Name] = {
+        Ttf = CleanFileName;
+        RepoPath = 'fonts/' .. CleanFileName;
+    };
+
+    if not table.find(FontOrder, Name) then
+        table.insert(FontOrder, Name);
+    end;
+
+    return Fonts[Name];
+end;
 Library.PropertyTweens = setmetatable({}, { __mode = 'k' });
 
 function Library:GetFontNames()
@@ -178,9 +184,11 @@ function Library:LoadFont(Name)
         end;
 
         local TtfPath = 'FormaAssets/Fonts/' .. Info.Ttf;
+        local RepoPath = Info.RepoPath or ('fonts/' .. Info.Ttf);
+        local FontUrl = RepoFontBaseUrl .. RepoPath:match('([^/]+)$');
 
         if not isfile(TtfPath) then
-            writefile(TtfPath, game:HttpGet(Info.Url));
+            writefile(TtfPath, game:HttpGet(FontUrl));
         end;
 
         local TtfAsset = GetCustomAsset(TtfPath);
@@ -3575,34 +3583,35 @@ function Library:CreateWindow(...)
         BorderColor3 = 'AccentColor';
     });
 
-    local WindowGlowFrame = Library:Create('Frame', {
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Position = UDim2.fromOffset(-1, -1);
-        Size = UDim2.new(1, 2, 1, 2);
-        ZIndex = 0;
+    local WindowCornerRadius = UDim.new(0, 2);
+
+    Library:Create('UICorner', {
+        CornerRadius = WindowCornerRadius;
         Parent = Outer;
     });
 
+    Library:Create('UICorner', {
+        CornerRadius = WindowCornerRadius;
+        Parent = Inner;
+    });
+
     local WindowGlowLayers = {
-        { Thickness = 0.8, Transparency = 0.10 },
-        { Thickness = 1.3, Transparency = 0.32 },
-        { Thickness = 1.8, Transparency = 0.48 },
-        { Thickness = 2.3, Transparency = 0.61 },
-        { Thickness = 2.8, Transparency = 0.72 },
-        { Thickness = 3.3, Transparency = 0.81 },
-        { Thickness = 3.8, Transparency = 0.88 },
-        { Thickness = 4.3, Transparency = 0.94 },
+        { Thickness = 0.65, Transparency = 0.38 },
+        { Thickness = 0.95, Transparency = 0.56 },
+        { Thickness = 1.25, Transparency = 0.70 },
+        { Thickness = 1.55, Transparency = 0.81 },
+        { Thickness = 1.85, Transparency = 0.89 },
+        { Thickness = 2.15, Transparency = 0.95 },
     };
 
     for _, GlowInfo in ipairs(WindowGlowLayers) do
         local GlowStroke = Library:Create('UIStroke', {
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Color = Library.AccentColor;
-            LineJoinMode = Enum.LineJoinMode.Miter;
+            LineJoinMode = Enum.LineJoinMode.Round;
             Thickness = GlowInfo.Thickness;
             Transparency = GlowInfo.Transparency;
-            Parent = WindowGlowFrame;
+            Parent = Inner;
         });
 
         Library:AddToRegistry(GlowStroke, {
@@ -4266,7 +4275,7 @@ end;
 Players.PlayerAdded:Connect(OnPlayerChange);
 Players.PlayerRemoving:Connect(OnPlayerChange);
 
-Library:SetFont('ProggyClean');
+Library:SetFont('Rubik');
 
 getgenv().Library = Library
 return Library
