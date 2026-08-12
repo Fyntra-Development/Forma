@@ -1,0 +1,30 @@
+name: Import verified Rubik font
+
+on:
+  push:
+    branches: [agent/tight-glow-repo-fonts]
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tight-glow-repo-fonts
+          fetch-depth: 0
+      - run: |
+          set -euo pipefail
+          mkdir -p fonts
+          curl -fL --retry 3 'https://db.onlinewebfonts.com/t/5f58705de22e47864820fcf44ba4f076.ttf' -o fonts/Rubik.ttf
+          echo '11200ac0757b80b0c1780c24fab1595ddd666d4d262d07b51f613798e97b00ed  fonts/Rubik.ttf' | sha256sum -c -
+          test "$(stat -c%s fonts/Rubik.ttf)" = '211696'
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add fonts/Rubik.ttf
+          git commit -m "Add repo-backed Rubik font"
+          git push origin HEAD:agent/tight-glow-repo-fonts
