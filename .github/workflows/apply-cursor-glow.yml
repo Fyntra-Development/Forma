@@ -1,0 +1,155 @@
+name: Apply cursor and glow patch
+
+on:
+  push:
+    branches:
+      - agent/custom-cursor-glow
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/custom-cursor-glow
+          fetch-depth: 0
+
+      - name: Apply cursor asset and UI glow
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p assets
+          test -f assets/cursor-accent.png
+          mv -f assets/cursor-accent.png assets/cursor.png
+
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('Library.lua')
+          source = path.read_text()
+
+          if 'FORMA_REPO_CURSOR' in source or 'FORMA_WINDOW_GLOW' in source:
+              raise RuntimeError('Forma cursor/glow patch markers already present')
+
+          # Replace Linoria's Drawing triangle with a repo-hosted Drawing image.
+          cursor_match = re.search(
+              r"(?m)^(?P<indent>[ \t]*)local\s+(?P<var>[A-Za-z_]\w*)\s*=\s*Drawing\.new\((?P<quote>['\"])Triangle(?P=quote)\)\s*;?\s*$",
+              source,
+          )
+          if not cursor_match:
+              raise RuntimeError('Could not locate the default Linoria Drawing triangle cursor')
+
+          indent = cursor_match.group('indent')
+          cursor_var = cursor_match.group('var')
+          cursor_init = (
+              f"{indent}-- FORMA_REPO_CURSOR: image lives in assets/cursor.png, not a Roblox asset.\n"
+              f"{indent}local {cursor_var} = Drawing.new('Image')\n"
+              f"{indent}{cursor_var}.Size = Vector2.new(24, 24)\n"
+              f"{indent}pcall(function()\n"
+              f"{indent}    {cursor_var}.Data = game:HttpGet('https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/cursor.png')\n"
+              f"{indent}end)"
+          )
+          source = source[:cursor_match.start()] + cursor_init + source[cursor_match.end():]
+
+          # Triangle-only Drawing properties do not exist on Drawing.Image.
+          for prop in ('Thickness', 'Filled', 'PointB', 'PointC'):
+              source = re.sub(
+                  rf"(?m)^[ \t]*{re.escape(cursor_var)}\.{prop}\s*=.*(?:\n|$)",
+                  '',
+                  source,
+              )
+
+          # Use the image's upper-left as the existing mouse hotspot.
+          source, point_a_count = re.subn(
+              rf"(?m)^(?P<indent>[ \t]*){re.escape(cursor_var)}\.PointA\s*=.*$",
+              rf"\g<indent>{cursor_var}.Position = Vector2.new(Mouse.X, Mouse.Y)",
+              source,
+              count=1,
+          )
+          if point_a_count != 1:
+              raise RuntimeError('Could not convert cursor PointA positioning to Drawing.Image.Position')
+
+          # Tint every rendered frame so ThemeManager/accent changes immediately recolor the cursor.
+          position_pattern = re.compile(
+              rf"(?m)^(?P<indent>[ \t]*){re.escape(cursor_var)}\.Position\s*=\s*Vector2\.new\(Mouse\.X,\s*Mouse\.Y\)\s*;?\s*$"
+          )
+          position_match = position_pattern.search(source)
+          if not position_match:
+              raise RuntimeError('Could not locate converted cursor position line')
+          cursor_frame_update = (
+              f"{position_match.group('indent')}pcall(function() {cursor_var}.Color = Library.AccentColor end)\n"
+              f"{position_match.group(0)}"
+          )
+          source = source[:position_match.start()] + cursor_frame_update + source[position_match.end():]
+
+          # Add a layered accent stroke to the actual top-level window frame. Multiple
+          # translucent UIStrokes approximate a soft glow without relying on image assets.
+          window_pos = source.find('function Library:CreateWindow')
+          if window_pos < 0:
+              raise RuntimeError('Could not locate Library:CreateWindow')
+
+          frame_pattern = re.compile(
+              r"(?m)^(?P<indent>[ \t]*)local\s+(?P<var>[A-Za-z_]\w*)\s*=\s*Library:Create\('Frame',\s*\{"
+          )
+          outer_match = None
+          outer_end = None
+          outer_var = None
+          outer_indent = None
+
+          for candidate in frame_pattern.finditer(source, window_pos):
+              cand_indent = candidate.group('indent')
+              close_marker = f"\n{cand_indent}}});"
+              end = source.find(close_marker, candidate.end())
+              if end < 0:
+                  continue
+              end += len(close_marker)
+              block = source[candidate.start():end]
+              if 'Parent = ScreenGui;' in block:
+                  outer_match = candidate
+                  outer_end = end
+                  outer_var = candidate.group('var')
+                  outer_indent = cand_indent
+                  break
+
+          if outer_match is None:
+              raise RuntimeError('Could not locate the top-level window frame parented to ScreenGui')
+
+          glow = f'''\n\n{outer_indent}-- FORMA_WINDOW_GLOW: follows Library.AccentColor through the registry.\n{outer_indent}for _, GlowInfo in ipairs({{\n{outer_indent}    {{ 1.5, 0.08 }},\n{outer_indent}    {{ 3.5, 0.56 }},\n{outer_indent}    {{ 6.5, 0.76 }},\n{outer_indent}    {{ 10, 0.88 }},\n{outer_indent}}}) do\n{outer_indent}    local GlowStroke = Library:Create('UIStroke', {{\n{outer_indent}        ApplyStrokeMode = Enum.ApplyStrokeMode.Border;\n{outer_indent}        Color = Library.AccentColor;\n{outer_indent}        Thickness = GlowInfo[1];\n{outer_indent}        Transparency = GlowInfo[2];\n{outer_indent}        Parent = {outer_var};\n{outer_indent}    }});\n\n{outer_indent}    Library:AddToRegistry(GlowStroke, {{\n{outer_indent}        Color = 'AccentColor';\n{outer_indent}    }});\n{outer_indent}end'''
+
+          source = source[:outer_end] + glow + source[outer_end:]
+
+          # Sanity checks: no triangle point writes should remain for this cursor.
+          for prop in ('PointA', 'PointB', 'PointC', 'Thickness', 'Filled'):
+              if re.search(rf"(?m)^[ \t]*{re.escape(cursor_var)}\.{prop}\s*=", source):
+                  raise RuntimeError(f'Cursor still contains triangle-only property: {prop}')
+
+          path.write_text(source)
+          PY
+
+      - name: Validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f assets/cursor.png
+          test ! -e assets/cursor-accent.png
+          grep -q "FORMA_REPO_CURSOR" Library.lua
+          grep -q "raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/cursor.png" Library.lua
+          grep -q "Drawing.new('Image')" Library.lua
+          grep -q "FORMA_WINDOW_GLOW" Library.lua
+          grep -q "GlowStroke" Library.lua
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Library.lua assets/cursor.png assets/cursor-accent.png
+          git commit -m "Add repo cursor and accent window glow"
+          git push origin HEAD:agent/custom-cursor-glow
