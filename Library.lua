@@ -415,107 +415,76 @@ function Library:AddTopCorners(Instance, Radius)
         Parent = Instance;
     });
 
-    local LeftEdge = Library:Create('Frame', {
-        BackgroundColor3 = Instance.BorderColor3;
-        BorderSizePixel = 0;
-        Position = UDim2.new(0, 0, 0, 0);
-        Size = UDim2.new(0, 1, 1, 0);
-        ZIndex = BottomSquare.ZIndex;
-        Parent = BottomSquare;
-    });
-
-    local RightEdge = Library:Create('Frame', {
-        AnchorPoint = Vector2.new(1, 0);
-        BackgroundColor3 = Instance.BorderColor3;
-        BorderSizePixel = 0;
-        Position = UDim2.new(1, 0, 0, 0);
-        Size = UDim2.new(0, 1, 1, 0);
-        ZIndex = BottomSquare.ZIndex;
-        Parent = BottomSquare;
-    });
-
-    local function SyncTopCornerColors()
+    Instance:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
         BottomSquare.BackgroundColor3 = Instance.BackgroundColor3;
-        LeftEdge.BackgroundColor3 = Instance.BorderColor3;
-        RightEdge.BackgroundColor3 = Instance.BorderColor3;
-    end;
-
-    Instance:GetPropertyChangedSignal('BackgroundColor3'):Connect(SyncTopCornerColors);
-    Instance:GetPropertyChangedSignal('BorderColor3'):Connect(SyncTopCornerColors);
+    end);
 
     return BottomSquare;
 end;
 
 function Library:AddTabAccentCap(Instance)
-    local Clip = Library:Create('Frame', {
+    local Cap = Library:Create('Frame', {
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        ClipsDescendants = true;
-        Size = UDim2.new(1, 0, 0.72, 0);
+        Size = UDim2.fromScale(1, 1);
         ZIndex = Instance.ZIndex + 5;
         Parent = Instance;
     });
 
-    local Outline = Library:Create('Frame', {
+    local Top = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Size = UDim2.new(1, 0, 0, math.max(Instance.AbsoluteSize.Y, 1));
-        ZIndex = Clip.ZIndex;
-        Parent = Clip;
+        Position = UDim2.new(0, 2, 0, 0);
+        Size = UDim2.new(1, -4, 0, 1);
+        ZIndex = Cap.ZIndex;
+        Parent = Cap;
     });
 
-    Library:AddCorner(Outline, 3);
-
-    local Stroke = Library:Create('UIStroke', {
-        ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-        Color = Library.AccentColor;
-        LineJoinMode = Enum.LineJoinMode.Round;
-        Thickness = 1;
-        Transparency = 1;
-        Parent = Outline;
+    local Left = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0, 1);
+        Size = UDim2.new(0, 1, 0.62, -1);
+        ZIndex = Cap.ZIndex;
+        Parent = Cap;
     });
 
-    Library:AddToRegistry(Stroke, {
-        Color = 'AccentColor';
+    local Right = Library:Create('Frame', {
+        AnchorPoint = Vector2.new(1, 0);
+        BackgroundColor3 = Library.AccentColor;
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(1, 0, 0, 1);
+        Size = UDim2.new(0, 1, 0.62, -1);
+        ZIndex = Cap.ZIndex;
+        Parent = Cap;
     });
 
-    local function CreateFadeMask(XScale, AnchorX)
-        local Mask = Library:Create('Frame', {
-            AnchorPoint = Vector2.new(AnchorX, 0);
-            BackgroundColor3 = Instance.BackgroundColor3;
-            BorderSizePixel = 0;
-            Position = UDim2.new(XScale, 0, 0.42, 0);
-            Size = UDim2.new(0, 2, 0.58, 0);
-            ZIndex = Clip.ZIndex + 1;
-            Parent = Clip;
-        });
-
+    for _, Side in ipairs({ Left, Right }) do
         Library:Create('UIGradient', {
             Rotation = 90;
             Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(1, 0),
+                NumberSequenceKeypoint.new(0, 0),
+                NumberSequenceKeypoint.new(0.5, 0.25),
+                NumberSequenceKeypoint.new(1, 1),
             });
-            Parent = Mask;
+            Parent = Side;
         });
-
-        return Mask;
     end;
 
-    local LeftMask = CreateFadeMask(0, 0);
-    local RightMask = CreateFadeMask(1, 1);
-
-    local function SyncAccentGeometry()
-        Outline.Size = UDim2.new(1, 0, 0, math.max(Instance.AbsoluteSize.Y, 1));
-        LeftMask.BackgroundColor3 = Instance.BackgroundColor3;
-        RightMask.BackgroundColor3 = Instance.BackgroundColor3;
+    for _, Element in ipairs({ Top, Left, Right }) do
+        Library:AddToRegistry(Element, {
+            BackgroundColor3 = 'AccentColor';
+        });
     end;
-
-    Instance:GetPropertyChangedSignal('AbsoluteSize'):Connect(SyncAccentGeometry);
-    Instance:GetPropertyChangedSignal('BackgroundColor3'):Connect(SyncAccentGeometry);
 
     local function SetActive(Active)
-        Library:TweenProperty(Stroke, 'Transparency', Active and 0 or 1, 0.18);
+        local Transparency = Active and 0 or 1;
+        for _, Element in ipairs({ Top, Left, Right }) do
+            Library:TweenProperty(Element, 'BackgroundTransparency', Transparency, 0.18);
+        end;
     end;
 
     SetActive(false);
@@ -1129,7 +1098,7 @@ do
             Parent = DisplayFrame;
         });
 
-        local PickerFrameOuter = Library:Create('Frame', {
+        local PickerFrameOuter = Library:Create('CanvasGroup', {
             Name = 'Color';
             BackgroundColor3 = Color3.new(1, 1, 1);
             BorderColor3 = Color3.new(0, 0, 0);
@@ -1144,7 +1113,7 @@ do
             PickerFrameOuter.Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18);
         end)
 
-        local PickerFrameInner = Library:Create('CanvasGroup', {
+        local PickerFrameInner = Library:Create('Frame', {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
@@ -1539,8 +1508,6 @@ do
             Func(ColorPicker.Value)
         end;
 
-        local PickerOpenSize = PickerFrameOuter.Size;
-        local PickerOuterTransparency = PickerFrameOuter.BackgroundTransparency;
         local PickerAnimationId = 0;
         local PickerTweens = {};
 
@@ -1576,24 +1543,15 @@ do
             local TargetPosition = GetPickerTargetPosition();
 
             if not PickerFrameOuter.Visible then
-                PickerFrameOuter.Size = PickerOpenSize;
-                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 9);
-                PickerFrameOuter.BackgroundTransparency = 1;
-                PickerFrameInner.GroupTransparency = 1;
+                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 8);
+                PickerFrameOuter.GroupTransparency = 1;
             end;
 
-            PickerFrameOuter.ClipsDescendants = false;
             PickerFrameOuter.Visible = true;
             Library.OpenedFrames[PickerFrameOuter] = true;
 
-            local MoveInfo = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out);
-            local FadeInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
-
-            PlayPickerTween(PickerFrameOuter, MoveInfo, {
+            PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.26, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
                 Position = TargetPosition;
-                BackgroundTransparency = PickerOuterTransparency;
-            });
-            PlayPickerTween(PickerFrameInner, FadeInfo, {
                 GroupTransparency = 0;
             });
         end;
@@ -1610,27 +1568,20 @@ do
             Library.OpenedFrames[PickerFrameOuter] = nil;
 
             local TargetPosition = GetPickerTargetPosition();
-            local MoveInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out);
-            local FadeInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
-
-            local MoveTween = PlayPickerTween(PickerFrameOuter, MoveInfo, {
+            local ExitTween = PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
                 Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 5);
-                BackgroundTransparency = 1;
-            });
-            PlayPickerTween(PickerFrameInner, FadeInfo, {
                 GroupTransparency = 1;
             });
 
-            MoveTween.Completed:Connect(function()
+            ExitTween.Completed:Connect(function()
                 if CurrentId ~= PickerAnimationId then
                     return;
                 end;
 
                 PickerFrameOuter.Visible = false;
                 PickerFrameOuter.Position = TargetPosition;
-                PickerFrameOuter.Size = PickerOpenSize;
-                PickerFrameOuter.BackgroundTransparency = PickerOuterTransparency;
-                PickerFrameInner.GroupTransparency = 0;
+                PickerFrameOuter.GroupTransparency = 0;
+                table.clear(PickerTweens);
             end);
         end;
 
@@ -2878,6 +2829,7 @@ do
         });
 
         local ValueBadge = Library:Create('Frame', {
+            Active = true;
             AnchorPoint = Vector2.new(0, 0.5);
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Library.OutlineColor;
@@ -2901,6 +2853,36 @@ do
             TextSize = 13;
             ZIndex = 12;
             Parent = ValueBadge;
+        });
+
+        local ValueEditHitbox = Library:Create('TextButton', {
+            AutoButtonColor = false;
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Size = UDim2.fromScale(1, 1);
+            Text = '';
+            ZIndex = 13;
+            Parent = ValueBadge;
+        });
+
+        local ValueEditor = Library:Create('TextBox', {
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            ClearTextOnFocus = false;
+            Size = UDim2.fromScale(1, 1);
+            Text = tostring(Slider.Value);
+            TextColor3 = Library.FontColor;
+            TextSize = 13;
+            TextStrokeTransparency = 0;
+            Visible = false;
+            ZIndex = 14;
+            Parent = ValueBadge;
+        });
+
+        Library:ApplyFont(ValueEditor);
+        Library:ApplyTextStroke(ValueEditor);
+        Library:AddToRegistry(ValueEditor, {
+            TextColor3 = 'FontColor';
         });
 
         Library:OnHighlight(SliderOuter, SliderOuter,
@@ -3048,6 +3030,48 @@ do
             Library:SafeCallback(Slider.Callback, Slider.Value);
             Library:SafeCallback(Slider.Changed, Slider.Value);
         end;
+
+        local LastValueBadgeClick = 0;
+
+        local function BeginValueEdit()
+            ValueEditor.Text = tostring(Slider.Value);
+            ValueEditor.Visible = true;
+            ValueLabel.Visible = false;
+
+            task.defer(function()
+                if not ValueEditor.Visible then
+                    return;
+                end;
+
+                ValueEditor:CaptureFocus();
+                ValueEditor.CursorPosition = #ValueEditor.Text + 1;
+                ValueEditor.SelectionStart = 1;
+            end);
+        end;
+
+        ValueEditHitbox.MouseButton1Click:Connect(function()
+            local Now = os.clock();
+
+            if Now - LastValueBadgeClick <= 0.3 then
+                LastValueBadgeClick = 0;
+                BeginValueEdit();
+            else
+                LastValueBadgeClick = Now;
+            end;
+        end);
+
+        ValueEditor.FocusLost:Connect(function()
+            local TypedValue = tonumber(ValueEditor.Text);
+
+            if TypedValue then
+                Slider:SetValue(TypedValue);
+                Library:AttemptSave();
+            end;
+
+            ValueEditor.Visible = false;
+            ValueLabel.Visible = true;
+            ValueEditor.Text = tostring(Slider.Value);
+        end);
 
         local function Nudge(Direction)
             Slider:SetValue(Slider.Value + (Slider.Step * Direction));
@@ -3287,9 +3311,10 @@ do
 
         DropdownOuter:GetPropertyChangedSignal('AbsolutePosition'):Connect(RecalculateListPosition);
 
-        local ListInner = Library:Create('Frame', {
+        local ListInner = Library:Create('CanvasGroup', {
             BackgroundColor3 = Library.MainColor;
             BackgroundTransparency = 1;
+            GroupTransparency = 1;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
             BorderSizePixel = 0;
@@ -3307,7 +3332,7 @@ do
 
         local DropdownGradient = DropdownInner:FindFirstChildOfClass('UIGradient');
         if DropdownGradient then
-            DropdownGradient:Clone().Parent = ListInner;
+            DropdownGradient:Clone().Parent = ListOuter;
         end;
 
         local Scrolling = Library:Create('ScrollingFrame', {
@@ -3364,7 +3389,7 @@ do
             Parent = ScrollThumb;
         });
 
-        local function UpdateDropdownScrollVisuals(Instant)
+        local function UpdateDropdownScrollVisuals()
             local ViewportHeight = Scrolling.AbsoluteSize.Y;
             local ContentHeight = Scrolling.AbsoluteCanvasSize.Y;
 
@@ -3376,35 +3401,18 @@ do
             local Scrollable = ContentHeight > ViewportHeight + 1;
             ScrollTrack.Visible = Scrollable;
 
-            if Scrollable then
-                local TrackHeight = math.max(ScrollTrack.AbsoluteSize.Y, 1);
-                local ThumbHeight = math.clamp(TrackHeight * (ViewportHeight / ContentHeight), 18, TrackHeight);
-                local MaxTravel = math.max(TrackHeight - ThumbHeight, 0);
-                local MaxCanvas = math.max(ContentHeight - ViewportHeight, 1);
-                local ThumbY = MaxTravel * math.clamp(Scrolling.CanvasPosition.Y / MaxCanvas, 0, 1);
-
-                ScrollThumb.Size = UDim2.new(0, 2, 0, ThumbHeight);
-                ScrollThumb.Position = UDim2.new(0.5, 0, 0, ThumbY);
+            if not Scrollable then
+                return;
             end;
 
-            local ViewTop = Scrolling.AbsolutePosition.Y;
-            local ViewBottom = ViewTop + ViewportHeight;
+            local TrackHeight = math.max(ScrollTrack.AbsoluteSize.Y, 1);
+            local ThumbHeight = math.clamp(TrackHeight * (ViewportHeight / ContentHeight), 18, TrackHeight);
+            local MaxTravel = math.max(TrackHeight - ThumbHeight, 0);
+            local MaxCanvas = math.max(ContentHeight - ViewportHeight, 1);
+            local ThumbY = MaxTravel * math.clamp(Scrolling.CanvasPosition.Y / MaxCanvas, 0, 1);
 
-            for _, Row in next, Scrolling:GetChildren() do
-                if Row:IsA('CanvasGroup') and Row.Name == 'DropdownRow' then
-                    local RowTop = Row.AbsolutePosition.Y;
-                    local RowBottom = RowTop + Row.AbsoluteSize.Y;
-                    local EdgeAmount = math.min(RowBottom - ViewTop, ViewBottom - RowTop);
-                    local Reveal = math.clamp(EdgeAmount / 12, 0, 1);
-                    local TargetTransparency = 1 - Reveal;
-
-                    if Instant then
-                        Row.GroupTransparency = TargetTransparency;
-                    elseif math.abs(Row.GroupTransparency - TargetTransparency) > 0.015 then
-                        Library:TweenProperty(Row, 'GroupTransparency', TargetTransparency, 0.12);
-                    end;
-                end;
-            end;
+            ScrollThumb.Size = UDim2.new(0, 2, 0, ThumbHeight);
+            ScrollThumb.Position = UDim2.new(0.5, 0, 0, ThumbY);
         end;
 
         Scrolling:GetPropertyChangedSignal('CanvasPosition'):Connect(function()
@@ -3477,11 +3485,9 @@ do
 
                 Count = Count + 1;
 
-                local Button = Library:Create('CanvasGroup', {
-                    Name = 'DropdownRow';
+                local Button = Library:Create('Frame', {
                     BackgroundTransparency = 1;
                     BorderSizePixel = 0;
-                    GroupTransparency = 1;
                     Size = UDim2.new(1, -5, 0, 20);
                     ZIndex = 23;
                     Active = true,
@@ -3616,7 +3622,7 @@ do
                 Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, ListHeight),
             })
             PlayDropdownTween(ListInner, FadeInfo, {
-                BackgroundTransparency = 0,
+                GroupTransparency = 0,
             })
             PlayDropdownTween(DropdownArrow, ArrowInfo, {
                 Rotation = 180,
@@ -3642,7 +3648,7 @@ do
                 Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, 0),
             })
             PlayDropdownTween(ListInner, FadeInfo, {
-                BackgroundTransparency = 1,
+                GroupTransparency = 1,
             })
             PlayDropdownTween(DropdownArrow, ArrowInfo, {
                 Rotation = 0,
@@ -4341,8 +4347,9 @@ function Library:CreateWindow(...)
         local TabButton = Library:Create('Frame', {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Library.OutlineColor;
+            BorderSizePixel = 0;
             Size = UDim2.new(0, TabButtonWidth + 8 + 4, 1, 0);
-            ZIndex = 1;
+            ZIndex = 3;
             Parent = TabArea;
         });
 
@@ -4357,17 +4364,17 @@ function Library:CreateWindow(...)
             Position = UDim2.new(0, 0, 0, 0);
             Size = UDim2.new(1, 0, 1, -1);
             Text = Name;
-            ZIndex = 1;
+            ZIndex = 4;
             Parent = TabButton;
         });
 
         local Blocker = Library:Create('Frame', {
             BackgroundColor3 = Library.MainColor;
             BorderSizePixel = 0;
-            Position = UDim2.new(0, 1, 1, -1);
-            Size = UDim2.new(1, -2, 0, 3);
+            Position = UDim2.new(0, -1, 1, -1);
+            Size = UDim2.new(1, 2, 0, 4);
             BackgroundTransparency = 1;
-            ZIndex = 4;
+            ZIndex = 8;
             Parent = TabButton;
         });
 
@@ -4490,34 +4497,23 @@ function Library:CreateWindow(...)
                 BackgroundColor3 = 'BackgroundColor';
             });
 
-            local Highlight = Library:Create('Frame', {
-                BackgroundColor3 = Library.AccentColor;
-                BorderSizePixel = 0;
-                Size = UDim2.new(1, 0, 0, 2);
-                ZIndex = 5;
-                Parent = BoxInner;
-            });
-
-            Library:AddToRegistry(Highlight, {
-                BackgroundColor3 = 'AccentColor';
-            });
-
             local GroupboxLabelWidth = Library:GetTextBounds(Info.Name, Library.Font, 14);
             local GroupboxLabel = Library:CreateLabel({
-                BackgroundTransparency = 1;
+                AnchorPoint = Vector2.new(0.5, 0.5);
+                BackgroundColor3 = Library.BackgroundColor;
+                BackgroundTransparency = 0;
                 BorderSizePixel = 0;
-                Size = UDim2.fromOffset(GroupboxLabelWidth + 6, 16);
-                Position = UDim2.new(0, 6, 0, 0);
+                Size = UDim2.fromOffset(GroupboxLabelWidth + 12, 16);
+                Position = UDim2.new(0.5, 0, 0, 0);
                 TextSize = 14;
                 Text = Info.Name;
-                TextXAlignment = Enum.TextXAlignment.Left;
+                TextXAlignment = Enum.TextXAlignment.Center;
                 TextYAlignment = Enum.TextYAlignment.Center;
                 ZIndex = 6;
                 Parent = BoxInner;
             });
 
-            Highlight.Position = UDim2.fromOffset(GroupboxLabelWidth + 16, 7);
-            Highlight.Size = UDim2.new(1, -(GroupboxLabelWidth + 16), 0, 2);
+            Library.RegistryMap[GroupboxLabel].Properties.BackgroundColor3 = 'BackgroundColor';
 
             local Container = Library:Create('Frame', {
                 BackgroundTransparency = 1;
@@ -4629,6 +4625,7 @@ function Library:CreateWindow(...)
                 local Button = Library:Create('Frame', {
                     BackgroundColor3 = Library.MainColor;
                     BorderColor3 = Color3.new(0, 0, 0);
+                    BorderSizePixel = 0;
                     Size = UDim2.new(0.5, 0, 1, 0);
                     ZIndex = 6;
                     Parent = TabboxButtons;
@@ -4652,8 +4649,8 @@ function Library:CreateWindow(...)
                 local Block = Library:Create('Frame', {
                     BackgroundColor3 = Library.BackgroundColor;
                     BorderSizePixel = 0;
-                    Position = UDim2.new(0, 1, 1, -1);
-                    Size = UDim2.new(1, -2, 0, 3);
+                    Position = UDim2.new(0, -1, 1, -1);
+                    Size = UDim2.new(1, 2, 0, 4);
                     Visible = false;
                     ZIndex = 9;
                     Parent = Button;
