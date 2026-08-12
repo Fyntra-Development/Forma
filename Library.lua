@@ -37,12 +37,48 @@ local Fonts = {
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
     },
+    ProggyClean = {
+        Ttf = "ProggyClean.ttf",
+        RepoPath = "fonts/ProggyClean.ttf",
+        Url = RepoFontBaseUrl .. "fonts/ProggyClean.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+    },
+    ProggyTiny = {
+        Ttf = "ProggyTiny.ttf",
+        RepoPath = "fonts/ProggyTiny.ttf",
+        Url = RepoFontBaseUrl .. "fonts/ProggyTiny.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+    },
+    ["XP Tahoma"] = {
+        Ttf = "XP-Tahoma.ttf",
+        RepoPath = "fonts/XP-Tahoma.ttf",
+        Url = RepoFontBaseUrl .. "fonts/XP-Tahoma.ttf",
+        FaceName = "Bold",
+        Weight = Enum.FontWeight.Bold,
+        WeightValue = 700,
+    },
+    ["Smallest Pixel"] = {
+        Ttf = "Smallest-Pixel.ttf",
+        RepoPath = "fonts/Smallest-Pixel.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Smallest-Pixel.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+    },
 };
 
 local FontOrder = {
     "Rubik Light",
     "Miracode",
     "Monocraft",
+    "ProggyClean",
+    "ProggyTiny",
+    "XP Tahoma",
+    "Smallest Pixel",
 };
 
 
@@ -362,6 +398,65 @@ function Library:AddCorner(Instance, Radius)
     return Corner;
 end;
 
+function Library:AddTopCorners(Instance, Radius)
+    if not Instance then
+        return nil;
+    end;
+
+    Radius = Radius or 3;
+    Library:AddCorner(Instance, Radius);
+
+    local BottomSquare = Library:Create('Frame', {
+        BackgroundColor3 = Instance.BackgroundColor3;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 1, -Radius);
+        Size = UDim2.new(1, 0, 0, Radius);
+        ZIndex = Instance.ZIndex;
+        Parent = Instance;
+    });
+
+    local LeftEdge = Library:Create('Frame', {
+        BackgroundColor3 = Instance.BorderColor3;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0, 0);
+        Size = UDim2.new(0, 1, 1, 0);
+        ZIndex = Instance.ZIndex;
+        Parent = BottomSquare;
+    });
+
+    local RightEdge = Library:Create('Frame', {
+        AnchorPoint = Vector2.new(1, 0);
+        BackgroundColor3 = Instance.BorderColor3;
+        BorderSizePixel = 0;
+        Position = UDim2.new(1, 0, 0, 0);
+        Size = UDim2.new(0, 1, 1, 0);
+        ZIndex = Instance.ZIndex;
+        Parent = BottomSquare;
+    });
+
+    local BottomEdge = Library:Create('Frame', {
+        AnchorPoint = Vector2.new(0, 1);
+        BackgroundColor3 = Instance.BorderColor3;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 1, 0);
+        Size = UDim2.new(1, 0, 0, 1);
+        ZIndex = Instance.ZIndex;
+        Parent = BottomSquare;
+    });
+
+    local function SyncTopCornerColors()
+        BottomSquare.BackgroundColor3 = Instance.BackgroundColor3;
+        LeftEdge.BackgroundColor3 = Instance.BorderColor3;
+        RightEdge.BackgroundColor3 = Instance.BorderColor3;
+        BottomEdge.BackgroundColor3 = Instance.BorderColor3;
+    end;
+
+    Instance:GetPropertyChangedSignal('BackgroundColor3'):Connect(SyncTopCornerColors);
+    Instance:GetPropertyChangedSignal('BorderColor3'):Connect(SyncTopCornerColors);
+
+    return BottomSquare;
+end;
+
 function Library:ApplyTextStroke(Inst)
     Inst.TextStrokeTransparency = 1;
 
@@ -474,11 +569,13 @@ function Library:AddToolTip(Info, HoverInstance)
         Parent = Tooltip,
     })
 
+    Library:AddCorner(Content, 3);
+
     local Stroke = Library:Create('UIStroke', {
         Color = Library.OutlineColor,
         Thickness = 1,
         Transparency = 1,
-        LineJoinMode = Enum.LineJoinMode.Miter,
+        LineJoinMode = Enum.LineJoinMode.Round,
         Parent = Content,
     })
 
@@ -991,6 +1088,9 @@ do
             Parent = PickerFrameOuter;
         });
 
+        Library:AddCorner(PickerFrameOuter, 3);
+        Library:AddCorner(PickerFrameInner, 3);
+
         local Highlight = Library:Create('Frame', {
             BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
@@ -1374,21 +1474,91 @@ do
             Func(ColorPicker.Value)
         end;
 
+        local PickerOpenSize = PickerFrameOuter.Size;
+        local PickerOuterTransparency = PickerFrameOuter.BackgroundTransparency;
+        local PickerInnerTransparency = PickerFrameInner.BackgroundTransparency;
+        local PickerAnimationId = 0;
+        local PickerTweens = {};
+
+        local function CancelPickerTweens()
+            for _, Tween in next, PickerTweens do
+                pcall(function() Tween:Cancel(); end);
+            end;
+            table.clear(PickerTweens);
+        end;
+
+        local function PlayPickerTween(Instance, InfoValue, Properties)
+            local Tween = TweenService:Create(Instance, InfoValue, Properties);
+            table.insert(PickerTweens, Tween);
+            Tween:Play();
+            return Tween;
+        end;
+
         function ColorPicker:Show()
-            for Frame, Val in next, Library.OpenedFrames do
-                if Frame.Name == 'Color' then
+            for Frame in next, Library.OpenedFrames do
+                if Frame.Name == 'Color' and Frame ~= PickerFrameOuter then
                     Frame.Visible = false;
                     Library.OpenedFrames[Frame] = nil;
                 end;
             end;
 
+            PickerAnimationId = PickerAnimationId + 1;
+            CancelPickerTweens();
+
+            if not PickerFrameOuter.Visible then
+                PickerFrameOuter.Size = UDim2.fromOffset(PickerOpenSize.X.Offset, 0);
+                PickerFrameOuter.BackgroundTransparency = 1;
+                PickerFrameInner.BackgroundTransparency = 1;
+            end;
+
+            PickerFrameOuter.ClipsDescendants = true;
             PickerFrameOuter.Visible = true;
             Library.OpenedFrames[PickerFrameOuter] = true;
+
+            local ExpandInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out);
+            local FadeInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+
+            PlayPickerTween(PickerFrameOuter, ExpandInfo, {
+                Size = PickerOpenSize;
+                BackgroundTransparency = PickerOuterTransparency;
+            });
+            PlayPickerTween(PickerFrameInner, FadeInfo, {
+                BackgroundTransparency = PickerInnerTransparency;
+            });
         end;
 
         function ColorPicker:Hide()
-            PickerFrameOuter.Visible = false;
+            if not PickerFrameOuter.Visible then
+                Library.OpenedFrames[PickerFrameOuter] = nil;
+                return;
+            end;
+
+            PickerAnimationId = PickerAnimationId + 1;
+            local CurrentId = PickerAnimationId;
+            CancelPickerTweens();
             Library.OpenedFrames[PickerFrameOuter] = nil;
+
+            local CollapseInfo = TweenInfo.new(0.17, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut);
+            local FadeInfo = TweenInfo.new(0.13, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+
+            local CollapseTween = PlayPickerTween(PickerFrameOuter, CollapseInfo, {
+                Size = UDim2.fromOffset(PickerOpenSize.X.Offset, 0);
+                BackgroundTransparency = 1;
+            });
+            PlayPickerTween(PickerFrameInner, FadeInfo, {
+                BackgroundTransparency = 1;
+            });
+
+            CollapseTween.Completed:Connect(function()
+                if CurrentId ~= PickerAnimationId then
+                    return;
+                end;
+
+                PickerFrameOuter.Visible = false;
+                PickerFrameOuter.Size = PickerOpenSize;
+                PickerFrameOuter.BackgroundTransparency = PickerOuterTransparency;
+                PickerFrameInner.BackgroundTransparency = PickerInnerTransparency;
+            end);
         end;
 
         function ColorPicker:SetValue(HSV, Transparency)
@@ -2680,6 +2850,8 @@ do
         local TargetX = 0;
         local VisualConnection;
         local IsDragging = false;
+        local BadgeVisualX;
+        local BadgeTargetX = 0;
 
         local function TrackWidth()
             local Width = SliderInner.AbsoluteSize.X;
@@ -2691,7 +2863,7 @@ do
             return Slider.MaxSize;
         end;
 
-        local function RenderSliderVisual()
+        local function RenderSliderVisual(Delta, Instant)
             local Width = TrackWidth();
             VisualX = math.clamp(VisualX, 0, Width);
             Fill.Size = UDim2.new(0, VisualX, 1, 0);
@@ -2702,14 +2874,21 @@ do
             local BadgeWidth = ValueBadge.Size.X.Offset;
             local RowWidth = SliderRow.AbsoluteSize.X;
             local PutRight = (ThumbX + 7 + BadgeWidth) <= RowWidth;
+            BadgeTargetX = PutRight and (ThumbX + 7) or (ThumbX - 7 - BadgeWidth);
 
-            if PutRight then
-                ValueBadge.AnchorPoint = Vector2.new(0, 0.5);
-                ValueBadge.Position = UDim2.new(0, ThumbX + 7, 0.5, 0);
+            if Instant or BadgeVisualX == nil then
+                BadgeVisualX = BadgeTargetX;
             else
-                ValueBadge.AnchorPoint = Vector2.new(1, 0.5);
-                ValueBadge.Position = UDim2.new(0, ThumbX - 7, 0.5, 0);
+                local BadgeAlpha = 1 - math.exp(-(Delta or (1 / 60)) * 22);
+                BadgeVisualX = BadgeVisualX + ((BadgeTargetX - BadgeVisualX) * BadgeAlpha);
+
+                if math.abs(BadgeTargetX - BadgeVisualX) <= 0.05 then
+                    BadgeVisualX = BadgeTargetX;
+                end;
             end;
+
+            ValueBadge.AnchorPoint = Vector2.new(0, 0.5);
+            ValueBadge.Position = UDim2.new(0, BadgeVisualX, 0.5, 0);
         end;
 
         local function StopVisualAnimation()
@@ -2738,9 +2917,10 @@ do
                     VisualX = TargetX;
                 end;
 
-                RenderSliderVisual();
+                RenderSliderVisual(Delta, false);
 
-                if not IsDragging and VisualX == TargetX then
+                local BadgeSettled = BadgeVisualX == nil or math.abs(BadgeTargetX - BadgeVisualX) <= 0.05;
+                if not IsDragging and VisualX == TargetX and BadgeSettled then
                     StopVisualAnimation();
                 end;
             end);
@@ -2767,7 +2947,7 @@ do
             if Instant then
                 StopVisualAnimation();
                 VisualX = TargetX;
-                RenderSliderVisual();
+                RenderSliderVisual(0, true);
             else
                 StartVisualAnimation();
             end;
@@ -2801,17 +2981,41 @@ do
             Library:AttemptSave();
         end;
 
-        DecreaseOuter.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
-                Nudge(-1);
-            end;
-        end);
+        local NudgeHoldSequence = 0;
 
-        IncreaseOuter.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
-                Nudge(1);
-            end;
-        end);
+        local function BindNudgeButton(Button, Direction)
+            Button.InputBegan:Connect(function(Input)
+                if Input.UserInputType ~= Enum.UserInputType.MouseButton1 or Library:MouseIsOverOpenedFrame() then
+                    return;
+                end;
+
+                NudgeHoldSequence = NudgeHoldSequence + 1;
+                local Sequence = NudgeHoldSequence;
+                Nudge(Direction);
+
+                task.spawn(function()
+                    local Started = os.clock();
+
+                    while Sequence == NudgeHoldSequence and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                        local Elapsed = os.clock() - Started;
+
+                        if Elapsed < 0.35 then
+                            task.wait(0.025);
+                        else
+                            local Interval = math.max(0.035, 0.105 - math.min(Elapsed - 0.35, 2.4) * 0.028);
+                            task.wait(Interval);
+
+                            if Sequence == NudgeHoldSequence and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                                Nudge(Direction);
+                            end;
+                        end;
+                    end;
+                end);
+            end);
+        end;
+
+        BindNudgeButton(DecreaseOuter, -1);
+        BindNudgeButton(IncreaseOuter, 1);
 
         local function BeginDrag(Input)
             if Input.UserInputType ~= Enum.UserInputType.MouseButton1 or Library:MouseIsOverOpenedFrame() then
@@ -2846,7 +3050,7 @@ do
         Thumb.InputBegan:Connect(BeginDrag);
 
         SliderInner:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()
-            Slider:Display(true);
+            Slider:Display(false);
         end);
 
         Slider:Display(true);
@@ -2978,8 +3182,9 @@ do
         local MAX_DROPDOWN_ITEMS = 8;
 
         local ListOuter = Library:Create('Frame', {
-            BackgroundColor3 = Color3.new(0, 0, 0);
-            BorderColor3 = Color3.new(0, 0, 0);
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
             ClipsDescendants = true;
             Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, 0);
             ZIndex = 20;
@@ -2987,10 +3192,16 @@ do
             Parent = ScreenGui;
         });
 
+        Library:AddCorner(ListOuter, 3);
+        Library:AddToRegistry(ListOuter, {
+            BackgroundColor3 = 'MainColor';
+            BorderColor3 = 'OutlineColor';
+        });
+
         local ListHeight = MAX_DROPDOWN_ITEMS * 20 + 2
 
         local function RecalculateListPosition()
-            ListOuter.Position = UDim2.fromOffset(DropdownOuter.AbsolutePosition.X, DropdownOuter.AbsolutePosition.Y + DropdownOuter.Size.Y.Offset + 1);
+            ListOuter.Position = UDim2.fromOffset(DropdownOuter.AbsolutePosition.X, DropdownOuter.AbsolutePosition.Y + DropdownOuter.Size.Y.Offset - 3);
         end;
 
         local function RecalculateListSize(YSize)
@@ -3013,6 +3224,8 @@ do
             ZIndex = 21;
             Parent = ListOuter;
         });
+
+        Library:AddCorner(ListInner, 3);
 
         Library:AddToRegistry(ListInner, {
             BackgroundColor3 = 'MainColor';
@@ -3389,8 +3602,10 @@ do
         local Groupbox = self;
         local Container = Groupbox.Container;
 
-        local Holder = Library:Create('Frame', {
+        local Holder = Library:Create('CanvasGroup', {
             BackgroundTransparency = 1;
+            ClipsDescendants = true;
+            GroupTransparency = 1;
             Size = UDim2.new(1, 0, 0, 0);
             Visible = false;
             Parent = Container;
@@ -3409,33 +3624,112 @@ do
             Parent = Frame;
         });
 
-        function Depbox:Resize()
-            Holder.Size = UDim2.new(1, 0, 0, Layout.AbsoluteContentSize.Y);
+        local DependencyAnimationId = 0;
+        local DependencySizeTween;
+        local DependencyFadeTween;
+        local DependencyVisible = false;
+
+        local function CancelDependencyTweens()
+            if DependencySizeTween then
+                pcall(function() DependencySizeTween:Cancel(); end);
+                DependencySizeTween = nil;
+            end;
+
+            if DependencyFadeTween then
+                pcall(function() DependencyFadeTween:Cancel(); end);
+                DependencyFadeTween = nil;
+            end;
+        end;
+
+        local function SetDependencyVisible(Visible, Instant)
+            DependencyAnimationId = DependencyAnimationId + 1;
+            local CurrentId = DependencyAnimationId;
+            CancelDependencyTweens();
+
+            local Height = Layout.AbsoluteContentSize.Y;
+            DependencyVisible = Visible;
+
+            if Visible then
+                if not Holder.Visible then
+                    Holder.Visible = true;
+                    Holder.Size = UDim2.new(1, 0, 0, 0);
+                    Holder.GroupTransparency = 1;
+                end;
+
+                if Instant then
+                    Holder.Size = UDim2.new(1, 0, 0, Height);
+                    Holder.GroupTransparency = 0;
+                    Groupbox:Resize();
+                    return;
+                end;
+
+                DependencySizeTween = TweenService:Create(Holder, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = UDim2.new(1, 0, 0, Height) });
+                DependencyFadeTween = TweenService:Create(Holder, TweenInfo.new(0.17, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { GroupTransparency = 0 });
+                DependencySizeTween:Play();
+                DependencyFadeTween:Play();
+            else
+                if not Holder.Visible then
+                    Holder.Size = UDim2.new(1, 0, 0, 0);
+                    Holder.GroupTransparency = 1;
+                    Groupbox:Resize();
+                    return;
+                end;
+
+                if Instant then
+                    Holder.Size = UDim2.new(1, 0, 0, 0);
+                    Holder.GroupTransparency = 1;
+                    Holder.Visible = false;
+                    Groupbox:Resize();
+                    return;
+                end;
+
+                DependencySizeTween = TweenService:Create(Holder, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut), { Size = UDim2.new(1, 0, 0, 0) });
+                DependencyFadeTween = TweenService:Create(Holder, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { GroupTransparency = 1 });
+
+                DependencySizeTween.Completed:Connect(function()
+                    if CurrentId ~= DependencyAnimationId or DependencyVisible then
+                        return;
+                    end;
+                    Holder.Visible = false;
+                    Groupbox:Resize();
+                end);
+
+                DependencySizeTween:Play();
+                DependencyFadeTween:Play();
+            end;
+        end;
+
+        function Depbox:Resize(Instant)
+            local Height = Layout.AbsoluteContentSize.Y;
+            if DependencyVisible and Holder.Visible then
+                if Instant then
+                    Holder.Size = UDim2.new(1, 0, 0, Height);
+                else
+                    Library:TweenProperty(Holder, 'Size', UDim2.new(1, 0, 0, Height), 0.18);
+                end;
+            end;
             Groupbox:Resize();
         end;
 
         Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(function()
-            Depbox:Resize();
+            Depbox:Resize(false);
         end);
 
-        Holder:GetPropertyChangedSignal('Visible'):Connect(function()
-            Depbox:Resize();
+        Holder:GetPropertyChangedSignal('Size'):Connect(function()
+            Groupbox:Resize();
         end);
 
         function Depbox:Update()
+            local ShouldShow = true;
             for _, Dependency in next, Depbox.Dependencies do
                 local Elem = Dependency[1];
                 local Value = Dependency[2];
-
                 if Elem.Type == 'Toggle' and Elem.Value ~= Value then
-                    Holder.Visible = false;
-                    Depbox:Resize();
-                    return;
+                    ShouldShow = false;
+                    break;
                 end;
             end;
-
-            Holder.Visible = true;
-            Depbox:Resize();
+            SetDependencyVisible(ShouldShow, false);
         end;
 
         function Depbox:SetupDependencies(Dependencies)
@@ -3892,6 +4186,8 @@ function Library:CreateWindow(...)
             Parent = TabArea;
         });
 
+        Library:AddTopCorners(TabButton, 3);
+
         Library:AddToRegistry(TabButton, {
             BackgroundColor3 = 'BackgroundColor';
             BorderColor3 = 'OutlineColor';
@@ -4042,15 +4338,22 @@ function Library:CreateWindow(...)
                 BackgroundColor3 = 'AccentColor';
             });
 
+            local GroupboxLabelWidth = Library:GetTextBounds(Info.Name, Library.Font, 14);
             local GroupboxLabel = Library:CreateLabel({
-                Size = UDim2.new(1, 0, 0, 18);
-                Position = UDim2.new(0, 4, 0, 2);
+                BackgroundColor3 = Library.BackgroundColor;
+                BackgroundTransparency = 0;
+                Size = UDim2.fromOffset(GroupboxLabelWidth + 8, 16);
+                Position = UDim2.new(0, 6, 0, -7);
                 TextSize = 14;
                 Text = Info.Name;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 ZIndex = 5;
                 Parent = BoxInner;
             });
+
+            Library.RegistryMap[GroupboxLabel].Properties.BackgroundColor3 = 'BackgroundColor';
+            Highlight.Position = UDim2.fromOffset(GroupboxLabelWidth + 18, 0);
+            Highlight.Size = UDim2.new(1, -(GroupboxLabelWidth + 18), 0, 2);
 
             local Container = Library:Create('Frame', {
                 BackgroundTransparency = 1;
@@ -4166,6 +4469,8 @@ function Library:CreateWindow(...)
                     ZIndex = 6;
                     Parent = TabboxButtons;
                 });
+
+                Library:AddTopCorners(Button, 3);
 
                 Library:AddToRegistry(Button, {
                     BackgroundColor3 = 'MainColor';
