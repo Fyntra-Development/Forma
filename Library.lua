@@ -189,62 +189,338 @@ function Library:MakeDraggable(Instance, Cutoff)
     end)
 end;
 
-function Library:AddToolTip(InfoStr, HoverInstance)
-    local X, Y = Library:GetTextBounds(InfoStr, Library.Font, 14);
-    local Tooltip = Library:Create('Frame', {
-        BackgroundColor3 = Library.MainColor,
-        BorderColor3 = Library.OutlineColor,
+function Library:AddToolTip(Info, HoverInstance)
+    if type(Info) ~= 'string' and type(Info) ~= 'table' then
+        return
+    end
 
-        Size = UDim2.fromOffset(X + 5, Y + 4),
+    local Title = type(Info) == 'table' and (Info.Title or Info.title) or nil
+    local Text = type(Info) == 'table' and (Info.Text or Info.Description or Info.text or Info.description or Info[1]) or Info
+
+    Title = type(Title) == 'string' and Title or nil
+    Text = type(Text) == 'string' and Text or ''
+
+    if not Title and Text == '' then
+        return
+    end
+
+    local MaxWidth = type(Info) == 'table' and tonumber(Info.MaxWidth or Info.Width) or nil
+    MaxWidth = math.clamp(MaxWidth or 280, 120, 500)
+
+    local PaddingX = 7
+    local PaddingY = 5
+    local Gap = Title and Text ~= '' and 2 or 0
+    local TitleX, TitleY = 0, 0
+    local TextX, TextY = 0, 0
+
+    if Title then
+        TitleX, TitleY = Library:GetTextBounds(Title, Library.Font, 14, Vector2.new(MaxWidth, 10000))
+    end
+
+    if Text ~= '' then
+        TextX, TextY = Library:GetTextBounds(Text, Library.Font, 13, Vector2.new(MaxWidth, 10000))
+    end
+
+    local ContentWidth = math.max(TitleX, TextX, 60)
+    local Width = math.min(MaxWidth, ContentWidth) + (PaddingX * 2)
+    local Height = PaddingY * 2 + TitleY + TextY + Gap
+
+    local Tooltip = Library:Create('Frame', {
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Size = UDim2.fromOffset(Width, Height),
         ZIndex = 100,
         Parent = Library.ScreenGui,
-
         Visible = false,
     })
 
-    local Label = Library:CreateLabel({
-        Position = UDim2.fromOffset(3, 1),
-        Size = UDim2.fromOffset(X, Y);
-        TextSize = 14;
-        Text = InfoStr,
-        TextColor3 = Library.FontColor,
-        TextXAlignment = Enum.TextXAlignment.Left;
-        ZIndex = Tooltip.ZIndex + 1,
+    local Content = Library:Create('Frame', {
+        BackgroundColor3 = Library.MainColor,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(0, 8),
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = Tooltip.ZIndex,
+        Parent = Tooltip,
+    })
 
-        Parent = Tooltip;
-    });
+    local Stroke = Library:Create('UIStroke', {
+        Color = Library.OutlineColor,
+        Thickness = 1,
+        Transparency = 1,
+        LineJoinMode = Enum.LineJoinMode.Miter,
+        Parent = Content,
+    })
 
-    Library:AddToRegistry(Tooltip, {
+    Library:AddToRegistry(Content, {
         BackgroundColor3 = 'MainColor';
-        BorderColor3 = 'OutlineColor';
     });
 
-    Library:AddToRegistry(Label, {
-        TextColor3 = 'FontColor',
+    Library:AddToRegistry(Stroke, {
+        Color = 'OutlineColor';
     });
+
+    local TitleLabel
+    local BodyLabel
+
+    if Title then
+        TitleLabel = Library:CreateLabel({
+            Position = UDim2.fromOffset(PaddingX, PaddingY),
+            Size = UDim2.new(1, -(PaddingX * 2), 0, TitleY),
+            TextSize = 14,
+            Text = Title,
+            TextColor3 = Library.AccentColor,
+            TextTransparency = 1,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            ZIndex = Tooltip.ZIndex + 1,
+            Parent = Content,
+        });
+
+        Library.RegistryMap[TitleLabel].Properties.TextColor3 = 'AccentColor'
+    end
+
+    if Text ~= '' then
+        BodyLabel = Library:CreateLabel({
+            Position = UDim2.fromOffset(PaddingX, PaddingY + TitleY + Gap),
+            Size = UDim2.new(1, -(PaddingX * 2), 0, TextY),
+            TextSize = 13,
+            Text = Text,
+            TextColor3 = Library.FontColor,
+            TextTransparency = 1,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            ZIndex = Tooltip.ZIndex + 1,
+            Parent = Content,
+        });
+    end
+
+    local TitleStroke = TitleLabel and TitleLabel:FindFirstChildOfClass('UIStroke')
+    local BodyStroke = BodyLabel and BodyLabel:FindFirstChildOfClass('UIStroke')
+
+    if TitleStroke then
+        TitleStroke.Transparency = 1
+    end
+
+    if BodyStroke then
+        BodyStroke.Transparency = 1
+    end
 
     local IsHovering = false
+    local AnimationId = 0
+    local FollowConnection
+    local ActiveTweens = {}
+
+    local function CancelTweens()
+        for _, Tween in next, ActiveTweens do
+            pcall(function()
+                Tween:Cancel()
+            end)
+        end
+
+        table.clear(ActiveTweens)
+    end
+
+    local function PlayTween(Instance, TweenInfoValue, Properties)
+        local Tween = TweenService:Create(Instance, TweenInfoValue, Properties)
+        table.insert(ActiveTweens, Tween)
+        Tween:Play()
+        return Tween
+    end
+
+    local function GetTargetPosition()
+        local Camera = workspace.CurrentCamera
+        local Viewport = Camera and Camera.ViewportSize or Vector2.new(1920, 1080)
+        local X = Mouse.X + 18
+        local Y = Mouse.Y + 20
+
+        if X + Width + 8 > Viewport.X then
+            X = Mouse.X - Width - 14
+        end
+
+        if Y + Height + 8 > Viewport.Y then
+            Y = Mouse.Y - Height - 14
+        end
+
+        return Vector2.new(math.max(8, X), math.max(8, Y))
+    end
+
+    local function StartFollowing()
+        if FollowConnection then
+            FollowConnection:Disconnect()
+        end
+
+        local Target = GetTargetPosition()
+        Tooltip.Position = UDim2.fromOffset(Target.X, Target.Y)
+
+        FollowConnection = RunService.RenderStepped:Connect(function(Delta)
+            if not Tooltip.Visible then
+                return
+            end
+
+            local Goal = GetTargetPosition()
+            local Current = Vector2.new(Tooltip.Position.X.Offset, Tooltip.Position.Y.Offset)
+            local Alpha = 1 - math.exp(-Delta * 28)
+            local Next = Current:Lerp(Goal, Alpha)
+
+            Tooltip.Position = UDim2.fromOffset(Next.X, Next.Y)
+        end)
+    end
+
+    local function Show()
+        AnimationId = AnimationId + 1
+        local CurrentId = AnimationId
+
+        CancelTweens()
+        IsHovering = true
+        Tooltip.Visible = true
+        Content.Position = UDim2.fromOffset(0, 8)
+        Content.BackgroundTransparency = 1
+        Stroke.Transparency = 1
+
+        if TitleLabel then
+            TitleLabel.TextTransparency = 1
+        end
+
+        if BodyLabel then
+            BodyLabel.TextTransparency = 1
+        end
+
+        if TitleStroke then
+            TitleStroke.Transparency = 1
+        end
+
+        if BodyStroke then
+            BodyStroke.Transparency = 1
+        end
+
+        StartFollowing()
+
+        local MoveInfo = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        local FadeInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+        PlayTween(Content, MoveInfo, {
+            Position = UDim2.fromOffset(0, 0),
+        })
+
+        PlayTween(Content, FadeInfo, {
+            BackgroundTransparency = 0,
+        })
+
+        PlayTween(Stroke, FadeInfo, {
+            Transparency = 0,
+        })
+
+        if TitleLabel then
+            PlayTween(TitleLabel, FadeInfo, {
+                TextTransparency = 0,
+            })
+        end
+
+        if BodyLabel then
+            PlayTween(BodyLabel, FadeInfo, {
+                TextTransparency = 0,
+            })
+        end
+
+        if TitleStroke then
+            PlayTween(TitleStroke, FadeInfo, {
+                Transparency = 0,
+            })
+        end
+
+        if BodyStroke then
+            PlayTween(BodyStroke, FadeInfo, {
+                Transparency = 0,
+            })
+        end
+
+        task.delay(0.28, function()
+            if CurrentId == AnimationId then
+                table.clear(ActiveTweens)
+            end
+        end)
+    end
+
+    local function Hide()
+        if not Tooltip.Visible then
+            return
+        end
+
+        AnimationId = AnimationId + 1
+        local CurrentId = AnimationId
+
+        CancelTweens()
+        IsHovering = false
+
+        local MoveInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        local FadeInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+        PlayTween(Content, MoveInfo, {
+            Position = UDim2.fromOffset(0, -5),
+        })
+
+        PlayTween(Content, FadeInfo, {
+            BackgroundTransparency = 1,
+        })
+
+        PlayTween(Stroke, FadeInfo, {
+            Transparency = 1,
+        })
+
+        if TitleLabel then
+            PlayTween(TitleLabel, FadeInfo, {
+                TextTransparency = 1,
+            })
+        end
+
+        if BodyLabel then
+            PlayTween(BodyLabel, FadeInfo, {
+                TextTransparency = 1,
+            })
+        end
+
+        if TitleStroke then
+            PlayTween(TitleStroke, FadeInfo, {
+                Transparency = 1,
+            })
+        end
+
+        if BodyStroke then
+            PlayTween(BodyStroke, FadeInfo, {
+                Transparency = 1,
+            })
+        end
+
+        task.delay(0.2, function()
+            if CurrentId ~= AnimationId or IsHovering then
+                return
+            end
+
+            Tooltip.Visible = false
+
+            if FollowConnection then
+                FollowConnection:Disconnect()
+                FollowConnection = nil
+            end
+
+            table.clear(ActiveTweens)
+        end)
+    end
 
     HoverInstance.MouseEnter:Connect(function()
         if Library:MouseIsOverOpenedFrame() then
             return
         end
 
-        IsHovering = true
-
-        Tooltip.Position = UDim2.fromOffset(Mouse.X + 15, Mouse.Y + 12)
-        Tooltip.Visible = true
-
-        while IsHovering do
-            RunService.Heartbeat:Wait()
-            Tooltip.Position = UDim2.fromOffset(Mouse.X + 15, Mouse.Y + 12)
-        end
+        Show()
     end)
 
-    HoverInstance.MouseLeave:Connect(function()
-        IsHovering = false
-        Tooltip.Visible = false
-    end)
+    HoverInstance.MouseLeave:Connect(Hide)
+
+    return Tooltip
 end
 
 function Library:OnHighlight(HighlightInstance, Instance, Properties, PropertiesDefault)
@@ -1521,7 +1797,7 @@ do
         InitEvents(Button)
 
         function Button:AddTooltip(tooltip)
-            if type(tooltip) == 'string' then
+            if type(tooltip) == 'string' or type(tooltip) == 'table' then
                 Library:AddToolTip(tooltip, self.Outer)
             end
             return self
@@ -1541,13 +1817,13 @@ do
             SubButton.Outer.Parent = self.Outer
 
             function SubButton:AddTooltip(tooltip)
-                if type(tooltip) == 'string' then
+                if type(tooltip) == 'string' or type(tooltip) == 'table' then
                     Library:AddToolTip(tooltip, self.Outer)
                 end
                 return SubButton
             end
 
-            if type(SubButton.Tooltip) == 'string' then
+            if type(SubButton.Tooltip) == 'string' or type(SubButton.Tooltip) == 'table' then
                 SubButton:AddTooltip(SubButton.Tooltip)
             end
 
@@ -1555,7 +1831,7 @@ do
             return SubButton
         end
 
-        if type(Button.Tooltip) == 'string' then
+        if type(Button.Tooltip) == 'string' or type(Button.Tooltip) == 'table' then
             Button:AddTooltip(Button.Tooltip)
         end
 
@@ -1656,7 +1932,7 @@ do
             { BorderColor3 = 'Black' }
         );
 
-        if type(Info.Tooltip) == 'string' then
+        if type(Info.Tooltip) == 'string' or type(Info.Tooltip) == 'table' then
             Library:AddToolTip(Info.Tooltip, TextBoxOuter)
         end
 
@@ -1856,7 +2132,7 @@ do
             Toggle:Display();
         end;
 
-        if type(Info.Tooltip) == 'string' then
+        if type(Info.Tooltip) == 'string' or type(Info.Tooltip) == 'table' then
             Library:AddToolTip(Info.Tooltip, ToggleRegion)
         end
 
@@ -2018,7 +2294,7 @@ do
             { BorderColor3 = 'Black' }
         );
 
-        if type(Info.Tooltip) == 'string' then
+        if type(Info.Tooltip) == 'string' or type(Info.Tooltip) == 'table' then
             Library:AddToolTip(Info.Tooltip, SliderOuter)
         end
 
@@ -2225,7 +2501,7 @@ do
             { BorderColor3 = 'Black' }
         );
 
-        if type(Info.Tooltip) == 'string' then
+        if type(Info.Tooltip) == 'string' or type(Info.Tooltip) == 'table' then
             Library:AddToolTip(Info.Tooltip, DropdownOuter)
         end
 
