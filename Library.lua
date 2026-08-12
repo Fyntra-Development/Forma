@@ -3201,7 +3201,7 @@ do
         local ListHeight = MAX_DROPDOWN_ITEMS * 20 + 2
 
         local function RecalculateListPosition()
-            ListOuter.Position = UDim2.fromOffset(DropdownOuter.AbsolutePosition.X, DropdownOuter.AbsolutePosition.Y + DropdownOuter.Size.Y.Offset - 1);
+            ListOuter.Position = UDim2.fromOffset(DropdownOuter.AbsolutePosition.X, DropdownOuter.AbsolutePosition.Y + DropdownOuter.Size.Y.Offset - 3);
         end;
 
         local function RecalculateListSize(YSize)
