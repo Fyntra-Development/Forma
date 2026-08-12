@@ -60,14 +60,14 @@ jobs:
 
           def all_names(path):
               font = TTFont(path)
-              out = []
+              values = []
               for rec in font['name'].names:
                   if rec.nameID in {1, 2, 4, 17}:
                       try:
-                          out.append(rec.toUnicode())
+                          values.append(rec.toUnicode())
                       except Exception:
                           pass
-              return ' '.join(out).lower()
+              return ' '.join(values).lower()
 
           rubik = all_names('fonts/Rubik-Light.ttf')
           if 'rubik' not in rubik or 'light' not in rubik:
@@ -85,27 +85,17 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('Library.lua')
           source = path.read_text()
-
-          old_fonts = '''local Fonts = {
-              Rubik = {
-                  Ttf = "Rubik.ttf",
-                  RepoPath = "fonts/Rubik.ttf",
-                  Url = RepoFontBaseUrl .. "fonts/Rubik.ttf",
-              },
-          };
-
-          local FontOrder = {
-              "Rubik",
-          };'''
 
           new_fonts = '''local Fonts = {
               ["Rubik Light"] = {
                   Ttf = "Rubik-Light.ttf",
                   RepoPath = "fonts/Rubik-Light.ttf",
                   Url = RepoFontBaseUrl .. "fonts/Rubik-Light.ttf",
+                  FaceName = "Light",
                   Weight = Enum.FontWeight.Light,
                   WeightValue = 300,
               },
@@ -113,6 +103,7 @@ jobs:
                   Ttf = "Miracode.ttf",
                   RepoPath = "fonts/Miracode.ttf",
                   Url = RepoFontBaseUrl .. "fonts/Miracode.ttf",
+                  FaceName = "Regular",
                   Weight = Enum.FontWeight.Regular,
                   WeightValue = 400,
               },
@@ -120,6 +111,7 @@ jobs:
                   Ttf = "Monocraft.ttf",
                   RepoPath = "fonts/Monocraft.ttf",
                   Url = RepoFontBaseUrl .. "fonts/Monocraft.ttf",
+                  FaceName = "Regular",
                   Weight = Enum.FontWeight.Regular,
                   WeightValue = 400,
               },
@@ -131,38 +123,34 @@ jobs:
               "Monocraft",
           };'''
 
-          if source.count(old_fonts) != 1:
-              raise SystemExit('font table matcher failed')
-          source = source.replace(old_fonts, new_fonts, 1)
+          source, count = re.subn(
+              r'local Fonts = \{.*?\n\};\n\nlocal FontOrder = \{.*?\n\};',
+              new_fonts,
+              source,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit(f'font table replacement count: {count}')
 
-          old_weight = "                    weight = 400;\n                    style = 'normal';"
-          new_weight = "                    weight = Info.WeightValue or 400;\n                    style = 'normal';"
-          if source.count(old_weight) != 1:
-              raise SystemExit('family weight matcher failed')
-          source = source.replace(old_weight, new_weight, 1)
+          if source.count('weight = 400;') < 1:
+              raise SystemExit('family weight token missing')
+          source = source.replace('weight = 400;', 'weight = Info.WeightValue or 400;', 1)
 
-          old_face = """        pcall(function()
-              Face = Font.new(FamilyAsset);
-          end);
+          if source.count("name = 'Regular';") < 1:
+              raise SystemExit('family face-name token missing')
+          source = source.replace("name = 'Regular';", "name = Info.FaceName or 'Regular';", 1)
 
-          if not Face then"""
-          new_face = """        pcall(function()
-              Face = Font.new(FamilyAsset, Info.Weight or Enum.FontWeight.Regular, Enum.FontStyle.Normal);
-          end);
-
-          if not Face then
-              pcall(function()
-                  Face = Font.new(FamilyAsset);
-              end);
-          end;
-
-          if not Face then"""
-          if source.count(old_face) != 1:
-              raise SystemExit('Font.new matcher failed')
-          source = source.replace(old_face, new_face, 1)
+          if source.count('Face = Font.new(FamilyAsset);') != 1:
+              raise SystemExit(f'Font.new token count: {source.count("Face = Font.new(FamilyAsset);")}')
+          source = source.replace(
+              'Face = Font.new(FamilyAsset);',
+              'Face = Font.new(FamilyAsset, Info.Weight or Enum.FontWeight.Regular, Enum.FontStyle.Normal);',
+              1,
+          )
 
           if source.count("Library:LoadFont('Rubik');") != 1:
-              raise SystemExit('default font matcher failed')
+              raise SystemExit('default Rubik load token missing')
           source = source.replace("Library:LoadFont('Rubik');", "Library:LoadFont('Rubik Light');", 1)
 
           path.write_text(source)
