@@ -3362,6 +3362,37 @@ function Library:CreateWindow(...)
         BorderColor3 = 'AccentColor';
     });
 
+    local WindowGlowLayers = {
+        { Padding = 1, Thickness = 1.5, Transparency = 0.12 },
+        { Padding = 3, Thickness = 2.5, Transparency = 0.52 },
+        { Padding = 5, Thickness = 3.5, Transparency = 0.72 },
+        { Padding = 8, Thickness = 4.5, Transparency = 0.86 },
+    };
+
+    for _, GlowInfo in ipairs(WindowGlowLayers) do
+        local GlowFrame = Library:Create('Frame', {
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(-GlowInfo.Padding, -GlowInfo.Padding);
+            Size = UDim2.new(1, GlowInfo.Padding * 2, 1, GlowInfo.Padding * 2);
+            ZIndex = 0;
+            Parent = Outer;
+        });
+
+        local GlowStroke = Library:Create('UIStroke', {
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            Color = Library.AccentColor;
+            LineJoinMode = Enum.LineJoinMode.Miter;
+            Thickness = GlowInfo.Thickness;
+            Transparency = GlowInfo.Transparency;
+            Parent = GlowFrame;
+        });
+
+        Library:AddToRegistry(GlowStroke, {
+            Color = 'AccentColor';
+        });
+    end;
+
     local WindowLabel = Library:CreateLabel({
         Position = UDim2.new(0, 7, 0, 0);
         Size = UDim2.new(0, 0, 0, 25);
@@ -3893,39 +3924,51 @@ function Library:CreateWindow(...)
             task.spawn(function()
                 local State = InputService.MouseIconEnabled;
 
-                local Cursor = Drawing.new('Triangle');
-                Cursor.Thickness = 1;
-                Cursor.Filled = true;
-                Cursor.Visible = true;
+                local CursorAssetPath = 'FormaAssets/cursor.png';
+                local CursorAssetUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/cursor.png';
+                local GetCustomAsset = getcustomasset or getsynasset;
+                local Cursor;
 
-                local CursorOutline = Drawing.new('Triangle');
-                CursorOutline.Thickness = 1;
-                CursorOutline.Filled = false;
-                CursorOutline.Color = Color3.new(0, 0, 0);
-                CursorOutline.Visible = true;
+                if GetCustomAsset and writefile and isfile then
+                    pcall(function()
+                        if isfolder and makefolder and not isfolder('FormaAssets') then
+                            makefolder('FormaAssets');
+                        end;
 
-                while Toggled and ScreenGui.Parent do
-                    InputService.MouseIconEnabled = false;
+                        if not isfile(CursorAssetPath) then
+                            writefile(CursorAssetPath, game:HttpGet(CursorAssetUrl));
+                        end;
 
-                    local mPos = InputService:GetMouseLocation();
+                        Cursor = Library:Create('ImageLabel', {
+                            BackgroundTransparency = 1;
+                            BorderSizePixel = 0;
+                            Image = GetCustomAsset(CursorAssetPath);
+                            ImageColor3 = Library.AccentColor;
+                            Position = UDim2.fromOffset(Mouse.X, Mouse.Y);
+                            Size = UDim2.fromOffset(20, 24);
+                            ZIndex = 1000;
+                            Visible = true;
+                            Parent = ScreenGui;
+                        });
 
-                    Cursor.Color = Library.AccentColor;
-
-                    Cursor.PointA = Vector2.new(mPos.X, mPos.Y);
-                    Cursor.PointB = Vector2.new(mPos.X + 16, mPos.Y + 6);
-                    Cursor.PointC = Vector2.new(mPos.X + 6, mPos.Y + 16);
-
-                    CursorOutline.PointA = Cursor.PointA;
-                    CursorOutline.PointB = Cursor.PointB;
-                    CursorOutline.PointC = Cursor.PointC;
-
-                    RenderStepped:Wait();
+                        Library:AddToRegistry(Cursor, {
+                            ImageColor3 = 'AccentColor';
+                        });
+                    end);
                 end;
 
-                InputService.MouseIconEnabled = State;
+                if Cursor then
+                    while Toggled and ScreenGui.Parent do
+                        InputService.MouseIconEnabled = false;
+                        Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y);
+                        RenderStepped:Wait();
+                    end;
 
-                Cursor:Remove();
-                CursorOutline:Remove();
+                    InputService.MouseIconEnabled = State;
+                    Cursor:Destroy();
+                else
+                    InputService.MouseIconEnabled = State;
+                end;
             end);
         end;
 
