@@ -1,0 +1,46 @@
+name: Apply groupbox tab dropdown polish
+
+on:
+  push:
+    branches: [agent/groupbox-tab-dropdown-polish]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/groupbox-tab-dropdown-polish
+          fetch-depth: 0
+      - name: Patch Library
+        run: python .github/scripts/patch_groupbox_tab_dropdown.py
+      - name: Verify and commit
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s = Path('Library.lua').read_text()
+          required = [
+              "function Library:AddTabAccentCap",
+              "Highlight.Position = UDim2.fromOffset(GroupboxLabelWidth + 16, 7);",
+              "PickerFrameInner.GroupTransparency = 1;",
+              "local ScrollThumb = Library:Create('Frame'",
+              "Name = 'DropdownRow';",
+              "SetTabAccentActive(true);",
+              "SetTabboxAccentActive(true);",
+          ]
+          for token in required:
+              assert token in s, token
+          assert "local BottomEdge = Library:Create('Frame'" not in s[s.index('function Library:AddTopCorners'):s.index('function Library:ApplyTextStroke')]
+          print('verification passed')
+          PY
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua
+          if ! git diff --cached --quiet; then
+            git commit -m "Polish groupbox tabs and dropdown scrolling"
+            git push origin HEAD:agent/groupbox-tab-dropdown-polish
+          fi
