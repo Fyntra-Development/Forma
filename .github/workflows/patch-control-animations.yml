@@ -25,85 +25,16 @@ jobs:
           path = Path('Library.lua')
           source = path.read_text()
 
-          old_slider = '''        function Slider:Display()
-              local Suffix = Info.Suffix or '';
+          def indent_lua(body, level=2):
+              prefix = '    ' * level
+              return '\n'.join(prefix + line if line else '' for line in body.splitlines())
 
-              if Info.Compact then
-                  DisplayLabel.Text = Info.Text .. ': ' .. Slider.Value .. Suffix
-              elseif Info.HideMax then
-                  DisplayLabel.Text = string.format('%s', Slider.Value .. Suffix)
-              else
-                  DisplayLabel.Text = string.format('%s/%s', Slider.Value .. Suffix, Slider.Max .. Suffix);
-              end
+          def replace_range(text, start_marker, end_marker, replacement):
+              start = text.index(start_marker)
+              end = text.index(end_marker, start) + len(end_marker)
+              return text[:start] + replacement + text[end:]
 
-              local X = math.ceil(Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, Slider.MaxSize));
-              Fill.Size = UDim2.new(0, X, 1, 0);
-
-              HideBorderRight.Visible = not (X == Slider.MaxSize or X == 0);
-          end;
-
-          function Slider:OnChanged(Func)
-              Slider.Changed = Func;
-              Func(Slider.Value);
-          end;
-
-          local function Round(Value)
-              if Slider.Rounding == 0 then
-                  return math.floor(Value);
-              end;
-
-              return tonumber(string.format('%.' .. Slider.Rounding .. 'f', Value))
-          end;
-
-          function Slider:GetValueFromXOffset(X)
-              return Round(Library:MapValue(X, 0, Slider.MaxSize, Slider.Min, Slider.Max));
-          end;
-
-          function Slider:SetValue(Str)
-              local Num = tonumber(Str);
-
-              if (not Num) then
-                  return;
-              end;
-
-              Num = math.clamp(Num, Slider.Min, Slider.Max);
-
-              Slider.Value = Num;
-              Slider:Display();
-
-              Library:SafeCallback(Slider.Callback, Slider.Value);
-              Library:SafeCallback(Slider.Changed, Slider.Value);
-          end;
-
-          SliderInner.InputBegan:Connect(function(Input)
-              if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
-                  local mPos = Mouse.X;
-                  local gPos = Fill.Size.X.Offset;
-                  local Diff = mPos - (Fill.AbsolutePosition.X + gPos);
-
-                  while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                      local nMPos = Mouse.X;
-                      local nX = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize);
-
-                      local nValue = Slider:GetValueFromXOffset(nX);
-                      local OldValue = Slider.Value;
-                      Slider.Value = nValue;
-
-                      Slider:Display();
-
-                      if nValue ~= OldValue then
-                          Library:SafeCallback(Slider.Callback, Slider.Value);
-                          Library:SafeCallback(Slider.Changed, Slider.Value);
-                      end;
-
-                      RenderStepped:Wait();
-                  end;
-
-                  Library:AttemptSave();
-              end;
-          end);'''
-
-          new_slider = '''        local VisualX = 0
+          slider_body = '''local VisualX = 0
           local TargetX = 0
           local VisualConnection
           local IsDragging = false
@@ -194,7 +125,6 @@ jobs:
               end;
 
               Num = math.clamp(Num, Slider.Min, Slider.Max);
-
               Slider.Value = Num;
               Slider:Display(false);
 
@@ -243,30 +173,18 @@ jobs:
                   StartVisualAnimation()
                   Library:AttemptSave();
               end;
-          end);'''
+          end);
 
-          if old_slider not in source:
-              raise RuntimeError('Could not locate slider implementation')
-          source = source.replace(old_slider, new_slider, 1)
-          source = source.replace('        Slider:Display();\n        Groupbox:AddBlank(Info.BlankSize or 6);', '        Slider:Display(true);\n        Groupbox:AddBlank(Info.BlankSize or 6);', 1)
+          Slider:Display(true);'''
 
-          old_outer = '''        local ListOuter = Library:Create('Frame', {
-              BackgroundColor3 = Color3.new(0, 0, 0);
-              BorderColor3 = Color3.new(0, 0, 0);
-              ZIndex = 20;
-              Visible = false;
-              Parent = ScreenGui;
-          });
+          source = replace_range(
+              source,
+              '        function Slider:Display()',
+              '        Slider:Display();',
+              indent_lua(slider_body)
+          )
 
-          local function RecalculateListPosition()
-              ListOuter.Position = UDim2.fromOffset(DropdownOuter.AbsolutePosition.X, DropdownOuter.AbsolutePosition.Y + DropdownOuter.Size.Y.Offset + 1);
-          end;
-
-          local function RecalculateListSize(YSize)
-              ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, YSize or (MAX_DROPDOWN_ITEMS * 20 + 2))
-          end;'''
-
-          new_outer = '''        local ListOuter = Library:Create('Frame', {
+          dropdown_outer_body = '''local ListOuter = Library:Create('Frame', {
               BackgroundColor3 = Color3.new(0, 0, 0);
               BorderColor3 = Color3.new(0, 0, 0);
               ClipsDescendants = true;
@@ -285,27 +203,26 @@ jobs:
           local function RecalculateListSize(YSize)
               ListHeight = YSize or (MAX_DROPDOWN_ITEMS * 20 + 2)
               ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, Dropdown.Opened and ListHeight or 0)
-          end;'''
-
-          if old_outer not in source:
-              raise RuntimeError('Could not locate dropdown outer implementation')
-          source = source.replace(old_outer, new_outer, 1)
-
-          source = source.replace("            BackgroundColor3 = Library.MainColor;\n            BorderColor3 = Library.OutlineColor;\n            BorderMode = Enum.BorderMode.Inset;\n            BorderSizePixel = 0;\n            Size = UDim2.new(1, 0, 1, 0);\n            ZIndex = 21;\n            Parent = ListOuter;", "            BackgroundColor3 = Library.MainColor;\n            BackgroundTransparency = 1;\n            BorderColor3 = Library.OutlineColor;\n            BorderMode = Enum.BorderMode.Inset;\n            BorderSizePixel = 0;\n            Size = UDim2.new(1, 0, 1, 0);\n            ZIndex = 21;\n            Parent = ListOuter;", 1)
-
-          old_open_close = '''        function Dropdown:OpenDropdown()
-              ListOuter.Visible = true;
-              Library.OpenedFrames[ListOuter] = true;
-              DropdownArrow.Rotation = 180;
           end;
 
-          function Dropdown:CloseDropdown()
-              ListOuter.Visible = false;
-              Library.OpenedFrames[ListOuter] = nil;
-              DropdownArrow.Rotation = 0;
-          end;'''
+          RecalculateListPosition();
+          RecalculateListSize();
 
-          new_open_close = '''        local DropdownTweens = {}
+          DropdownOuter:GetPropertyChangedSignal('AbsolutePosition'):Connect(RecalculateListPosition);'''
+
+          source = replace_range(
+              source,
+              "        local ListOuter = Library:Create('Frame', {",
+              "        DropdownOuter:GetPropertyChangedSignal('AbsolutePosition'):Connect(RecalculateListPosition);",
+              indent_lua(dropdown_outer_body)
+          )
+
+          list_inner_start = source.index("        local ListInner = Library:Create('Frame', {")
+          bg_marker = '            BackgroundColor3 = Library.MainColor;'
+          bg_pos = source.index(bg_marker, list_inner_start) + len(bg_marker)
+          source = source[:bg_pos] + '\n            BackgroundTransparency = 1;' + source[bg_pos:]
+
+          open_close_body = '''local DropdownTweens = {}
           local DropdownAnimationId = 0
 
           local function CancelDropdownTweens()
@@ -314,7 +231,6 @@ jobs:
                       Tween:Cancel()
                   end)
               end
-
               table.clear(DropdownTweens)
           end
 
@@ -333,7 +249,6 @@ jobs:
               Dropdown.Opened = true
               DropdownAnimationId = DropdownAnimationId + 1
               CancelDropdownTweens()
-
               ListOuter.Visible = true
               Library.OpenedFrames[ListOuter] = true
 
@@ -344,11 +259,9 @@ jobs:
               PlayDropdownTween(ListOuter, ExpandInfo, {
                   Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, ListHeight),
               })
-
               PlayDropdownTween(ListInner, FadeInfo, {
                   BackgroundTransparency = 0,
               })
-
               PlayDropdownTween(DropdownArrow, ArrowInfo, {
                   Rotation = 180,
               })
@@ -372,11 +285,9 @@ jobs:
               local CollapseTween = PlayDropdownTween(ListOuter, CollapseInfo, {
                   Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, 0),
               })
-
               PlayDropdownTween(ListInner, FadeInfo, {
                   BackgroundTransparency = 1,
               })
-
               PlayDropdownTween(DropdownArrow, ArrowInfo, {
                   Rotation = 0,
               })
@@ -385,17 +296,36 @@ jobs:
                   if CurrentId ~= DropdownAnimationId or Dropdown.Opened then
                       return
                   end
-
                   ListOuter.Visible = false
                   table.clear(DropdownTweens)
               end)
           end;'''
 
-          if old_open_close not in source:
-              raise RuntimeError('Could not locate dropdown open/close implementation')
-          source = source.replace(old_open_close, new_open_close, 1)
-          source = source.replace('                if ListOuter.Visible then\n                    Dropdown:CloseDropdown();\n                else\n                    Dropdown:OpenDropdown();\n                end;', '                if Dropdown.Opened then\n                    Dropdown:CloseDropdown();\n                else\n                    Dropdown:OpenDropdown();\n                end;', 1)
-          source = source.replace("            if Input.UserInputType == Enum.UserInputType.MouseButton1 then\n                local AbsPos, AbsSize = ListOuter.AbsolutePosition, ListOuter.AbsoluteSize;", "            if Input.UserInputType == Enum.UserInputType.MouseButton1 and Dropdown.Opened then\n                local AbsPos, AbsSize = ListOuter.AbsolutePosition, ListOuter.AbsoluteSize;", 1)
+          source = replace_range(
+              source,
+              '        function Dropdown:OpenDropdown()',
+              '        function Dropdown:OnChanged(Func)',
+              indent_lua(open_close_body) + '\n\n        function Dropdown:OnChanged(Func)'
+          )
+
+          dropdown_click_start = source.index('        DropdownOuter.InputBegan:Connect(function(Input)')
+          old_toggle = '''                if ListOuter.Visible then
+                      Dropdown:CloseDropdown();
+                  else
+                      Dropdown:OpenDropdown();
+                  end;'''
+          new_toggle = '''                if Dropdown.Opened then
+                      Dropdown:CloseDropdown();
+                  else
+                      Dropdown:OpenDropdown();
+                  end;'''
+          toggle_pos = source.index(old_toggle, dropdown_click_start)
+          source = source[:toggle_pos] + new_toggle + source[toggle_pos + len(old_toggle):]
+
+          outside_start = source.index('        InputService.InputBegan:Connect(function(Input)', dropdown_click_start)
+          old_outside = '            if Input.UserInputType == Enum.UserInputType.MouseButton1 then'
+          outside_pos = source.index(old_outside, outside_start)
+          source = source[:outside_pos] + '            if Input.UserInputType == Enum.UserInputType.MouseButton1 and Dropdown.Opened then' + source[outside_pos + len(old_outside):]
 
           path.write_text(source)
       - name: Commit patch
