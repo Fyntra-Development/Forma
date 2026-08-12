@@ -6,6 +6,7 @@ local Players = game:GetService('Players');
 local RunService = game:GetService('RunService')
 local TweenService = game:GetService('TweenService');
 local HttpService = game:GetService('HttpService');
+local HttpService = game:GetService('HttpService');
 local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
@@ -3573,6 +3574,15 @@ function Library:CreateWindow(...)
     Library:AddToRegistry(Inner, {
         BackgroundColor3 = 'MainColor';
         BorderColor3 = 'AccentColor';
+    });
+
+    local WindowGlowFrame = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(-1, -1);
+        Size = UDim2.new(1, 2, 1, 2);
+        ZIndex = 0;
+        Parent = Outer;
     });
 
     local WindowGlowFrame = Library:Create('Frame', {
