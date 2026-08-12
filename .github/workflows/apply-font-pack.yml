@@ -1,0 +1,211 @@
+name: Apply Forma font pack
+
+on:
+  push:
+    branches: [agent/font-pack-rubik-light]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/font-pack-rubik-light
+          fetch-depth: 0
+
+      - name: Install font tooling
+        run: python -m pip install --quiet fonttools
+
+      - name: Import verified fonts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fonts /tmp/monocraft
+
+          curl -fL --retry 3 --retry-delay 1 \
+            'https://raw.githubusercontent.com/stur86/crystvis-js/9bd7ad45769ea19a697e3831d4e473801117af72/fonts/Rubik/static/Rubik-Light.ttf' \
+            -o fonts/Rubik-Light.ttf
+
+          curl -fL --retry 3 --retry-delay 1 \
+            'https://github.com/IdreesInc/Miracode/releases/download/v1.0/Miracode.ttf' \
+            -o fonts/Miracode.ttf
+
+          test "$(stat -c%s fonts/Miracode.ttf)" = "298920"
+          echo '43efc3fd33e5a8eb7befda984bf745eda844777326e1ae06fb074707e1aeb66a  fonts/Miracode.ttf' | sha256sum -c -
+
+          curl -fL --retry 3 --retry-delay 1 \
+            'https://github.com/IdreesInc/Monocraft/releases/download/v4.2.1/Monocraft-ttf.zip' \
+            -o /tmp/Monocraft-ttf.zip
+          unzip -q /tmp/Monocraft-ttf.zip -d /tmp/monocraft
+
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, shutil
+          expected = 'c3906e842d1b7e99947abcc5ae3c8b409abf8cefd1006cbba1890f1096e132f2'
+          matches = []
+          for p in Path('/tmp/monocraft').rglob('*.ttf'):
+              digest = hashlib.sha256(p.read_bytes()).hexdigest()
+              if digest == expected:
+                  matches.append(p)
+          if len(matches) != 1:
+              raise SystemExit(f'expected one exact Monocraft match, got {matches}')
+          shutil.copyfile(matches[0], 'fonts/Monocraft.ttf')
+          PY
+
+          test "$(stat -c%s fonts/Monocraft.ttf)" = "210192"
+          echo 'c3906e842d1b7e99947abcc5ae3c8b409abf8cefd1006cbba1890f1096e132f2  fonts/Monocraft.ttf' | sha256sum -c -
+
+          python - <<'PY'
+          from fontTools.ttLib import TTFont
+          from pathlib import Path
+
+          def names(path, ids):
+              font = TTFont(path)
+              out = {i: set() for i in ids}
+              for rec in font['name'].names:
+                  if rec.nameID in out:
+                      try:
+                          out[rec.nameID].add(rec.toUnicode())
+                      except Exception:
+                          pass
+              return out
+
+          rubik = names('fonts/Rubik-Light.ttf', {1, 2, 4, 17})
+          all_rubik_names = ' '.join(sorted({s for values in rubik.values() for s in values})).lower()
+          if 'rubik' not in all_rubik_names or 'light' not in all_rubik_names:
+              raise SystemExit(f'Rubik source is not a Light face: {rubik}')
+
+          miracode = names('fonts/Miracode.ttf', {1, 2, 4})
+          if 'miracode' not in ' '.join(sorted({s for v in miracode.values() for s in v})).lower():
+              raise SystemExit(f'wrong Miracode binary: {miracode}')
+
+          monocraft = names('fonts/Monocraft.ttf', {1, 2, 4})
+          if 'monocraft' not in ' '.join(sorted({s for v in monocraft.values() for s in v})).lower():
+              raise SystemExit(f'wrong Monocraft binary: {monocraft}')
+          PY
+
+          rm -f fonts/Rubik.ttf
+
+      - name: Patch Library font definitions
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('Library.lua')
+          source = path.read_text()
+
+          old_fonts = '''local Fonts = {
+              Rubik = {
+                  Ttf = "Rubik.ttf",
+                  RepoPath = "fonts/Rubik.ttf",
+                  Url = RepoFontBaseUrl .. "fonts/Rubik.ttf",
+              },
+          };
+
+          local FontOrder = {
+              "Rubik",
+          };'''
+
+          new_fonts = '''local Fonts = {
+              ["Rubik Light"] = {
+                  Ttf = "Rubik-Light.ttf",
+                  RepoPath = "fonts/Rubik-Light.ttf",
+                  Url = RepoFontBaseUrl .. "fonts/Rubik-Light.ttf",
+                  Weight = Enum.FontWeight.Light,
+                  WeightValue = 300,
+              },
+              Miracode = {
+                  Ttf = "Miracode.ttf",
+                  RepoPath = "fonts/Miracode.ttf",
+                  Url = RepoFontBaseUrl .. "fonts/Miracode.ttf",
+                  Weight = Enum.FontWeight.Regular,
+                  WeightValue = 400,
+              },
+              Monocraft = {
+                  Ttf = "Monocraft.ttf",
+                  RepoPath = "fonts/Monocraft.ttf",
+                  Url = RepoFontBaseUrl .. "fonts/Monocraft.ttf",
+                  Weight = Enum.FontWeight.Regular,
+                  WeightValue = 400,
+              },
+          };
+
+          local FontOrder = {
+              "Rubik Light",
+              "Miracode",
+              "Monocraft",
+          };'''
+
+          if source.count(old_fonts) != 1:
+              raise SystemExit('font table matcher failed')
+          source = source.replace(old_fonts, new_fonts, 1)
+
+          old_register = '''    Fonts[Name] = {
+              Ttf = CleanFileName;
+              RepoPath = 'fonts/' .. CleanFileName;
+              Url = RepoFontBaseUrl .. 'fonts/' .. CleanFileName;
+          };'''
+          new_register = '''    Fonts[Name] = {
+              Ttf = CleanFileName;
+              RepoPath = 'fonts/' .. CleanFileName;
+              Url = RepoFontBaseUrl .. 'fonts/' .. CleanFileName;
+              Weight = Enum.FontWeight.Regular;
+              WeightValue = 400;
+          };'''
+          if source.count(old_register) != 1:
+              raise SystemExit('register matcher failed')
+          source = source.replace(old_register, new_register, 1)
+
+          old_weight = '''                    weight = 400;
+                    style = 'normal';'''
+          new_weight = '''                    weight = Info.WeightValue or 400;
+                    style = 'normal';'''
+          if source.count(old_weight) != 1:
+              raise SystemExit('family weight matcher failed')
+          source = source.replace(old_weight, new_weight, 1)
+
+          old_face = '''        pcall(function()
+              Face = Font.new(FamilyAsset);
+          end);
+
+          if not Face then'''
+          new_face = '''        pcall(function()
+              Face = Font.new(FamilyAsset, Info.Weight or Enum.FontWeight.Regular, Enum.FontStyle.Normal);
+          end);
+
+          if not Face then
+              pcall(function()
+                  Face = Font.new(FamilyAsset);
+              end);
+          end;
+
+          if not Face then'''
+          if source.count(old_face) != 1:
+              raise SystemExit('Font.new matcher failed')
+          source = source.replace(old_face, new_face, 1)
+
+          old_default = "Library:LoadFont('Rubik');"
+          new_default = "Library:LoadFont('Rubik Light');"
+          if source.count(old_default) != 1:
+              raise SystemExit('default font matcher failed')
+          source = source.replace(old_default, new_default, 1)
+
+          path.write_text(source)
+          PY
+
+      - name: Commit font pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Library.lua fonts
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Use Rubik Light and add Forma font pack'
+          git push origin HEAD:agent/font-pack-rubik-light
