@@ -1,0 +1,39 @@
+name: Restore exact uploaded Rubik
+
+on:
+  push:
+    branches: [agent/replace-rubik-font]
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/replace-rubik-font
+          fetch-depth: 0
+      - name: Fetch and verify uploaded Rubik bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fonts
+          curl -fL --retry 3 --retry-delay 1 \
+            'https://db.onlinewebfonts.com/t/79aa600424ded269e432988cb556d283.ttf' \
+            -o fonts/Rubik.ttf
+          test "$(stat -c%s fonts/Rubik.ttf)" = "216812"
+          echo '56ae5a986f01c02dcf756ea4e7e8894dcf239c9bb2d21e668014d172bea0498f  fonts/Rubik.ttf' | sha256sum -c -
+      - name: Commit exact font
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add fonts/Rubik.ttf
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Restore supplied Rubik font'
+          git push origin HEAD:agent/replace-rubik-font
