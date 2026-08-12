@@ -1,0 +1,35 @@
+name: Finalize dropdown seam
+
+on:
+  push:
+    branches: [agent/ui-motion-fonts-2]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ui-motion-fonts-2
+          fetch-depth: 0
+      - name: Increase dropdown overlap
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Library.lua')
+          s = p.read_text()
+          old = 'DropdownOuter.AbsolutePosition.Y + DropdownOuter.Size.Y.Offset - 1'
+          new = 'DropdownOuter.AbsolutePosition.Y + DropdownOuter.Size.Y.Offset - 3'
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one dropdown seam token, got {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Library.lua
+          git commit -m 'Connect dropdown menu surface' || exit 0
+          git push origin HEAD:agent/ui-motion-fonts-2
