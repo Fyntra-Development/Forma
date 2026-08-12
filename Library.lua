@@ -3584,15 +3584,6 @@ function Library:CreateWindow(...)
         Parent = Outer;
     });
 
-    local WindowGlowFrame = Library:Create('Frame', {
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Position = UDim2.fromOffset(-1, -1);
-        Size = UDim2.new(1, 2, 1, 2);
-        ZIndex = 0;
-        Parent = Outer;
-    });
-
     local WindowGlowLayers = {
         { Thickness = 0.8, Transparency = 0.10 },
         { Thickness = 1.3, Transparency = 0.32 },
