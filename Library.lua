@@ -13,15 +13,36 @@ local Mouse = LocalPlayer:GetMouse();
 local RepoFontBaseUrl = "https://raw.githubusercontent.com/Fyntra-Development/Forma/main/";
 
 local Fonts = {
-    Rubik = {
-        Ttf = "Rubik.ttf",
-        RepoPath = "fonts/Rubik.ttf",
-        Url = RepoFontBaseUrl .. "fonts/Rubik.ttf",
+    ["Rubik Light"] = {
+        Ttf = "Rubik-Light.ttf",
+        RepoPath = "fonts/Rubik-Light.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Rubik-Light.ttf",
+        FaceName = "Light",
+        Weight = Enum.FontWeight.Light,
+        WeightValue = 300,
+    },
+    Miracode = {
+        Ttf = "Miracode.ttf",
+        RepoPath = "fonts/Miracode.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Miracode.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+    },
+    Monocraft = {
+        Ttf = "Monocraft.ttf",
+        RepoPath = "fonts/Monocraft.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Monocraft.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
     },
 };
 
 local FontOrder = {
-    "Rubik",
+    "Rubik Light",
+    "Miracode",
+    "Monocraft",
 };
 
 
@@ -197,8 +218,8 @@ function Library:LoadFont(Name)
             name = Name;
             faces = {
                 {
-                    name = 'Regular';
-                    weight = 400;
+                    name = Info.FaceName or 'Regular';
+                    weight = Info.WeightValue or 400;
                     style = 'normal';
                     assetId = TtfAsset;
                 };
@@ -211,7 +232,7 @@ function Library:LoadFont(Name)
         local FamilyAsset = GetCustomAsset(FamilyPath);
 
         pcall(function()
-            Face = Font.new(FamilyAsset);
+            Face = Font.new(FamilyAsset, Info.Weight or Enum.FontWeight.Regular, Enum.FontStyle.Normal);
         end);
 
         if not Face then
@@ -237,7 +258,7 @@ function Library:SetFont(Name)
     return Library:LoadFont(Name);
 end;
 
-Library:LoadFont('Rubik');
+Library:LoadFont('Rubik Light');
 
 function Library:TweenProperty(Instance, Property, Value, Duration)
     if not Instance then
