@@ -79,6 +79,14 @@ local ThemeManager = {} do
 		groupbox:AddLabel('Outline color'):AddColorPicker('OutlineColor', { Default = self.Library.OutlineColor });
 		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor });
 
+
+		local FontNames = self.Library:GetFontNames()
+		local DefaultFontIndex = table.find(FontNames, self.Library.FontName) or 1
+		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex })
+		Options.ThemeManager_Font:OnChanged(function()
+			self.Library:SetFont(Options.ThemeManager_Font.Value)
+		end)
+
 		local ThemesArray = {}
 		for Name, Theme in next, self.BuiltInThemes do
 			table.insert(ThemesArray, Name)

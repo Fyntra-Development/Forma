@@ -5,9 +5,37 @@ local Teams = game:GetService('Teams');
 local Players = game:GetService('Players');
 local RunService = game:GetService('RunService')
 local TweenService = game:GetService('TweenService');
+local HttpService = game:GetService('HttpService');
 local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
+
+local Fonts = {
+    ProggyTiny = {
+        Ttf = "ProggyTiny.ttf",
+        Url = "https://github.com/ocornut/imgui/raw/master/misc/fonts/ProggyTiny.ttf",
+    },
+    ProggyClean = {
+        Ttf = "ProggyClean.ttf",
+        Url = "https://github.com/ocornut/imgui/raw/master/misc/fonts/ProggyClean.ttf",
+    },
+    ["XP Tahoma"] = {
+        Ttf = "XP Tahoma.ttf",
+        Url = "https://github.com/sametexe001/luas/raw/refs/heads/main/fonts/TAHOMA-8PT-BOLD-WINDOWS-XP.TTF",
+    },
+    ["Smallest Pixel"] = {
+        Ttf = "smallest_pixel-7.ttf",
+        Url = "https://raw.githubusercontent.com/sametexe001/luas/main/smallest_pixel-7.ttf",
+    },
+};
+
+local FontOrder = {
+    "ProggyClean",
+    "ProggyTiny",
+    "XP Tahoma",
+    "Smallest Pixel",
+};
+
 
 local ProtectGui = protectgui or (syn and syn.protect_gui) or (function() end);
 
@@ -38,6 +66,7 @@ local Library = {
 
     Black = Color3.new(0, 0, 0);
     Font = Enum.Font.Code,
+    FontName = 'Code',
 
     OpenedFrames = {};
     DependencyBoxes = {};
@@ -88,6 +117,160 @@ local function GetTeamsString()
     table.sort(TeamList, function(str1, str2) return str1 < str2 end);
     
     return TeamList;
+end;
+
+
+Library.Fonts = Fonts;
+Library.FontOrder = FontOrder;
+Library.PropertyTweens = setmetatable({}, { __mode = 'k' });
+
+function Library:GetFontNames()
+    local Result = {};
+
+    for _, Name in ipairs(Library.FontOrder) do
+        table.insert(Result, Name);
+    end;
+
+    return Result;
+end;
+
+function Library:ApplyFont(Instance)
+    if not Instance then
+        return;
+    end;
+
+    if typeof(Library.Font) == 'Font' then
+        pcall(function()
+            Instance.FontFace = Library.Font;
+        end);
+    else
+        pcall(function()
+            Instance.Font = Library.Font;
+        end);
+    end;
+end;
+
+function Library:UpdateFont()
+    for _, Descendant in ipairs(ScreenGui:GetDescendants()) do
+        if Descendant:IsA('TextLabel') or Descendant:IsA('TextBox') or Descendant:IsA('TextButton') then
+            Library:ApplyFont(Descendant);
+        end;
+    end;
+end;
+
+function Library:LoadFont(Name)
+    local Info = Fonts[Name];
+    local GetCustomAsset = getcustomasset or getsynasset;
+
+    if not Info or not GetCustomAsset or not writefile or not isfile then
+        return false;
+    end;
+
+    local Success, LoadedFont = pcall(function()
+        if makefolder then
+            if not isfolder or not isfolder('FormaAssets') then
+                pcall(makefolder, 'FormaAssets');
+            end;
+
+            if not isfolder or not isfolder('FormaAssets/Fonts') then
+                pcall(makefolder, 'FormaAssets/Fonts');
+            end;
+        end;
+
+        local TtfPath = 'FormaAssets/Fonts/' .. Info.Ttf;
+
+        if not isfile(TtfPath) then
+            writefile(TtfPath, game:HttpGet(Info.Url));
+        end;
+
+        local TtfAsset = GetCustomAsset(TtfPath);
+        local FamilyPath = TtfPath:gsub('%.ttf$', '.font');
+        local FamilyData = {
+            name = Name;
+            faces = {
+                {
+                    name = 'Regular';
+                    weight = 400;
+                    style = 'normal';
+                    assetId = TtfAsset;
+                };
+            };
+        };
+
+        writefile(FamilyPath, HttpService:JSONEncode(FamilyData));
+
+        local Face;
+        local FamilyAsset = GetCustomAsset(FamilyPath);
+
+        pcall(function()
+            Face = Font.new(FamilyAsset);
+        end);
+
+        if not Face then
+            pcall(function()
+                Face = Font.new(TtfAsset);
+            end);
+        end;
+
+        return Face;
+    end);
+
+    if not Success or not LoadedFont then
+        return false;
+    end;
+
+    Library.Font = LoadedFont;
+    Library.FontName = Name;
+    Library:UpdateFont();
+    return true;
+end;
+
+function Library:SetFont(Name)
+    return Library:LoadFont(Name);
+end;
+
+function Library:TweenProperty(Instance, Property, Value, Duration)
+    if not Instance then
+        return;
+    end;
+
+    local InstanceTweens = Library.PropertyTweens[Instance];
+
+    if not InstanceTweens then
+        InstanceTweens = {};
+        Library.PropertyTweens[Instance] = InstanceTweens;
+    end;
+
+    local Previous = InstanceTweens[Property];
+
+    if Previous then
+        pcall(function()
+            Previous:Cancel();
+        end);
+    end;
+
+    local Tween;
+    local Success = pcall(function()
+        Tween = TweenService:Create(
+            Instance,
+            TweenInfo.new(Duration or 0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+            { [Property] = Value }
+        );
+    end);
+
+    if not Success or not Tween then
+        Instance[Property] = Value;
+        return;
+    end;
+
+    InstanceTweens[Property] = Tween;
+    Tween:Play();
+
+    Tween.Completed:Connect(function()
+        if InstanceTweens[Property] == Tween then
+            InstanceTweens[Property] = nil;
+        end;
+    end);
 end;
 
 function Library:SafeCallback(f, ...)
@@ -146,12 +329,12 @@ end;
 function Library:CreateLabel(Properties, IsHud)
     local _Instance = Library:Create('TextLabel', {
         BackgroundTransparency = 1;
-        Font = Library.Font;
         TextColor3 = Library.FontColor;
         TextSize = 16;
         TextStrokeTransparency = 0;
     });
 
+    Library:ApplyFont(_Instance);
     Library:ApplyTextStroke(_Instance);
 
     Library:AddToRegistry(_Instance, {
@@ -524,29 +707,31 @@ function Library:AddToolTip(Info, HoverInstance)
 end
 
 function Library:OnHighlight(HighlightInstance, Instance, Properties, PropertiesDefault)
-    HighlightInstance.MouseEnter:Connect(function()
+    local function Apply(PropertiesToApply)
         local Reg = Library.RegistryMap[Instance];
 
-        for Property, ColorIdx in next, Properties do
-            Instance[Property] = Library[ColorIdx] or ColorIdx;
+        for Property, ColorIdx in next, PropertiesToApply do
+            local Value = Library[ColorIdx] or ColorIdx;
+
+            if typeof(Value) == 'Color3' then
+                Library:TweenProperty(Instance, Property, Value, 0.17);
+            else
+                Instance[Property] = Value;
+            end;
 
             if Reg and Reg.Properties[Property] then
                 Reg.Properties[Property] = ColorIdx;
             end;
         end;
-    end)
+    end;
+
+    HighlightInstance.MouseEnter:Connect(function()
+        Apply(Properties);
+    end);
 
     HighlightInstance.MouseLeave:Connect(function()
-        local Reg = Library.RegistryMap[Instance];
-
-        for Property, ColorIdx in next, PropertiesDefault do
-            Instance[Property] = Library[ColorIdx] or ColorIdx;
-
-            if Reg and Reg.Properties[Property] then
-                Reg.Properties[Property] = ColorIdx;
-            end;
-        end;
-    end)
+        Apply(PropertiesDefault);
+    end);
 end;
 
 function Library:MouseIsOverOpenedFrame()
@@ -581,9 +766,31 @@ function Library:MapValue(Value, MinA, MaxA, MinB, MaxB)
     return (1 - ((Value - MinA) / (MaxA - MinA))) * MinB + ((Value - MinA) / (MaxA - MinA)) * MaxB;
 end;
 
-function Library:GetTextBounds(Text, Font, Size, Resolution)
-    local Bounds = TextService:GetTextSize(Text, Size, Font, Resolution or Vector2.new(1920, 1080))
-    return Bounds.X, Bounds.Y
+function Library:GetTextBounds(Text, FontValue, Size, Resolution)
+    local MaxResolution = Resolution or Vector2.new(1920, 1080);
+
+    if typeof(FontValue) == 'Font' then
+        local Success, Bounds = pcall(function()
+            local Params = Instance.new('GetTextBoundsParams');
+            Params.Text = Text;
+            Params.Font = FontValue;
+            Params.Size = Size;
+            Params.Width = MaxResolution.X;
+
+            local Result = TextService:GetTextBoundsAsync(Params);
+            Params:Destroy();
+            return Result;
+        end);
+
+        if Success and Bounds then
+            return Bounds.X, Bounds.Y;
+        end;
+
+        FontValue = Enum.Font.Code;
+    end;
+
+    local Bounds = TextService:GetTextSize(Text, Size, FontValue, MaxResolution);
+    return Bounds.X, Bounds.Y;
 end;
 
 function Library:GetDarkerColor(Color)
@@ -844,7 +1051,6 @@ do
             BackgroundTransparency = 1;
             Position = UDim2.new(0, 5, 0, 0);
             Size = UDim2.new(1, -5, 1, 0);
-            Font = Library.Font;
             PlaceholderColor3 = Color3.fromRGB(190, 190, 190);
             PlaceholderText = 'Hex color',
             Text = '#FFFFFF',
@@ -855,6 +1061,8 @@ do
             ZIndex = 20,
             Parent = HueBoxInner;
         });
+
+        Library:ApplyFont(HueBox);
 
         Library:ApplyTextStroke(HueBox);
 
@@ -1962,7 +2170,6 @@ do
             Position = UDim2.fromOffset(0, 0),
             Size = UDim2.fromScale(5, 1),
 
-            Font = Library.Font;
             PlaceholderColor3 = Color3.fromRGB(190, 190, 190);
             PlaceholderText = Info.Placeholder or '';
 
@@ -1975,6 +2182,8 @@ do
             ZIndex = 7;
             Parent = Container;
         });
+
+        Library:ApplyFont(Box);
 
         Library:ApplyTextStroke(Box);
 
@@ -2137,11 +2346,14 @@ do
         end
 
         function Toggle:Display()
-            ToggleInner.BackgroundColor3 = Toggle.Value and Library.AccentColor or Library.MainColor;
-            ToggleInner.BorderColor3 = Toggle.Value and Library.AccentColorDark or Library.OutlineColor;
+            local BackgroundKey = Toggle.Value and 'AccentColor' or 'MainColor';
+            local BorderKey = Toggle.Value and 'AccentColorDark' or 'OutlineColor';
 
-            Library.RegistryMap[ToggleInner].Properties.BackgroundColor3 = Toggle.Value and 'AccentColor' or 'MainColor';
-            Library.RegistryMap[ToggleInner].Properties.BorderColor3 = Toggle.Value and 'AccentColorDark' or 'OutlineColor';
+            Library:TweenProperty(ToggleInner, 'BackgroundColor3', Library[BackgroundKey], 0.18);
+            Library:TweenProperty(ToggleInner, 'BorderColor3', Library[BorderKey], 0.18);
+
+            Library.RegistryMap[ToggleInner].Properties.BackgroundColor3 = BackgroundKey;
+            Library.RegistryMap[ToggleInner].Properties.BorderColor3 = BorderKey;
         end;
 
         function Toggle:OnChanged(Func)
@@ -2734,8 +2946,9 @@ do
                         Selected = Dropdown.Value == Value;
                     end;
 
-                    ButtonLabel.TextColor3 = Selected and Library.AccentColor or Library.FontColor;
-                    Library.RegistryMap[ButtonLabel].Properties.TextColor3 = Selected and 'AccentColor' or 'FontColor';
+                    local TextColorKey = Selected and 'AccentColor' or 'FontColor';
+                    Library:TweenProperty(ButtonLabel, 'TextColor3', Library[TextColorKey], 0.16);
+                    Library.RegistryMap[ButtonLabel].Properties.TextColor3 = TextColorKey;
                 end;
 
                 ButtonLabel.InputBegan:Connect(function(Input)
@@ -3362,30 +3575,34 @@ function Library:CreateWindow(...)
         BorderColor3 = 'AccentColor';
     });
 
+    local WindowGlowFrame = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(-1, -1);
+        Size = UDim2.new(1, 2, 1, 2);
+        ZIndex = 0;
+        Parent = Outer;
+    });
+
     local WindowGlowLayers = {
-        { Padding = 1, Thickness = 1.5, Transparency = 0.12 },
-        { Padding = 3, Thickness = 2.5, Transparency = 0.52 },
-        { Padding = 5, Thickness = 3.5, Transparency = 0.72 },
-        { Padding = 8, Thickness = 4.5, Transparency = 0.86 },
+        { Thickness = 0.8, Transparency = 0.10 },
+        { Thickness = 1.3, Transparency = 0.32 },
+        { Thickness = 1.8, Transparency = 0.48 },
+        { Thickness = 2.3, Transparency = 0.61 },
+        { Thickness = 2.8, Transparency = 0.72 },
+        { Thickness = 3.3, Transparency = 0.81 },
+        { Thickness = 3.8, Transparency = 0.88 },
+        { Thickness = 4.3, Transparency = 0.94 },
     };
 
     for _, GlowInfo in ipairs(WindowGlowLayers) do
-        local GlowFrame = Library:Create('Frame', {
-            BackgroundTransparency = 1;
-            BorderSizePixel = 0;
-            Position = UDim2.fromOffset(-GlowInfo.Padding, -GlowInfo.Padding);
-            Size = UDim2.new(1, GlowInfo.Padding * 2, 1, GlowInfo.Padding * 2);
-            ZIndex = 0;
-            Parent = Outer;
-        });
-
         local GlowStroke = Library:Create('UIStroke', {
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Color = Library.AccentColor;
             LineJoinMode = Enum.LineJoinMode.Miter;
             Thickness = GlowInfo.Thickness;
             Transparency = GlowInfo.Transparency;
-            Parent = GlowFrame;
+            Parent = WindowGlowFrame;
         });
 
         Library:AddToRegistry(GlowStroke, {
@@ -3945,7 +4162,7 @@ function Library:CreateWindow(...)
                             Image = GetCustomAsset(CursorAssetPath);
                             ImageColor3 = Library.AccentColor;
                             Position = UDim2.fromOffset(Mouse.X, Mouse.Y);
-                            Size = UDim2.fromOffset(20, 24);
+                            Size = UDim2.fromOffset(13, 16);
                             ZIndex = 1000;
                             Visible = true;
                             Parent = ScreenGui;
@@ -4042,6 +4259,8 @@ end;
 
 Players.PlayerAdded:Connect(OnPlayerChange);
 Players.PlayerRemoving:Connect(OnPlayerChange);
+
+Library:SetFont('ProggyClean');
 
 getgenv().Library = Library
 return Library
