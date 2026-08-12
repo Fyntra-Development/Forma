@@ -3796,15 +3796,15 @@ function Library:CreateWindow(...)
                 Tab:HideTab();
             end;
 
-            Blocker.BackgroundTransparency = 0;
-            TabButton.BackgroundColor3 = Library.MainColor;
+            Library:TweenProperty(Blocker, 'BackgroundTransparency', 0, 0.16);
+            Library:TweenProperty(TabButton, 'BackgroundColor3', Library.MainColor, 0.16);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'MainColor';
             TabFrame.Visible = true;
         end;
 
         function Tab:HideTab()
-            Blocker.BackgroundTransparency = 1;
-            TabButton.BackgroundColor3 = Library.BackgroundColor;
+            Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.16);
+            Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.16);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
             TabFrame.Visible = false;
         end;
@@ -4031,18 +4031,24 @@ function Library:CreateWindow(...)
                     Container.Visible = true;
                     Block.Visible = true;
 
-                    Button.BackgroundColor3 = Library.BackgroundColor;
+                    Library:TweenProperty(Button, 'BackgroundColor3', Library.BackgroundColor, 0.16);
+                    Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.16);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
 
                     Tab:Resize();
                 end;
 
                 function Tab:Hide()
-                    Container.Visible = false;
-                    Block.Visible = false;
-
-                    Button.BackgroundColor3 = Library.MainColor;
+                    Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.16);
+                    Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.14);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
+
+                    task.delay(0.14, function()
+                        if Button.BackgroundColor3 == Library.MainColor then
+                            Container.Visible = false;
+                            Block.Visible = false;
+                        end;
+                    end);
                 end;
 
                 function Tab:Resize()
