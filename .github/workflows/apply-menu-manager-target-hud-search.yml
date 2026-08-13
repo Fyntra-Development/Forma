@@ -1,0 +1,44 @@
+name: Apply MenuManager target HUD and searchable dropdown polish
+
+on:
+  push:
+    branches: [agent/menu-manager-target-hud-search]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/menu-manager-target-hud-search
+          fetch-depth: 0
+      - name: Patch runtime
+        run: python .github/scripts/menu_manager_target_hud_search.py
+      - name: Verify behavior tokens
+        shell: bash
+        run: |
+          grep -q "Searchable = Info.Searchable == true" Library.lua
+          grep -q "SearchFrame = SearchOuter" Library.lua
+          grep -q "function Library:CreateTargetHUD" Library.lua
+          grep -q "function Library:TweenMenuFadeTree" Library.lua
+          grep -q "Library.DraggableStates" Library.lua
+          grep -q "FormaMenuScale" Library.lua
+          grep -q "{ 5.45, 0.96 }" Library.lua
+          grep -q "VisibleAnchor = Vector2.new(0.08, 0.842)" addons/ThemeManager.lua
+          grep -q "Searchable = true" addons/ThemeManager.lua
+          test -f addons/MenuManager.lua
+          grep -q "function MenuManager:ResetMenuPositions" addons/MenuManager.lua
+          ! grep -q "local TransparencyCache = {}" Library.lua
+      - name: Commit runtime changes
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua addons/ThemeManager.lua addons/MenuManager.lua
+          if ! git diff --cached --quiet; then
+            git commit -m "Add MenuManager target HUD and searchable dropdown polish"
+            git push origin HEAD:agent/menu-manager-target-hud-search
+          fi
