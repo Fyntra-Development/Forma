@@ -191,6 +191,7 @@ function Library:RegisterRepoFont(Name, FileName)
 end;
 Library.PropertyTweens = setmetatable({}, { __mode = 'k' });
 Library.BaseTextSizes = setmetatable({}, { __mode = 'k' });
+Library.FadeBaselines = setmetatable({}, { __mode = 'k' });
 
 function Library:GetFontNames()
     local Result = {};
@@ -367,6 +368,114 @@ function Library:TweenProperty(Instance, Property, Value, Duration)
             InstanceTweens[Property] = nil;
         end;
     end);
+end;
+
+function Library:GetFadePropertyNames(Instance)
+    local Properties = {};
+
+    if Instance:IsA('GuiObject') then
+        table.insert(Properties, 'BackgroundTransparency');
+    end;
+
+    if Instance:IsA('TextLabel') or Instance:IsA('TextBox') or Instance:IsA('TextButton') then
+        table.insert(Properties, 'TextTransparency');
+        table.insert(Properties, 'TextStrokeTransparency');
+    end;
+
+    if Instance:IsA('ImageLabel') or Instance:IsA('ImageButton') then
+        table.insert(Properties, 'ImageTransparency');
+    end;
+
+    if Instance:IsA('ScrollingFrame') then
+        table.insert(Properties, 'ScrollBarImageTransparency');
+    end;
+
+    if Instance:IsA('UIStroke') then
+        table.insert(Properties, 'Transparency');
+    end;
+
+    return Properties;
+end;
+
+function Library:PrimeFadeTree(Root)
+    if not Root then
+        return;
+    end;
+
+    local Instances = { Root };
+    for _, Descendant in ipairs(Root:GetDescendants()) do
+        table.insert(Instances, Descendant);
+    end;
+
+    for _, Instance in ipairs(Instances) do
+        local Properties = Library:GetFadePropertyNames(Instance);
+        if #Properties > 0 then
+            local Cache = Library.FadeBaselines[Instance];
+            if not Cache then
+                Cache = {};
+                Library.FadeBaselines[Instance] = Cache;
+            end;
+
+            for _, Property in ipairs(Properties) do
+                if Cache[Property] == nil then
+                    local Success, Value = pcall(function()
+                        return Instance[Property];
+                    end);
+
+                    if Success then
+                        Cache[Property] = Value;
+                    end;
+                end;
+            end;
+        end;
+    end;
+end;
+
+function Library:SetFadeTree(Root, Hidden)
+    if not Root then
+        return;
+    end;
+
+    Library:PrimeFadeTree(Root);
+
+    local Instances = { Root };
+    for _, Descendant in ipairs(Root:GetDescendants()) do
+        table.insert(Instances, Descendant);
+    end;
+
+    for _, Instance in ipairs(Instances) do
+        local Cache = Library.FadeBaselines[Instance];
+        if Cache then
+            for Property, Baseline in next, Cache do
+                pcall(function()
+                    Instance[Property] = Hidden and 1 or Baseline;
+                end);
+            end;
+        end;
+    end;
+end;
+
+function Library:TweenFadeTree(Root, Hidden, Duration)
+    if not Root then
+        return;
+    end;
+
+    Library:PrimeFadeTree(Root);
+    Duration = Duration or 0.2;
+
+    local Instances = { Root };
+    for _, Descendant in ipairs(Root:GetDescendants()) do
+        table.insert(Instances, Descendant);
+    end;
+
+    for _, Instance in ipairs(Instances) do
+        local Cache = Library.FadeBaselines[Instance];
+        if Cache then
+            for Property, Baseline in next, Cache do
+                Library:TweenProperty(Instance, Property, Hidden and 1 or Baseline, Duration);
+            end;
+        end;
+    end;
 end;
 
 function Library:SafeCallback(f, ...)
@@ -1323,7 +1432,7 @@ do
             Parent = DisplayFrame;
         });
 
-        local PickerFrameOuter = Library:Create('CanvasGroup', {
+        local PickerFrameOuter = Library:Create('Frame', {
             Name = 'Color';
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
@@ -1767,18 +1876,17 @@ do
 
             local TargetPosition = GetPickerTargetPosition();
             if not PickerFrameOuter.Visible then
-                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 26);
-                PickerFrameOuter.GroupTransparency = 1;
+                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 28);
+                Library:SetFadeTree(PickerFrameOuter, true);
             end;
+
             PickerFrameOuter.Visible = true;
             Library.OpenedFrames[PickerFrameOuter] = true;
 
-            PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.30, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.34, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
                 Position = TargetPosition;
             });
-            PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                GroupTransparency = 0;
-            });
+            Library:TweenFadeTree(PickerFrameOuter, false, 0.26);
         end;
 
         function ColorPicker:Hide()
@@ -1793,9 +1901,9 @@ do
             Library.OpenedFrames[PickerFrameOuter] = nil;
 
             local TargetPosition = GetPickerTargetPosition();
-            local ExitTween = PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 10);
-                GroupTransparency = 1;
+            Library:TweenFadeTree(PickerFrameOuter, true, 0.20);
+            local ExitTween = PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 12);
             });
 
             ExitTween.Completed:Connect(function(State)
@@ -1805,7 +1913,7 @@ do
 
                 PickerFrameOuter.Visible = false;
                 PickerFrameOuter.Position = TargetPosition;
-                PickerFrameOuter.GroupTransparency = 1;
+                Library:SetFadeTree(PickerFrameOuter, false);
                 table.clear(PickerTweens);
             end);
         end;
@@ -3549,8 +3657,9 @@ do
         end;
 
         local function RecalculateListSize(YSize)
-            ListHeight = YSize or (MAX_DROPDOWN_ITEMS * 20 + 2);
-            ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, ListHeight);
+            local RequestedHeight = tonumber(YSize) or (MAX_DROPDOWN_ITEMS * 20 + 2);
+            ListHeight = math.clamp(RequestedHeight, 1, MAX_DROPDOWN_ITEMS * 20 + 2);
+            ListOuter.Size = UDim2.fromOffset(math.max(DropdownOuter.AbsoluteSize.X, 1), ListHeight);
         end;
 
         RecalculateListPosition();
@@ -3558,10 +3667,9 @@ do
 
         DropdownOuter:GetPropertyChangedSignal('AbsolutePosition'):Connect(RecalculateListPosition);
 
-        local ListInner = Library:Create('CanvasGroup', {
+        local ListInner = Library:Create('Frame', {
             BackgroundColor3 = Library.MainColor;
             BackgroundTransparency = 1;
-            GroupTransparency = 1;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
             BorderSizePixel = 0;
@@ -3905,18 +4013,16 @@ do
             RecalculateListPosition();
             RecalculateListSize(ListHeight);
 
-            ListOuter.Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 4);
-            ListInner.GroupTransparency = 1;
+            ListOuter.Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 6);
+            Library:SetFadeTree(ListOuter, true);
             ListOuter.Visible = true;
             Library.OpenedFrames[ListOuter] = true;
 
-            PlayDropdownTween(ListOuter, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            PlayDropdownTween(ListOuter, TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
                 Position = ListTargetPosition;
             });
-            PlayDropdownTween(ListInner, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                GroupTransparency = 0;
-            });
-            PlayDropdownTween(DropdownArrow, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Library:TweenFadeTree(ListOuter, false, 0.24);
+            PlayDropdownTween(DropdownArrow, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
                 Rotation = 180;
             });
 
@@ -3935,13 +4041,11 @@ do
             StopDropdownAutoScroll();
             Library.OpenedFrames[ListOuter] = nil;
 
-            local ExitTween = PlayDropdownTween(ListInner, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                GroupTransparency = 1;
+            Library:TweenFadeTree(ListOuter, true, 0.19);
+            local ExitTween = PlayDropdownTween(ListOuter, TweenInfo.new(0.21, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 4);
             });
-            PlayDropdownTween(ListOuter, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 3);
-            });
-            PlayDropdownTween(DropdownArrow, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            PlayDropdownTween(DropdownArrow, TweenInfo.new(0.20, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
                 Rotation = 0;
             });
 
@@ -3952,38 +4056,9 @@ do
 
                 ListOuter.Visible = false;
                 ListOuter.Position = ListTargetPosition;
+                Library:SetFadeTree(ListOuter, false);
                 table.clear(DropdownTweens);
             end);
-        end;
-
-        function Dropdown:OnChanged(Func)
-            Dropdown.Changed = Func;
-            Func(Dropdown.Value);
-        end;
-
-        function Dropdown:SetValue(Val)
-            if Dropdown.Multi then
-                local nTable = {};
-
-                for Value, Bool in next, Val do
-                    if table.find(Dropdown.Values, Value) then
-                        nTable[Value] = true
-                    end;
-                end;
-
-                Dropdown.Value = nTable;
-            else
-                if (not Val) then
-                    Dropdown.Value = nil;
-                elseif table.find(Dropdown.Values, Val) then
-                    Dropdown.Value = Val;
-                end;
-            end;
-
-            Dropdown:BuildDropdownList();
-
-            Library:SafeCallback(Dropdown.Callback, Dropdown.Value);
-            Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
         end;
 
         DropdownOuter.InputBegan:Connect(function(Input)
@@ -4061,10 +4136,9 @@ do
         local Groupbox = self;
         local Container = Groupbox.Container;
 
-        local Holder = Library:Create('CanvasGroup', {
+        local Holder = Library:Create('Frame', {
             BackgroundTransparency = 1;
             ClipsDescendants = true;
-            GroupTransparency = 1;
             Size = UDim2.new(1, 0, 0, 0);
             Visible = false;
             Parent = Container;
@@ -4109,52 +4183,53 @@ do
             DependencyVisible = Visible;
 
             if Visible then
-                if not Holder.Visible then
-                    Holder.Visible = true;
-                    Holder.Size = UDim2.new(1, 0, 0, 0);
-                    Holder.GroupTransparency = 1;
-                end;
+                Holder.Visible = true;
 
                 if Instant then
                     Holder.Size = UDim2.new(1, 0, 0, Height);
-                    Holder.GroupTransparency = 0;
+                    Library:SetFadeTree(Holder, false);
                     Groupbox:Resize();
                     return;
                 end;
 
-                DependencySizeTween = TweenService:Create(Holder, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = UDim2.new(1, 0, 0, Height) });
-                DependencyFadeTween = TweenService:Create(Holder, TweenInfo.new(0.17, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { GroupTransparency = 0 });
+                Library:SetFadeTree(Holder, true);
+                DependencySizeTween = TweenService:Create(Holder, TweenInfo.new(0.24, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                    Size = UDim2.new(1, 0, 0, Height)
+                });
+                Library:TweenFadeTree(Holder, false, 0.20);
                 DependencySizeTween:Play();
-                DependencyFadeTween:Play();
             else
                 if not Holder.Visible then
                     Holder.Size = UDim2.new(1, 0, 0, 0);
-                    Holder.GroupTransparency = 1;
+                    Library:SetFadeTree(Holder, false);
                     Groupbox:Resize();
                     return;
                 end;
 
                 if Instant then
                     Holder.Size = UDim2.new(1, 0, 0, 0);
-                    Holder.GroupTransparency = 1;
                     Holder.Visible = false;
+                    Library:SetFadeTree(Holder, false);
                     Groupbox:Resize();
                     return;
                 end;
 
-                DependencySizeTween = TweenService:Create(Holder, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut), { Size = UDim2.new(1, 0, 0, 0) });
-                DependencyFadeTween = TweenService:Create(Holder, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { GroupTransparency = 1 });
+                Library:TweenFadeTree(Holder, true, 0.16);
+                DependencySizeTween = TweenService:Create(Holder, TweenInfo.new(0.20, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut), {
+                    Size = UDim2.new(1, 0, 0, 0)
+                });
 
-                DependencySizeTween.Completed:Connect(function()
-                    if CurrentId ~= DependencyAnimationId or DependencyVisible then
+                DependencySizeTween.Completed:Connect(function(State)
+                    if CurrentId ~= DependencyAnimationId or DependencyVisible or State == Enum.PlaybackState.Cancelled then
                         return;
                     end;
+
                     Holder.Visible = false;
+                    Library:SetFadeTree(Holder, false);
                     Groupbox:Resize();
                 end);
 
                 DependencySizeTween:Play();
-                DependencyFadeTween:Play();
             end;
         end;
 
@@ -4758,19 +4833,12 @@ function Library:CreateWindow(...)
         end;
 
         local function SetTabVisualGroups(Target, Duration, Stagger)
-            for Index, Group in ipairs(Tab.VisualGroups) do
-                if Group and Group.Parent then
-                    if not Duration or Duration <= 0 then
-                        Group.GroupTransparency = Target;
-                    else
-                        local Delay = (Stagger or 0) * (Index - 1);
-                        task.delay(Delay, function()
-                            if Group and Group.Parent and (Target ~= 0 or Tab.Active) then
-                                Library:TweenProperty(Group, 'GroupTransparency', Target, Duration);
-                            end;
-                        end);
-                    end;
-                end;
+            local Hidden = Target >= 0.5;
+
+            if not Duration or Duration <= 0 then
+                Library:SetFadeTree(TabFrame, Hidden);
+            else
+                Library:TweenFadeTree(TabFrame, Hidden, Duration);
             end;
         end;
 
@@ -4838,11 +4906,10 @@ function Library:CreateWindow(...)
         function Tab:AddGroupbox(Info)
             local Groupbox = {};
 
-            local BoxOuter = Library:Create('CanvasGroup', {
+            local BoxOuter = Library:Create('Frame', {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Library.OutlineColor;
                 BorderMode = Enum.BorderMode.Inset;
-                GroupTransparency = Tab.Active and 0 or 1;
                 Size = UDim2.new(1, 0, 0, 507 + 2);
                 ZIndex = 2;
                 Parent = Info.Side == 1 and LeftSide or RightSide;
@@ -4944,11 +5011,10 @@ function Library:CreateWindow(...)
                 Tabs = {};
             };
 
-            local BoxOuter = Library:Create('CanvasGroup', {
+            local BoxOuter = Library:Create('Frame', {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Library.OutlineColor;
                 BorderMode = Enum.BorderMode.Inset;
-                GroupTransparency = Tab.Active and 0 or 1;
                 Size = UDim2.new(1, 0, 0, 0);
                 ZIndex = 2;
                 Parent = Info.Side == 1 and LeftSide or RightSide;
@@ -5054,10 +5120,9 @@ function Library:CreateWindow(...)
                 Tab.Active = false;
                 Tab.ContentAnimationId = 0;
 
-                local Container = Library:Create('CanvasGroup', {
+                local Container = Library:Create('Frame', {
                     BackgroundTransparency = 1;
-                    GroupTransparency = 1;
-                    Position = UDim2.new(0, 4, 0, 25);
+                            Position = UDim2.new(0, 4, 0, 25);
                     Size = UDim2.new(1, -4, 1, -20);
                     ZIndex = 1;
                     Visible = false;
@@ -5092,7 +5157,8 @@ function Library:CreateWindow(...)
                     Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.16);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
                     Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 20), 0.25);
-                    Library:TweenProperty(Container, 'GroupTransparency', 0, 0.2);
+                    Library:SetFadeTree(Container, true);
+                    Library:TweenFadeTree(Container, false, 0.22);
 
                     Tab:Resize();
                 end;
@@ -5105,14 +5171,13 @@ function Library:CreateWindow(...)
                     Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.16);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.14);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
-                    Library:TweenProperty(Container, 'GroupTransparency', 1, 0.14);
+                    Library:TweenFadeTree(Container, true, 0.16);
                     Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 17), 0.16);
 
                     task.delay(0.16, function()
                         if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                             Container.Visible = false;
                             Container.Position = UDim2.new(0, 4, 0, 25);
-                            Container.GroupTransparency = 1;
                             Block.Visible = false;
                         end;
                     end);
