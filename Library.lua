@@ -444,13 +444,13 @@ function Library:AddAccentGlow(Instance, Scale)
 
     Scale = tonumber(Scale) or 1;
     local Layers = {
-        { 0.72, 0.42 },
-        { 0.98, 0.54 },
-        { 1.24, 0.66 },
-        { 1.52, 0.76 },
-        { 1.82, 0.84 },
-        { 2.12, 0.90 },
-        { 2.42, 0.95 },
+        { 0.70, 0.42 },
+        { 0.92, 0.54 },
+        { 1.14, 0.66 },
+        { 1.38, 0.76 },
+        { 1.64, 0.84 },
+        { 1.90, 0.90 },
+        { 2.18, 0.95 },
     };
 
     for Index, Info in ipairs(Layers) do
@@ -1766,8 +1766,10 @@ do
             CancelPickerTweens();
 
             local TargetPosition = GetPickerTargetPosition();
-            PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 26);
-            PickerFrameOuter.GroupTransparency = 1;
+            if not PickerFrameOuter.Visible then
+                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 26);
+                PickerFrameOuter.GroupTransparency = 1;
+            end;
             PickerFrameOuter.Visible = true;
             Library.OpenedFrames[PickerFrameOuter] = true;
 
@@ -1978,13 +1980,18 @@ do
             Parent = PickInner;
         });
 
-        local function SetKeyDisplay(Key)
-            local Text = '<' .. tostring(Key) .. '>';
-            DisplayLabel.Text = Text;
-            local Width = select(1, Library:GetTextBounds(Text, Library.Font, 13));
+        local function ResizeKeyDisplay()
+            local Width = math.max(DisplayLabel.TextBounds.X, select(1, Library:GetTextBounds(DisplayLabel.Text, Library.Font, 13)));
             PickOuter.Size = UDim2.fromOffset(math.max(28, Width + 6), 15);
         end;
 
+        local function SetKeyDisplay(Key)
+            DisplayLabel.Text = '<' .. tostring(Key) .. '>';
+            ResizeKeyDisplay();
+            task.defer(ResizeKeyDisplay);
+        end;
+
+        DisplayLabel:GetPropertyChangedSignal('TextBounds'):Connect(ResizeKeyDisplay);
         SetKeyDisplay(Info.Default);
 
         local ModeSelectOuter = Library:Create('Frame', {
@@ -4758,7 +4765,7 @@ function Library:CreateWindow(...)
                     else
                         local Delay = (Stagger or 0) * (Index - 1);
                         task.delay(Delay, function()
-                            if Group and Group.Parent then
+                            if Group and Group.Parent and (Target ~= 0 or Tab.Active) then
                                 Library:TweenProperty(Group, 'GroupTransparency', Target, Duration);
                             end;
                         end);
