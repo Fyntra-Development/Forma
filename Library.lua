@@ -4549,6 +4549,16 @@ function Library:CreateWindow(...)
     });
     local MainTabIndicator = Library:CreateSlidingTabIndicator(TabIndicatorLayer, 21);
 
+    TabListLayout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(function()
+        if Window.ActiveTab and Window.ActiveTab.Button then
+            task.defer(function()
+                if Window.ActiveTab and Window.ActiveTab.Button then
+                    MainTabIndicator:Refresh(Window.ActiveTab.Button);
+                end;
+            end);
+        end;
+    end);
+
     local TabContainer = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
@@ -4629,6 +4639,7 @@ function Library:CreateWindow(...)
 
         Tab.Active = false;
         Tab.ContentAnimationId = 0;
+        Tab.Button = TabButton;
 
         local TabFrame = Library:Create('CanvasGroup', {
             Name = 'TabFrame',
@@ -5030,15 +5041,30 @@ function Library:CreateWindow(...)
                 function Tab:Resize()
                     local TabCount = 0;
 
-                    for _, Tab in next, Tabbox.Tabs do
-                        TabCount = TabCount + 1;
-                    end;
-
-                    for _, Button in next, TabboxButtons:GetChildren() do
-                        if not Button:IsA('UIListLayout') then
-                            Button.Size = UDim2.new(1 / TabCount, 0, 1, 0);
+                    for _, Child in next, TabboxButtons:GetChildren() do
+                        if not Child:IsA('UIListLayout') then
+                            TabCount = TabCount + 1;
                         end;
                     end;
+
+                    if TabCount <= 0 then
+                        return;
+                    end;
+
+                    for _, TabButtonObject in next, TabboxButtons:GetChildren() do
+                        if not TabButtonObject:IsA('UIListLayout') then
+                            TabButtonObject.Size = UDim2.new(1 / TabCount, 0, 1, 0);
+                        end;
+                    end;
+
+                    task.defer(function()
+                        for _, ExistingTab in next, Tabbox.Tabs do
+                            if ExistingTab.Active and ExistingTab.Button then
+                                TabboxIndicator:Refresh(ExistingTab.Button);
+                                break;
+                            end;
+                        end;
+                    end);
 
                     if (not Container.Visible) then
                         return;
@@ -5063,6 +5089,7 @@ function Library:CreateWindow(...)
                 end);
 
                 Tab.Container = Container;
+                Tab.Button = Button;
                 Tabbox.Tabs[Name] = Tab;
 
                 setmetatable(Tab, BaseGroupbox);
