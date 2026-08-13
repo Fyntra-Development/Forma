@@ -7,21 +7,25 @@ local ThemeManager = {} do
 	ThemeManager.Library = nil
 	ThemeManager.OverlayBaseUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/idfk/'
 	ThemeManager.OverlayOrder = { 'EDP445', 'Jane Doe', 'Ibuki' }
+	ThemeManager.OverlayVisualInset = Vector2.new(10, 2)
 	ThemeManager.OverlayAssets = {
 		['EDP445'] = {
 			File = 'edp445.png';
 			Size = UDim2.fromOffset(300, 303);
-			Position = UDim2.fromOffset(10, -160);
+			CanvasSize = Vector2.new(280, 283);
+			VisibleEdge = Vector2.new(20, 162);
 		};
 		['Jane Doe'] = {
 			File = 'janedoe.png';
 			Size = UDim2.fromOffset(300, 300);
-			Position = UDim2.fromOffset(0, -190);
+			CanvasSize = Vector2.new(280, 280);
+			VisibleEdge = Vector2.new(22, 192);
 		};
 		['Ibuki'] = {
 			File = 'ibuki.png';
 			Size = UDim2.fromOffset(300, 300);
-			Position = UDim2.fromOffset(0, -190);
+			CanvasSize = Vector2.new(280, 280);
+			VisibleEdge = Vector2.new(3, 193);
 		};
 	}
 	ThemeManager.OverlayEnabled = false
@@ -159,6 +163,7 @@ local ThemeManager = {} do
 			self.OverlayImage = self.Library:Create('ImageLabel', {
 				Name = 'FormaThemeOverlay';
 				Active = false;
+				AnchorPoint = Vector2.new(0, 0);
 				BackgroundTransparency = 1;
 				BorderSizePixel = 0;
 				Image = '';
@@ -212,6 +217,16 @@ local ThemeManager = {} do
 		end)
 	end
 
+	function ThemeManager:GetOverlayPosition(info)
+		local scaleX = info.Size.X.Offset / info.CanvasSize.X
+		local scaleY = info.Size.Y.Offset / info.CanvasSize.Y
+
+		return UDim2.fromOffset(
+			self.OverlayVisualInset.X - (info.VisibleEdge.X * scaleX),
+			self.OverlayVisualInset.Y - (info.VisibleEdge.Y * scaleY)
+		)
+	end
+
 	function ThemeManager:SetOverlayImage(name)
 		local info = self.OverlayAssets[name]
 		if not info then
@@ -226,7 +241,7 @@ local ThemeManager = {} do
 		end
 
 		overlay.Size = info.Size
-		overlay.Position = info.Position
+		overlay.Position = self:GetOverlayPosition(info)
 
 		if not self.OverlayEnabled then
 			overlay.Visible = false
