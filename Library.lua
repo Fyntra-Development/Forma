@@ -4782,6 +4782,14 @@ do
         Parent = InnerFrame;
     });
 
+    local WatermarkTextOutline = WatermarkLabel:FindFirstChildOfClass('UIStroke');
+    if WatermarkTextOutline then
+        WatermarkTextOutline.Color = Color3.new(0, 0, 0);
+        WatermarkTextOutline.Thickness = 1.2;
+        WatermarkTextOutline.Transparency = 0.06;
+        WatermarkTextOutline.LineJoinMode = Enum.LineJoinMode.Round;
+    end
+
     Library.Watermark = WatermarkOuter;
     Library.WatermarkText = WatermarkLabel;
     Library:MakeDraggable(Library.Watermark);
@@ -4872,14 +4880,27 @@ function Library:CreateTargetHUD(Config)
         Target = nil;
         StaticInfo = nil;
         InfoProvider = Config.InfoProvider or Config.GetInfo;
+        HealthProvider = Config.HealthProvider or Config.GetHealth;
+        MeterProvider = Config.MeterProvider or Config.GetMeter;
+        MeterText = Config.MeterText;
+        HealthTextFormatter = Config.HealthTextFormatter;
         AnimationId = 0;
+        Labels = {};
+        LabelOrder = {};
+        ProviderLabelIds = {};
+        HealthMax = 100;
+        HealthAvailable = false;
+        HealthTargetRatio = -1;
     };
+
+    local BaseSize = Config.Size or UDim2.fromOffset(270, 106);
+    local BaseHeight = math.max(BaseSize.Y.Offset, 106);
 
     local Outer = Library:Create('Frame', {
         BackgroundColor3 = Color3.new(0, 0, 0);
         BorderColor3 = Color3.new(0, 0, 0);
         Position = Config.Position or UDim2.new(0.5, 285, 0.5, 120);
-        Size = Config.Size or UDim2.fromOffset(270, 88);
+        Size = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset, BaseSize.Y.Scale, BaseHeight);
         Visible = false;
         ZIndex = 250;
         Parent = ScreenGui;
@@ -4907,8 +4928,8 @@ function Library:CreateTargetHUD(Config)
         BackgroundColor3 = Library.BackgroundColor;
         BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
-        Position = UDim2.fromOffset(8, 9);
-        Size = UDim2.fromOffset(68, 68);
+        Position = UDim2.fromOffset(8, 8);
+        Size = UDim2.fromOffset(62, 62);
         ZIndex = 252;
         Parent = Inner;
     });
@@ -4930,8 +4951,8 @@ function Library:CreateTargetHUD(Config)
     Library:AddCorner(Avatar, 3);
 
     local Username = Library:CreateLabel({
-        Position = UDim2.fromOffset(84, 8);
-        Size = UDim2.new(1, -92, 0, 18);
+        Position = UDim2.fromOffset(78, 8);
+        Size = UDim2.new(1, -86, 0, 18);
         Text = 'No target';
         TextColor3 = Library.AccentColor;
         TextSize = 15;
@@ -4941,78 +4962,293 @@ function Library:CreateTargetHUD(Config)
     });
     Library.RegistryMap[Username].Properties.TextColor3 = 'AccentColor';
 
-    local InfoLabel = Library:CreateLabel({
-        Position = UDim2.fromOffset(84, 27);
-        Size = UDim2.new(1, -92, 1, -34);
-        Text = 'Waiting for target';
-        TextSize = 13;
-        TextWrapped = true;
-        TextXAlignment = Enum.TextXAlignment.Left;
-        TextYAlignment = Enum.TextYAlignment.Top;
+    local LabelsContainer = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(78, 28);
+        Size = UDim2.new(1, -86, 0, 0);
         ZIndex = 253;
         Parent = Inner;
     });
 
-    local function FormatInfo(Value)
-        if type(Value) == 'string' then
-            return Value;
+    Library:Create('UIListLayout', {
+        Padding = UDim.new(0, 0);
+        FillDirection = Enum.FillDirection.Vertical;
+        SortOrder = Enum.SortOrder.LayoutOrder;
+        Parent = LabelsContainer;
+    });
+
+    local MeterLabel = Library:CreateLabel({
+        AnchorPoint = Vector2.new(0, 1);
+        Position = UDim2.new(0, 78, 1, -39);
+        Size = UDim2.new(1, -86, 0, 14);
+        Text = '';
+        TextSize = 13;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 254;
+        Parent = Inner;
+    });
+
+    local HealthOuter = Library:Create('Frame', {
+        AnchorPoint = Vector2.new(0, 1);
+        BackgroundColor3 = Library.BackgroundColor;
+        BorderColor3 = Library.OutlineColor;
+        BorderMode = Enum.BorderMode.Inset;
+        ClipsDescendants = true;
+        Position = UDim2.new(0, 8, 1, -8);
+        Size = UDim2.new(1, -16, 0, 14);
+        ZIndex = 254;
+        Parent = Inner;
+    });
+    Library:AddCorner(HealthOuter, 3);
+    Library:AddToRegistry(HealthOuter, {
+        BackgroundColor3 = 'BackgroundColor';
+        BorderColor3 = 'OutlineColor';
+    }, true);
+
+    local HealthInner = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        ClipsDescendants = true;
+        Position = UDim2.fromOffset(1, 1);
+        Size = UDim2.new(1, -2, 1, -2);
+        ZIndex = 255;
+        Parent = HealthOuter;
+    });
+    Library:AddCorner(HealthInner, 2);
+
+    local HealthFill = Library:Create('Frame', {
+        BackgroundColor3 = Color3.new(1, 1, 1);
+        BorderSizePixel = 0;
+        Size = UDim2.new(0, 0, 1, 0);
+        ZIndex = 255;
+        Parent = HealthInner;
+    });
+    Library:AddCorner(HealthFill, 2);
+
+    local HealthGradient = Library:Create('UIGradient', {
+        Rotation = 0;
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 40, 40)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 70, 70)),
+        });
+        Parent = HealthFill;
+    });
+
+    local HealthText = Library:CreateLabel({
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(2, 0);
+        Size = UDim2.new(1, -4, 1, 0);
+        Text = '-- HP';
+        TextSize = 12;
+        TextXAlignment = Enum.TextXAlignment.Center;
+        ZIndex = 256;
+        Parent = HealthOuter;
+    });
+
+    local HealthDriver = Instance.new('NumberValue');
+    HealthDriver.Name = 'FormaTargetHealthDriver';
+    HealthDriver.Value = 0;
+    HealthDriver.Parent = HealthOuter;
+    local HealthTween;
+
+    local function HealthColor(Ratio, Brightness)
+        local Hue = math.clamp(Ratio, 0, 1) * 0.33;
+        return Color3.fromHSV(Hue, 0.88, Brightness);
+    end
+
+    local function UpdateHealthVisual()
+        local Ratio = math.clamp(HealthDriver.Value, 0, 1);
+        HealthFill.Size = UDim2.new(Ratio, 0, 1, 0);
+        HealthGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, HealthColor(Ratio, 0.58)),
+            ColorSequenceKeypoint.new(1, HealthColor(Ratio, 1)),
+        });
+
+        if HUD.HealthAvailable then
+            local Current = math.max(0, math.floor((Ratio * HUD.HealthMax) + 0.5));
+            if type(HUD.HealthTextFormatter) == 'function' then
+                local Success, Result = pcall(HUD.HealthTextFormatter, Current, HUD.HealthMax, Ratio, HUD.Target, HUD);
+                HealthText.Text = Success and tostring(Result) or string.format('%d / %d HP', Current, HUD.HealthMax);
+            else
+                HealthText.Text = string.format('%d / %d HP', Current, HUD.HealthMax);
+            end
+        else
+            HealthText.Text = '-- HP';
         end
-        if type(Value) ~= 'table' then
-            return '';
+    end
+
+    HealthDriver:GetPropertyChangedSignal('Value'):Connect(UpdateHealthVisual);
+
+    local function CountVisibleLabels()
+        local Count = 0;
+        for _, Id in ipairs(HUD.LabelOrder) do
+            local Handle = HUD.Labels[Id];
+            if Handle and Handle.Label and Handle.Label.Parent and Handle.Visible ~= false then
+                Count = Count + 1;
+            end
+        end
+        return Count;
+    end
+
+    local function UpdateLayout()
+        local Count = CountVisibleLabels();
+        local Height = math.max(BaseHeight, 72 + (Count * 14));
+        Outer.Size = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset, BaseSize.Y.Scale, Height);
+        LabelsContainer.Size = UDim2.new(1, -86, 0, Count * 14);
+    end
+
+    local function RenderLabelHandle(Handle)
+        if not Handle or not Handle.Label then return; end
+        local Value = Handle.Value;
+        if type(Value) == 'function' then
+            local Success, Result = pcall(Value, HUD.Target, HUD, Handle);
+            Value = Success and Result or '';
         end
 
-        local Lines = {};
-        if #Value > 0 then
-            for _, Entry in ipairs(Value) do
+        if Value == nil or tostring(Value) == '' then
+            Handle.Label.Text = tostring(Handle.Name or '');
+        elseif Handle.Name and tostring(Handle.Name) ~= '' then
+            Handle.Label.Text = tostring(Handle.Name) .. ': ' .. tostring(Value);
+        else
+            Handle.Label.Text = tostring(Value);
+        end
+        Handle.Label.Visible = Handle.Visible ~= false;
+    end
+
+    local function CreateLabelHandle(Id, Name, Value, IsProvider)
+        Id = tostring(Id);
+        local Existing = HUD.Labels[Id];
+        if Existing then
+            Existing.Name = Name;
+            Existing.Value = Value;
+            Existing.IsProvider = IsProvider or false;
+            RenderLabelHandle(Existing);
+            return Existing;
+        end
+
+        local Label = Library:CreateLabel({
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Size = UDim2.new(1, 0, 0, 14);
+            Text = '';
+            TextSize = 12;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            ZIndex = 254;
+            Parent = LabelsContainer;
+        });
+
+        local Handle = {
+            Id = Id;
+            Name = Name;
+            Value = Value;
+            Label = Label;
+            Visible = true;
+            IsProvider = IsProvider or false;
+        };
+
+        function Handle:SetText(Text)
+            Handle.Name = '';
+            Handle.Value = Text;
+            RenderLabelHandle(Handle);
+        end
+
+        function Handle:SetValue(NewValue)
+            Handle.Value = NewValue;
+            RenderLabelHandle(Handle);
+        end
+
+        function Handle:SetVisible(Visible)
+            Handle.Visible = not not Visible;
+            RenderLabelHandle(Handle);
+            UpdateLayout();
+        end
+
+        function Handle:Destroy()
+            HUD:RemoveLabel(Id);
+        end
+
+        HUD.Labels[Id] = Handle;
+        table.insert(HUD.LabelOrder, Id);
+        RenderLabelHandle(Handle);
+        UpdateLayout();
+        return Handle;
+    end
+
+    function HUD:AddLabel(Name, Value, Id)
+        Id = Id or tostring(Name or ('Label' .. tostring(#HUD.LabelOrder + 1)));
+        return CreateLabelHandle(Id, Name, Value, false);
+    end
+
+    function HUD:SetLabel(Name, Value)
+        return HUD:AddLabel(Name, Value, tostring(Name));
+    end
+
+    function HUD:RemoveLabel(Id)
+        Id = tostring(Id);
+        local Handle = HUD.Labels[Id];
+        if not Handle then return; end
+        if Handle.Label then Handle.Label:Destroy(); end
+        HUD.Labels[Id] = nil;
+        local Index = table.find(HUD.LabelOrder, Id);
+        if Index then table.remove(HUD.LabelOrder, Index); end
+        local ProviderIndex = table.find(HUD.ProviderLabelIds, Id);
+        if ProviderIndex then table.remove(HUD.ProviderLabelIds, ProviderIndex); end
+        UpdateLayout();
+    end
+
+    function HUD:ClearLabels(IncludeProvider)
+        local Remove = {};
+        for Id, Handle in next, HUD.Labels do
+            if IncludeProvider or not Handle.IsProvider then
+                table.insert(Remove, Id);
+            end
+        end
+        for _, Id in ipairs(Remove) do HUD:RemoveLabel(Id); end
+    end
+
+    local function ClearProviderLabels()
+        local Ids = table.clone(HUD.ProviderLabelIds);
+        for _, Id in ipairs(Ids) do HUD:RemoveLabel(Id); end
+        table.clear(HUD.ProviderLabelIds);
+    end
+
+    local function ApplyProviderInfo(Info)
+        ClearProviderLabels();
+        if Info == nil then return; end
+
+        local function AddProvider(Name, Value)
+            local Id = '__provider_' .. tostring(#HUD.ProviderLabelIds + 1);
+            table.insert(HUD.ProviderLabelIds, Id);
+            CreateLabelHandle(Id, Name or '', Value, true);
+        end
+
+        if type(Info) == 'string' or type(Info) == 'number' then
+            AddProvider '', Info);
+            return;
+        end
+        if type(Info) ~= 'table' then return; end
+
+        if #Info > 0 then
+            for _, Entry in ipairs(Info) do
                 if type(Entry) == 'table' then
-                    local Key = Entry[1] or Entry.Name or Entry.Label;
-                    local Val = Entry[2] or Entry.Value;
-                    table.insert(Lines, Key and (tostring(Key) .. ': ' .. tostring(Val or '')) or tostring(Val or ''));
+                    AddProvider(Entry[1] or Entry.Name or Entry.Label or '', Entry[2] or Entry.Value or '');
                 else
-                    table.insert(Lines, tostring(Entry));
+                    AddProvider('', Entry);
                 end
             end
         else
-            for Key, Val in next, Value do
-                table.insert(Lines, tostring(Key) .. ': ' .. tostring(Val));
-            end
-            table.sort(Lines);
+            local Keys = {};
+            for Key in next, Info do table.insert(Keys, Key); end
+            table.sort(Keys, function(A, B) return tostring(A) < tostring(B); end);
+            for _, Key in ipairs(Keys) do AddProvider(Key, Info[Key]); end
         end
-        return table.concat(Lines, '\n');
-    end
-
-    function HUD:GetDefaultInfo(Target)
-        if typeof(Target) == 'Instance' and Target:IsA('Player') then
-            local Lines = {};
-            if Target.DisplayName and Target.DisplayName ~= Target.Name then
-                table.insert(Lines, 'Display: ' .. Target.DisplayName);
-            end
-
-            local Character = Target.Character;
-            local Humanoid = Character and Character:FindFirstChildOfClass('Humanoid');
-            if Humanoid then
-                table.insert(Lines, string.format('Health: %d/%d', math.floor(Humanoid.Health + 0.5), math.floor(Humanoid.MaxHealth + 0.5)));
-            end
-
-            local Root = Character and Character:FindFirstChild('HumanoidRootPart');
-            local LocalCharacter = LocalPlayer.Character;
-            local LocalRoot = LocalCharacter and LocalCharacter:FindFirstChild('HumanoidRootPart');
-            if Root and LocalRoot then
-                table.insert(Lines, string.format('Distance: %d studs', math.floor((Root.Position - LocalRoot.Position).Magnitude + 0.5)));
-            end
-
-            return Lines;
-        end
-
-        if type(Target) == 'table' then
-            return Target.Info or Target.Details or {};
-        end
-        return {};
     end
 
     function HUD:SetInfo(Info)
         HUD.StaticInfo = Info;
-        InfoLabel.Text = FormatInfo(Info);
+        ApplyProviderInfo(Info);
     end
 
     function HUD:SetInfoProvider(Provider)
@@ -5020,11 +5256,116 @@ function Library:CreateTargetHUD(Config)
         HUD:Refresh();
     end
 
+    function HUD:SetMeter(Text)
+        HUD.MeterText = Text;
+        HUD:Refresh();
+    end
+
+    function HUD:SetMeterProvider(Provider)
+        HUD.MeterProvider = type(Provider) == 'function' and Provider or nil;
+        HUD:Refresh();
+    end
+
+    function HUD:SetHealthProvider(Provider)
+        HUD.HealthProvider = type(Provider) == 'function' and Provider or nil;
+        HUD:Refresh();
+    end
+
+    function HUD:SetHealth(Current, Maximum, Instant)
+        Current = tonumber(Current);
+        Maximum = tonumber(Maximum);
+
+        if not Current or not Maximum or Maximum <= 0 then
+            HUD.HealthAvailable = false;
+            HUD.HealthMax = 100;
+            HUD.HealthTargetRatio = 0;
+            if HealthTween then pcall(function() HealthTween:Cancel(); end); HealthTween = nil; end
+            HealthDriver.Value = 0;
+            UpdateHealthVisual();
+            return;
+        end
+
+        HUD.HealthAvailable = true;
+        HUD.HealthMax = math.max(1, Maximum);
+        local Ratio = math.clamp(Current / HUD.HealthMax, 0, 1);
+        if not Instant and math.abs(Ratio - HUD.HealthTargetRatio) <= 0.0001 then return; end
+        HUD.HealthTargetRatio = Ratio;
+
+        if HealthTween then pcall(function() HealthTween:Cancel(); end); HealthTween = nil; end
+        if Instant then
+            HealthDriver.Value = Ratio;
+            UpdateHealthVisual();
+            return;
+        end
+
+        HealthTween = TweenService:Create(
+            HealthDriver,
+            TweenInfo.new(tonumber(Config.HealthTweenTime) or 0.38, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+            { Value = Ratio }
+        );
+        HealthTween:Play();
+    end
+
+    local function ResolveHealth(Target)
+        if HUD.HealthProvider then
+            local Success, Current, Maximum = pcall(HUD.HealthProvider, Target, HUD);
+            if Success then return Current, Maximum; end
+        end
+
+        if typeof(Target) == 'Instance' and Target:IsA('Player') then
+            local Character = Target.Character;
+            local Humanoid = Character and Character:FindFirstChildOfClass('Humanoid');
+            if Humanoid then return Humanoid.Health, Humanoid.MaxHealth; end
+        elseif type(Target) == 'table' then
+            local Current = Target.Health or Target.CurrentHealth;
+            local Maximum = Target.MaxHealth or Target.MaximumHealth;
+            if Current ~= nil and Maximum ~= nil then return Current, Maximum; end
+        end
+        return nil, nil;
+    end
+
+    local function ResolveMeter(Target)
+        if HUD.MeterText ~= nil then return tostring(HUD.MeterText); end
+        if HUD.MeterProvider then
+            local Success, Result = pcall(HUD.MeterProvider, Target, HUD);
+            if Success and Result ~= nil then return tostring(Result); end
+        end
+
+        if typeof(Target) == 'Instance' and Target:IsA('Player') then
+            local Character = Target.Character;
+            local Root = Character and Character:FindFirstChild('HumanoidRootPart');
+            local LocalCharacter = LocalPlayer.Character;
+            local LocalRoot = LocalCharacter and LocalCharacter:FindFirstChild('HumanoidRootPart');
+            if Root and LocalRoot then
+                return string.format('%d studs', math.floor((Root.Position - LocalRoot.Position).Magnitude + 0.5));
+            end
+        elseif type(Target) == 'table' then
+            local Value = Target.MeterText or Target.Meter or Target.Distance;
+            if Value ~= nil then return tostring(Value); end
+        end
+        return '';
+    end
+
     function HUD:Refresh()
         local Target = HUD.Target;
+
         if not Target then
             Username.Text = 'No target';
-            InfoLabel.Text = HUD.StaticInfo and FormatInfo(HUD.StaticInfo) or 'Waiting for target';
+            MeterLabel.Text = HUD.MeterText and tostring(HUD.MeterText) or '';
+            HUD:SetHealth(nil, nil, true);
+            if HUD.InfoProvider then
+                local Success, Result = pcall(HUD.InfoProvider, Target, HUD);
+                ApplyProviderInfo(Success and Result or HUD.StaticInfo);
+            elseif HUD.StaticInfo ~= nil then
+                ApplyProviderInfo(HUD.StaticInfo);
+            else
+                ClearProviderLabels();
+            end
+            for _, Id in ipairs(HUD.LabelOrder) do
+                local Handle = HUD.Labels[Id];
+                if Handle and not Handle.IsProvider then RenderLabelHandle(Handle); end
+            end
+            UpdateLayout();
             return;
         end
 
@@ -5036,13 +5377,24 @@ function Library:CreateTargetHUD(Config)
             Username.Text = tostring(Target);
         end
 
-        local Info = HUD.StaticInfo;
+        MeterLabel.Text = ResolveMeter(Target);
+        local Current, Maximum = ResolveHealth(Target);
+        HUD:SetHealth(Current, Maximum, false);
+
         if HUD.InfoProvider then
             local Success, Result = pcall(HUD.InfoProvider, Target, HUD);
-            if Success and Result ~= nil then Info = Result; end
+            ApplyProviderInfo(Success and Result or HUD.StaticInfo);
+        elseif HUD.StaticInfo ~= nil then
+            ApplyProviderInfo(HUD.StaticInfo);
+        else
+            ClearProviderLabels();
         end
-        if Info == nil then Info = HUD:GetDefaultInfo(Target); end
-        InfoLabel.Text = FormatInfo(Info);
+
+        for _, Id in ipairs(HUD.LabelOrder) do
+            local Handle = HUD.Labels[Id];
+            if Handle and not Handle.IsProvider then RenderLabelHandle(Handle); end
+        end
+        UpdateLayout();
     end
 
     function HUD:SetTarget(Target, Info)
@@ -5084,16 +5436,14 @@ function Library:CreateTargetHUD(Config)
 
         if Visible then
             if not Outer.Visible then
-                Library:SetFadeTree(Outer, true);
+                Library:SetUnifiedFadeProgress(Outer, 0);
                 Outer.Visible = true;
             end
-            Library:TweenMenuFadeTree(Outer, false, Duration);
+            Library:TweenUnifiedFade(Outer, 1, Duration);
         elseif Outer.Visible then
-            Library:TweenMenuFadeTree(Outer, true, Duration);
-            task.delay(Duration, function()
-                if CurrentId == HUD.AnimationId and not Visible and Outer.Parent then
+            Library:TweenUnifiedFade(Outer, 0, Duration, function(State)
+                if CurrentId == HUD.AnimationId and not Visible and State ~= Enum.PlaybackState.Cancelled and Outer.Parent then
                     Outer.Visible = false;
-                    Library:SetFadeTree(Outer, false);
                 end
             end);
         end
@@ -5101,6 +5451,7 @@ function Library:CreateTargetHUD(Config)
 
     function HUD:Destroy()
         HUD.AnimationId = HUD.AnimationId + 1;
+        if HealthTween then pcall(function() HealthTween:Cancel(); end); HealthTween = nil; end
         if Outer then Outer:Destroy(); end
         if Library.TargetHUD == HUD then
             Library.TargetHUD = nil;
@@ -5123,15 +5474,41 @@ function Library:CreateTargetHUD(Config)
     HUD.Inner = Inner;
     HUD.Avatar = Avatar;
     HUD.UsernameLabel = Username;
-    HUD.InfoLabel = InfoLabel;
+    HUD.MeterLabel = MeterLabel;
+    HUD.LabelsContainer = LabelsContainer;
+    HUD.HealthBar = HealthOuter;
+    HUD.HealthFill = HealthFill;
+    HUD.HealthGradient = HealthGradient;
+    HUD.HealthText = HealthText;
+    HUD.InfoLabel = nil;
     Library.TargetHUD = HUD;
     Library.TargetHUDFrame = Outer;
     Library:MakeDraggable(Outer, 28);
 
+    if type(Config.Labels) == 'table' then
+        if #Config.Labels > 0 then
+            for _, Entry in ipairs(Config.Labels) do
+                if type(Entry) == 'table' then
+                    HUD:AddLabel(Entry[1] or Entry.Name or Entry.Label or '', Entry[2] or Entry.Value, Entry.Id);
+                else
+                    HUD:AddLabel('', Entry);
+                end
+            end
+        else
+            local Keys = {};
+            for Key in next, Config.Labels do table.insert(Keys, Key); end
+            table.sort(Keys, function(A, B) return tostring(A) < tostring(B); end);
+            for _, Key in ipairs(Keys) do HUD:AddLabel(Key, Config.Labels[Key]); end
+        end
+    end
+
+    UpdateHealthVisual();
+    UpdateLayout();
     if Config.Target then HUD:SetTarget(Config.Target, Config.Info); end
     if Config.Visible then HUD:SetVisible(true); end
     return HUD;
 end;
+
 
 function Library:Notify(Text, Time)
     local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14);
