@@ -1006,6 +1006,7 @@ function Library:AddToolTip(Info, HoverInstance)
     local AnimationId = 0
     local FollowConnection
     local ActiveTweens = {}
+    local Hide
 
     local function CancelTweens()
         for _, Tween in next, ActiveTweens do
@@ -1064,6 +1065,11 @@ function Library:AddToolTip(Info, HoverInstance)
     end
 
     local function Show()
+        if Library.ActiveTooltipHide and Library.ActiveTooltipHide ~= Hide then
+            Library.ActiveTooltipHide(true)
+        end
+        Library.ActiveTooltipHide = Hide
+
         AnimationId = AnimationId + 1
         local CurrentId = AnimationId
 
@@ -1138,8 +1144,26 @@ function Library:AddToolTip(Info, HoverInstance)
         end)
     end
 
-    local function Hide()
+    Hide = function(Instant)
         if not Tooltip.Visible then
+            if Library.ActiveTooltipHide == Hide then
+                Library.ActiveTooltipHide = nil
+            end
+            return
+        end
+
+        if Instant then
+            AnimationId = AnimationId + 1
+            CancelTweens()
+            IsHovering = false
+            Tooltip.Visible = false
+            if FollowConnection then
+                FollowConnection:Disconnect()
+                FollowConnection = nil
+            end
+            if Library.ActiveTooltipHide == Hide then
+                Library.ActiveTooltipHide = nil
+            end
             return
         end
 
@@ -1194,6 +1218,9 @@ function Library:AddToolTip(Info, HoverInstance)
             end
 
             Tooltip.Visible = false
+            if Library.ActiveTooltipHide == Hide then
+                Library.ActiveTooltipHide = nil
+            end
 
             if FollowConnection then
                 FollowConnection:Disconnect()
@@ -2059,21 +2086,25 @@ do
         end
 
         local PickOuter = Library:Create('Frame', {
-            BackgroundTransparency = 1;
-            BorderSizePixel = 0;
+            BackgroundColor3 = Color3.new(0, 0, 0);
+            BorderColor3 = Color3.new(0, 0, 0);
             Size = UDim2.new(0, 28, 0, 15);
             ZIndex = 6;
             Parent = ToggleLabel;
         });
 
         local PickInner = Library:Create('Frame', {
-            BackgroundTransparency = 1;
-            BorderSizePixel = 0;
+            BackgroundColor3 = Library.BackgroundColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
             Size = UDim2.new(1, 0, 1, 0);
             ZIndex = 7;
             Parent = PickOuter;
         });
 
+        Library:AddCorner(PickOuter, 3);
+        Library:AddCorner(PickInner, 3);
+        Library:AddToRegistry(PickOuter, { BorderColor3 = 'Black'; });
         Library:AddToRegistry(PickInner, {
             BackgroundColor3 = 'BackgroundColor';
             BorderColor3 = 'OutlineColor';
@@ -2082,7 +2113,7 @@ do
         local DisplayLabel = Library:CreateLabel({
             Size = UDim2.new(1, 0, 1, 0);
             TextSize = 13;
-            Text = '<' .. Info.Default .. '>';
+            Text = tostring(Info.Default);
             TextWrapped = false;
             ZIndex = 8;
             Parent = PickInner;
@@ -2090,11 +2121,11 @@ do
 
         local function ResizeKeyDisplay()
             local Width = math.max(DisplayLabel.TextBounds.X, select(1, Library:GetTextBounds(DisplayLabel.Text, Library.Font, 13)));
-            PickOuter.Size = UDim2.fromOffset(math.max(28, Width + 6), 15);
+            PickOuter.Size = UDim2.fromOffset(math.max(28, Width + 10), 15);
         end;
 
         local function SetKeyDisplay(Key)
-            DisplayLabel.Text = '<' .. tostring(Key) .. '>';
+            DisplayLabel.Text = tostring(Key);
             ResizeKeyDisplay();
             task.defer(ResizeKeyDisplay);
         end;
@@ -2279,7 +2310,7 @@ do
             if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
                 Picking = true;
 
-                DisplayLabel.Text = '<...>';
+                DisplayLabel.Text = '...';
 
                 local Break;
                 local Text = '';
@@ -3641,9 +3672,16 @@ do
             BorderColor3 = 'OutlineColor';
         });
 
-        local ListHeight = MAX_DROPDOWN_ITEMS * 20 + 2
+        local POPUP_GAP = 5
+        local SEARCH_HEIGHT = 20
+        local VALUES_TOP = POPUP_GAP + SEARCH_HEIGHT + POPUP_GAP
+        local POPUP_BOTTOM = 5
+        local ListRowsHeight = MAX_DROPDOWN_ITEMS * 20 + 1
+        local ListHeight = VALUES_TOP + ListRowsHeight + POPUP_BOTTOM
         local ListGap = 5
         local ListTargetPosition = UDim2.fromOffset(0, 0)
+        local Scrolling
+        local ScrollTrack
 
         local function RecalculateListPosition()
             ListTargetPosition = UDim2.fromOffset(
@@ -3657,9 +3695,20 @@ do
         end;
 
         local function RecalculateListSize(YSize)
-            local RequestedHeight = tonumber(YSize) or (MAX_DROPDOWN_ITEMS * 20 + 2);
-            ListHeight = math.clamp(RequestedHeight, 1, MAX_DROPDOWN_ITEMS * 20 + 2);
+            local RequestedHeight = tonumber(YSize) or (MAX_DROPDOWN_ITEMS * 20 + 1);
+            ListRowsHeight = math.clamp(RequestedHeight, 20, MAX_DROPDOWN_ITEMS * 20 + 1);
+            ListHeight = VALUES_TOP + ListRowsHeight + POPUP_BOTTOM;
             ListOuter.Size = UDim2.fromOffset(math.max(DropdownOuter.AbsoluteSize.X, 1), ListHeight);
+
+            if Scrolling then
+                Scrolling.Position = UDim2.fromOffset(POPUP_GAP, VALUES_TOP);
+                Scrolling.Size = UDim2.new(1, -(POPUP_GAP * 2), 0, ListRowsHeight);
+            end
+
+            if ScrollTrack then
+                ScrollTrack.Position = UDim2.new(1, -2, 0, VALUES_TOP + 4);
+                ScrollTrack.Size = UDim2.new(0, 3, 0, math.max(ListRowsHeight - 8, 1));
+            end
         end;
 
         RecalculateListPosition();
@@ -3690,11 +3739,58 @@ do
             DropdownGradient:Clone().Parent = ListOuter;
         end;
 
-        local Scrolling = Library:Create('ScrollingFrame', {
+        local SearchOuter = Library:Create('Frame', {
+            BackgroundColor3 = Color3.new(0, 0, 0);
+            BorderColor3 = Color3.new(0, 0, 0);
+            Position = UDim2.fromOffset(POPUP_GAP, POPUP_GAP);
+            Size = UDim2.new(1, -(POPUP_GAP * 2), 0, SEARCH_HEIGHT);
+            ZIndex = 23;
+            Parent = ListInner;
+        });
+
+        local SearchInner = Library:Create('Frame', {
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 24;
+            Parent = SearchOuter;
+        });
+
+        Library:AddCorner(SearchOuter, 3);
+        Library:AddCorner(SearchInner, 3);
+        Library:AddToRegistry(SearchOuter, { BorderColor3 = 'Black'; });
+        Library:AddToRegistry(SearchInner, {
+            BackgroundColor3 = 'MainColor';
+            BorderColor3 = 'OutlineColor';
+        });
+
+        local SearchBox = Library:Create('TextBox', {
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            ClearTextOnFocus = false;
+            PlaceholderColor3 = Color3.fromRGB(155, 155, 155);
+            PlaceholderText = 'Search...';
+            Position = UDim2.fromOffset(6, 0);
+            Size = UDim2.new(1, -12, 1, 0);
+            Text = '';
+            TextColor3 = Library.FontColor;
+            TextSize = 13;
+            TextStrokeTransparency = 0;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            ZIndex = 25;
+            Parent = SearchInner;
+        });
+        Library:ApplyFont(SearchBox);
+        Library:ApplyTextStroke(SearchBox);
+        Library:AddToRegistry(SearchBox, { TextColor3 = 'FontColor'; });
+
+        Scrolling = Library:Create('ScrollingFrame', {
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
             CanvasSize = UDim2.new(0, 0, 0, 0);
-            Size = UDim2.new(1, 0, 1, 0);
+            Position = UDim2.fromOffset(POPUP_GAP, VALUES_TOP);
+            Size = UDim2.new(1, -(POPUP_GAP * 2), 0, ListRowsHeight);
             ZIndex = 21;
             Parent = ListInner;
 
@@ -3707,12 +3803,12 @@ do
             ScrollBarImageColor3 = 'AccentColor'
         })
 
-        local ScrollTrack = Library:Create('Frame', {
+        ScrollTrack = Library:Create('Frame', {
             AnchorPoint = Vector2.new(1, 0);
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Position = UDim2.new(1, -1, 0, 4);
-            Size = UDim2.new(0, 3, 1, -8);
+            Position = UDim2.new(1, -2, 0, VALUES_TOP + 4);
+            Size = UDim2.new(0, 3, 0, math.max(ListRowsHeight - 8, 1));
             ZIndex = 24;
             Parent = ListInner;
         });
@@ -3744,7 +3840,8 @@ do
             Parent = ScrollThumb;
         });
 
-        local function UpdateDropdownScrollVisuals()
+        local UpdateDropdownScrollVisuals
+        UpdateDropdownScrollVisuals = function()
             local ViewportHeight = Scrolling.AbsoluteSize.Y;
             local ContentHeight = Scrolling.AbsoluteCanvasSize.Y;
 
@@ -3761,7 +3858,8 @@ do
             end;
 
             local TrackHeight = math.max(ScrollTrack.AbsoluteSize.Y, 1);
-            local ThumbHeight = math.clamp(TrackHeight * (ViewportHeight / ContentHeight), 18, TrackHeight);
+            local MinThumbHeight = math.min(18, TrackHeight);
+            local ThumbHeight = math.clamp(TrackHeight * (ViewportHeight / ContentHeight), MinThumbHeight, TrackHeight);
             local MaxTravel = math.max(TrackHeight - ThumbHeight, 0);
             local MaxCanvas = math.max(ContentHeight - ViewportHeight, 1);
             local ThumbY = MaxTravel * math.clamp(Scrolling.CanvasPosition.Y / MaxCanvas, 0, 1);
@@ -3823,9 +3921,11 @@ do
             end;
         end;
 
+        local Buttons = {};
+
         function Dropdown:BuildDropdownList()
             local Values = Dropdown.Values;
-            local Buttons = {};
+            table.clear(Buttons);
 
             for _, Element in next, Scrolling:GetChildren() do
                 if not Element:IsA('UIListLayout') then
@@ -3919,6 +4019,8 @@ do
                     end;
                 end);
 
+                Table.Button = Button;
+                Table.Value = Value;
                 Table:UpdateButton();
                 Dropdown:Display();
 
@@ -3927,13 +4029,44 @@ do
 
             Scrolling.CanvasSize = UDim2.fromOffset(0, (Count * 20) + 8);
 
-            local Y = math.clamp(Count * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1;
+            local Y = math.max(20, math.clamp(Count * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1);
             RecalculateListSize(Y);
         end;
 
         function Dropdown:OnChanged(Func)
             Dropdown.Changed = Func;
             Func(Dropdown.Value);
+        end;
+
+        function Dropdown:SetValue(NewValue)
+            if Info.Multi then
+                local NewSelection = {};
+                if type(NewValue) == 'table' then
+                    for Key, Value in next, NewValue do
+                        if type(Key) == 'number' then
+                            NewSelection[Value] = true;
+                        elseif Value then
+                            NewSelection[Key] = true;
+                        end
+                    end
+                end
+                Dropdown.Value = NewSelection;
+            else
+                if NewValue == nil and not Info.AllowNull then
+                    return;
+                end
+                if NewValue ~= nil and not table.find(Dropdown.Values, NewValue) then
+                    return;
+                end
+                Dropdown.Value = NewValue;
+            end
+
+            for _, Table in next, Buttons do
+                Table:UpdateButton();
+            end
+            Dropdown:Display();
+            Library:SafeCallback(Dropdown.Callback, Dropdown.Value);
+            Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
         end;
 
         function Dropdown:SetValues(NewValues)
@@ -3964,6 +4097,28 @@ do
         end
 
         local DropdownScrollConnection;
+
+        local function ApplyDropdownSearch()
+            local Query = string.lower(SearchBox.Text or '');
+            local VisibleCount = 0;
+
+            for _, Table in next, Buttons do
+                local ValueText = string.lower(tostring(Table.Value or ''));
+                local Visible = Query == '' or string.find(ValueText, Query, 1, true) ~= nil;
+                Table.Button.Visible = Visible;
+                if Visible then
+                    VisibleCount = VisibleCount + 1;
+                end
+            end
+
+            local ContentHeight = (VisibleCount * 20) + 8;
+            Scrolling.CanvasPosition = Vector2.new(0, 0);
+            Scrolling.CanvasSize = UDim2.fromOffset(0, ContentHeight);
+            RecalculateListSize(math.max(20, math.min(VisibleCount, MAX_DROPDOWN_ITEMS) * 20 + 1));
+            task.defer(UpdateDropdownScrollVisuals);
+        end;
+
+        SearchBox:GetPropertyChangedSignal('Text'):Connect(ApplyDropdownSearch);
 
         local function StopDropdownAutoScroll()
             if DropdownScrollConnection then
@@ -4015,8 +4170,12 @@ do
             Dropdown.Opened = true;
             DropdownAnimationId = DropdownAnimationId + 1;
             CancelDropdownTweens();
+            if SearchBox.Text ~= '' then
+                SearchBox.Text = '';
+            end
             RecalculateListPosition();
-            RecalculateListSize(ListHeight);
+            RecalculateListSize(ListRowsHeight);
+            ApplyDropdownSearch();
 
             ListOuter.Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 6);
             Library:SetFadeTree(ListOuter, true);
@@ -4185,6 +4344,19 @@ do
             CancelDependencyTweens();
 
             local Height = Layout.AbsoluteContentSize.Y;
+
+            if Visible == DependencyVisible and Holder.Visible == Visible then
+                if Visible then
+                    if Instant then
+                        Holder.Size = UDim2.new(1, 0, 0, Height);
+                    else
+                        Library:TweenProperty(Holder, 'Size', UDim2.new(1, 0, 0, Height), 0.18);
+                    end
+                    Groupbox:Resize();
+                end
+                return;
+            end
+
             DependencyVisible = Visible;
 
             if Visible then
@@ -4404,18 +4576,6 @@ do
     Library:AddCorner(KeybindOuter, 3);
     Library:AddCorner(KeybindInner, 3);
     Library:AddAccentGlow(KeybindInner, 0.9);
-
-    local ColorFrame = Library:Create('Frame', {
-        BackgroundColor3 = Library.AccentColor;
-        BorderSizePixel = 0;
-        Size = UDim2.new(1, 0, 0, 2);
-        ZIndex = 102;
-        Parent = KeybindInner;
-    });
-
-    Library:AddToRegistry(ColorFrame, {
-        BackgroundColor3 = 'AccentColor';
-    }, true);
 
     local KeybindLabel = Library:CreateLabel({
         Size = UDim2.new(1, 0, 0, 20);
@@ -4874,8 +5034,8 @@ function Library:CreateWindow(...)
 
             task.defer(function()
                 if Tab.Active then
-                    SetTabVisualGroups(0, 0.22, 0.018);
-                    Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, 0), 0.26);
+                    SetTabVisualGroups(0, 0.38, 0.018);
+                    Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, 0), 0.42);
                 end;
             end);
         end;
@@ -4892,10 +5052,10 @@ function Library:CreateWindow(...)
             Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.14);
             Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.14);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
-            SetTabVisualGroups(1, 0.14, 0);
-            Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, -4), 0.17);
+            SetTabVisualGroups(1, 0.30, 0);
+            Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, -5), 0.32);
 
-            task.delay(0.17, function()
+            task.delay(0.32, function()
                 if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                     TabFrame.Visible = false;
                     TabFrame.Position = UDim2.new(0, 0, 0, 7);
