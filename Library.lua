@@ -112,6 +112,7 @@ local Library = {
     Black = Color3.new(0, 0, 0);
     Font = Enum.Font.Code,
     FontName = 'Code',
+    TextScale = 1;
 
     OpenedFrames = {};
     DependencyBoxes = {};
@@ -188,6 +189,7 @@ function Library:RegisterRepoFont(Name, FileName)
     return Fonts[Name];
 end;
 Library.PropertyTweens = setmetatable({}, { __mode = 'k' });
+Library.BaseTextSizes = setmetatable({}, { __mode = 'k' });
 
 function Library:GetFontNames()
     local Result = {};
@@ -294,6 +296,24 @@ function Library:SetFont(Name)
     return Library:LoadFont(Name);
 end;
 
+function Library:GetScaledTextSize(BaseSize)
+    BaseSize = tonumber(BaseSize) or 16;
+    return math.max(6, math.floor((BaseSize * Library.TextScale) + 0.5));
+end;
+
+function Library:SetTextScale(Scale)
+    Scale = math.clamp(tonumber(Scale) or 1, 0.75, 1.5);
+    Library.TextScale = Scale;
+
+    for Instance, BaseSize in next, Library.BaseTextSizes do
+        if Instance and Instance.Parent then
+            pcall(function()
+                Instance.TextSize = Library:GetScaledTextSize(BaseSize);
+            end);
+        end;
+    end;
+end;
+
 Library:LoadFont('Rubik Light');
 
 function Library:TweenProperty(Instance, Property, Value, Duration)
@@ -375,8 +395,17 @@ function Library:Create(Class, Properties)
         _Instance = Instance.new(Class);
     end;
 
+    local IsTextObject = _Instance:IsA('TextLabel') or _Instance:IsA('TextBox') or _Instance:IsA('TextButton');
+    local ExplicitTextSize = IsTextObject and Properties.TextSize or nil;
+
     for Property, Value in next, Properties do
         _Instance[Property] = Value;
+    end;
+
+    if IsTextObject then
+        local BaseSize = ExplicitTextSize or Library.BaseTextSizes[_Instance] or _Instance.TextSize;
+        Library.BaseTextSizes[_Instance] = BaseSize;
+        _Instance.TextSize = Library:GetScaledTextSize(BaseSize);
     end;
 
     return _Instance;
@@ -489,6 +518,125 @@ function Library:AddTabAccentCap(Instance)
 
     SetActive(false);
     return SetActive;
+end;
+
+function Library:CreateSlidingTabIndicator(Layer, Height)
+    local Controller = {};
+    local AnimationId = 0;
+    local ActiveTweens = {};
+
+    local Indicator = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(0, 0);
+        Size = UDim2.fromOffset(0, Height or 21);
+        Visible = false;
+        ZIndex = 20;
+        Parent = Layer;
+    });
+
+    Library:AddCorner(Indicator, 3);
+
+    local Stroke = Library:Create('UIStroke', {
+        Color = Library.AccentColor;
+        LineJoinMode = Enum.LineJoinMode.Round;
+        Thickness = 1;
+        Transparency = 0;
+        Parent = Indicator;
+    });
+
+    Library:Create('UIGradient', {
+        Rotation = 90;
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(0.32, 0.02),
+            NumberSequenceKeypoint.new(0.58, 0.28),
+            NumberSequenceKeypoint.new(0.82, 0.86),
+            NumberSequenceKeypoint.new(1, 1),
+        });
+        Parent = Stroke;
+    });
+
+    Library:AddToRegistry(Stroke, {
+        Color = 'AccentColor';
+    });
+
+    local function CancelTweens()
+        for _, Tween in next, ActiveTweens do
+            pcall(function() Tween:Cancel(); end);
+        end;
+        table.clear(ActiveTweens);
+    end;
+
+    local function Play(Properties, Duration, Style, Direction)
+        local Tween = TweenService:Create(
+            Indicator,
+            TweenInfo.new(Duration, Style, Direction or Enum.EasingDirection.Out),
+            Properties
+        );
+        table.insert(ActiveTweens, Tween);
+        Tween:Play();
+        return Tween;
+    end;
+
+    function Controller:MoveTo(Button, Instant)
+        if not Button or not Button.Parent or Button.AbsoluteSize.X <= 0 then
+            return;
+        end;
+
+        AnimationId = AnimationId + 1;
+        local CurrentId = AnimationId;
+        CancelTweens();
+
+        local TargetX = Button.AbsolutePosition.X - Layer.AbsolutePosition.X;
+        local TargetY = Button.AbsolutePosition.Y - Layer.AbsolutePosition.Y;
+        local TargetWidth = Button.AbsoluteSize.X;
+        local IndicatorHeight = Height or Button.AbsoluteSize.Y;
+
+        if Instant or not Indicator.Visible or Indicator.Size.X.Offset <= 0 then
+            Indicator.Position = UDim2.fromOffset(TargetX, TargetY);
+            Indicator.Size = UDim2.fromOffset(TargetWidth, IndicatorHeight);
+            Indicator.Visible = true;
+            return;
+        end;
+
+        Indicator.Visible = true;
+
+        local CurrentX = Indicator.Position.X.Offset;
+        local Delta = TargetX - CurrentX;
+        local Extra = math.min(70, (math.abs(Delta) * 0.45) + 6);
+        local StretchX;
+
+        if Delta >= 0 then
+            StretchX = CurrentX + (Delta * 0.55);
+        else
+            StretchX = TargetX - 6;
+        end;
+
+        local StretchTween = Play({
+            Position = UDim2.fromOffset(StretchX, TargetY);
+            Size = UDim2.fromOffset(TargetWidth + Extra, IndicatorHeight);
+        }, 0.13, Enum.EasingStyle.Quart, Enum.EasingDirection.Out);
+
+        StretchTween.Completed:Connect(function(State)
+            if CurrentId ~= AnimationId or State == Enum.PlaybackState.Cancelled then
+                return;
+            end;
+
+            table.clear(ActiveTweens);
+            Play({
+                Position = UDim2.fromOffset(TargetX, TargetY);
+                Size = UDim2.fromOffset(TargetWidth, IndicatorHeight);
+            }, 0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out);
+        end);
+    end;
+
+    function Controller:Refresh(Button)
+        self:MoveTo(Button, true);
+    end;
+
+    Controller.Frame = Indicator;
+    return Controller;
 end;
 
 function Library:ApplyTextStroke(Inst)
@@ -945,6 +1093,7 @@ function Library:MapValue(Value, MinA, MaxA, MinB, MaxB)
 end;
 
 function Library:GetTextBounds(Text, FontValue, Size, Resolution)
+    Size = Library:GetScaledTextSize(Size);
     local MaxResolution = Resolution or Vector2.new(1920, 1080);
 
     if typeof(FontValue) == 'Font' then
@@ -1510,6 +1659,57 @@ do
 
         local PickerAnimationId = 0;
         local PickerTweens = {};
+        local PickerFadeDefaults = nil;
+
+        local function CapturePickerFadeDefaults()
+            if PickerFadeDefaults then
+                return;
+            end;
+
+            PickerFadeDefaults = setmetatable({}, { __mode = 'k' });
+            local Objects = { PickerFrameOuter };
+
+            for _, Descendant in ipairs(PickerFrameOuter:GetDescendants()) do
+                table.insert(Objects, Descendant);
+            end;
+
+            for _, Object in ipairs(Objects) do
+                local Properties = {};
+
+                if Object:IsA('GuiObject') then
+                    Properties.BackgroundTransparency = Object.BackgroundTransparency;
+                end;
+
+                if Object:IsA('TextLabel') or Object:IsA('TextBox') or Object:IsA('TextButton') then
+                    Properties.TextTransparency = Object.TextTransparency;
+                    Properties.TextStrokeTransparency = Object.TextStrokeTransparency;
+                end;
+
+                if Object:IsA('ImageLabel') or Object:IsA('ImageButton') then
+                    Properties.ImageTransparency = Object.ImageTransparency;
+                end;
+
+                if Object:IsA('UIStroke') then
+                    Properties.Transparency = Object.Transparency;
+                end;
+
+                if next(Properties) then
+                    PickerFadeDefaults[Object] = Properties;
+                end;
+            end;
+        end;
+
+        local function SetPickerFadeHidden(Hidden)
+            CapturePickerFadeDefaults();
+
+            for Object, Properties in next, PickerFadeDefaults do
+                if Object and Object.Parent then
+                    for Property, BaseValue in next, Properties do
+                        Object[Property] = Hidden and 1 or BaseValue;
+                    end;
+                end;
+            end;
+        end;
 
         local function GetPickerTargetPosition()
             return UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18);
@@ -1529,6 +1729,21 @@ do
             return Tween;
         end;
 
+        local function TweenPickerFade(Hidden, Duration)
+            CapturePickerFadeDefaults();
+            local TweenInfoValue = TweenInfo.new(Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+
+            for Object, Properties in next, PickerFadeDefaults do
+                if Object and Object.Parent then
+                    local Targets = {};
+                    for Property, BaseValue in next, Properties do
+                        Targets[Property] = Hidden and 1 or BaseValue;
+                    end;
+                    PlayPickerTween(Object, TweenInfoValue, Targets);
+                end;
+            end;
+        end;
+
         function ColorPicker:Show()
             for Frame in next, Library.OpenedFrames do
                 if Frame.Name == 'Color' and Frame ~= PickerFrameOuter then
@@ -1543,17 +1758,21 @@ do
             local TargetPosition = GetPickerTargetPosition();
 
             if not PickerFrameOuter.Visible then
-                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 8);
+                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 18);
                 PickerFrameOuter.GroupTransparency = 1;
+                SetPickerFadeHidden(true);
             end;
 
             PickerFrameOuter.Visible = true;
             Library.OpenedFrames[PickerFrameOuter] = true;
 
-            PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.26, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
                 Position = TargetPosition;
+            });
+            PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 GroupTransparency = 0;
             });
+            TweenPickerFade(false, 0.24);
         end;
 
         function ColorPicker:Hide()
@@ -1568,10 +1787,11 @@ do
             Library.OpenedFrames[PickerFrameOuter] = nil;
 
             local TargetPosition = GetPickerTargetPosition();
-            local ExitTween = PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 5);
+            local ExitTween = PlayPickerTween(PickerFrameOuter, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 9);
                 GroupTransparency = 1;
             });
+            TweenPickerFade(true, 0.17);
 
             ExitTween.Completed:Connect(function()
                 if CurrentId ~= PickerAnimationId then
@@ -1581,6 +1801,7 @@ do
                 PickerFrameOuter.Visible = false;
                 PickerFrameOuter.Position = TargetPosition;
                 PickerFrameOuter.GroupTransparency = 0;
+                SetPickerFadeHidden(false);
                 table.clear(PickerTweens);
             end);
         end;
@@ -4318,6 +4539,16 @@ function Library:CreateWindow(...)
         Parent = TabArea;
     });
 
+    local TabIndicatorLayer = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = TabArea.Position;
+        Size = TabArea.Size;
+        ZIndex = 12;
+        Parent = MainSectionInner;
+    });
+    local MainTabIndicator = Library:CreateSlidingTabIndicator(TabIndicatorLayer, 21);
+
     local TabContainer = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
@@ -4368,6 +4599,20 @@ function Library:CreateWindow(...)
             Parent = TabButton;
         });
 
+        local function UpdateTabButtonWidth()
+            local Width = math.max(TabButtonLabel.TextBounds.X, 1) + 12;
+            TabButton.Size = UDim2.new(0, Width, 1, 0);
+
+            if Tab.Active then
+                task.defer(function()
+                    MainTabIndicator:Refresh(TabButton);
+                end);
+            end;
+        end;
+
+        TabButtonLabel:GetPropertyChangedSignal('TextBounds'):Connect(UpdateTabButtonWidth);
+        task.defer(UpdateTabButtonWidth);
+
         local Blocker = Library:Create('Frame', {
             BackgroundColor3 = Library.MainColor;
             BorderSizePixel = 0;
@@ -4382,12 +4627,14 @@ function Library:CreateWindow(...)
             BackgroundColor3 = 'MainColor';
         });
 
-        local SetTabAccentActive = Library:AddTabAccentCap(TabButton);
+        Tab.Active = false;
+        Tab.ContentAnimationId = 0;
 
-        local TabFrame = Library:Create('Frame', {
+        local TabFrame = Library:Create('CanvasGroup', {
             Name = 'TabFrame',
             BackgroundTransparency = 1;
-            Position = UDim2.new(0, 0, 0, 0);
+            GroupTransparency = 1;
+            Position = UDim2.new(0, 0, 0, 8);
             Size = UDim2.new(1, 0, 1, 0);
             Visible = false;
             ZIndex = 2;
@@ -4443,23 +4690,57 @@ function Library:CreateWindow(...)
         end;
 
         function Tab:ShowTab()
-            for _, Tab in next, Window.Tabs do
-                Tab:HideTab();
+            if Tab.Active then
+                MainTabIndicator:MoveTo(TabButton, false);
+                return;
             end;
+
+            for _, OtherTab in next, Window.Tabs do
+                if OtherTab ~= Tab then
+                    OtherTab:HideTab();
+                end;
+            end;
+
+            Tab.Active = true;
+            Window.ActiveTab = Tab;
+            Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
 
             Library:TweenProperty(Blocker, 'BackgroundTransparency', 0, 0.16);
             Library:TweenProperty(TabButton, 'BackgroundColor3', Library.MainColor, 0.16);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'MainColor';
-            SetTabAccentActive(true);
+            MainTabIndicator:MoveTo(TabButton, not MainTabIndicator.Frame.Visible);
+
+            if not TabFrame.Visible then
+                TabFrame.Position = UDim2.new(0, 0, 0, 8);
+                TabFrame.GroupTransparency = 1;
+            end;
+
             TabFrame.Visible = true;
+            Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, 0), 0.28);
+            Library:TweenProperty(TabFrame, 'GroupTransparency', 0, 0.22);
         end;
 
         function Tab:HideTab()
+            Tab.Active = false;
+            Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
+            local CurrentAnimation = Tab.ContentAnimationId;
+
             Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.16);
             Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.16);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
-            SetTabAccentActive(false);
-            TabFrame.Visible = false;
+
+            if TabFrame.Visible then
+                Library:TweenProperty(TabFrame, 'GroupTransparency', 1, 0.16);
+                Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, -4), 0.18);
+
+                task.delay(0.18, function()
+                    if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
+                        TabFrame.Visible = false;
+                        TabFrame.Position = UDim2.new(0, 0, 0, 8);
+                        TabFrame.GroupTransparency = 1;
+                    end;
+                end);
+            end;
         end;
 
         function Tab:SetLayoutOrder(Position)
@@ -4514,6 +4795,15 @@ function Library:CreateWindow(...)
             });
 
             Library.RegistryMap[GroupboxLabel].Properties.BackgroundColor3 = 'BackgroundColor';
+
+            local function UpdateGroupboxLegendSize()
+                GroupboxLabel.Size = UDim2.fromOffset(
+                    math.max(GroupboxLabel.TextBounds.X + 12, 20),
+                    math.max(GroupboxLabel.TextBounds.Y + 2, 16)
+                );
+            end;
+            GroupboxLabel:GetPropertyChangedSignal('TextBounds'):Connect(UpdateGroupboxLegendSize);
+            task.defer(UpdateGroupboxLegendSize);
 
             local Container = Library:Create('Frame', {
                 BackgroundTransparency = 1;
@@ -4619,6 +4909,16 @@ function Library:CreateWindow(...)
                 Parent = TabboxButtons;
             });
 
+            local TabboxIndicatorLayer = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                BorderSizePixel = 0;
+                Position = TabboxButtons.Position;
+                Size = TabboxButtons.Size;
+                ZIndex = 12;
+                Parent = BoxInner;
+            });
+            local TabboxIndicator = Library:CreateSlidingTabIndicator(TabboxIndicatorLayer, 18);
+
             function Tabbox:AddTab(Name)
                 local Tab = {};
 
@@ -4660,11 +4960,13 @@ function Library:CreateWindow(...)
                     BackgroundColor3 = 'BackgroundColor';
                 });
 
-                local SetTabboxAccentActive = Library:AddTabAccentCap(Button);
+                Tab.Active = false;
+                Tab.ContentAnimationId = 0;
 
-                local Container = Library:Create('Frame', {
+                local Container = Library:Create('CanvasGroup', {
                     BackgroundTransparency = 1;
-                    Position = UDim2.new(0, 4, 0, 20);
+                    GroupTransparency = 1;
+                    Position = UDim2.new(0, 4, 0, 25);
                     Size = UDim2.new(1, -4, 1, -20);
                     ZIndex = 1;
                     Visible = false;
@@ -4678,30 +4980,48 @@ function Library:CreateWindow(...)
                 });
 
                 function Tab:Show()
-                    for _, Tab in next, Tabbox.Tabs do
-                        Tab:Hide();
+                    if Tab.Active then
+                        TabboxIndicator:MoveTo(Button, false);
+                        return;
                     end;
 
+                    for _, OtherTab in next, Tabbox.Tabs do
+                        if OtherTab ~= Tab then
+                            OtherTab:Hide();
+                        end;
+                    end;
+
+                    Tab.Active = true;
+                    Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
                     Container.Visible = true;
                     Block.Visible = true;
+                    TabboxIndicator:MoveTo(Button, not TabboxIndicator.Frame.Visible);
 
                     Library:TweenProperty(Button, 'BackgroundColor3', Library.BackgroundColor, 0.16);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.16);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
-                    SetTabboxAccentActive(true);
+                    Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 20), 0.25);
+                    Library:TweenProperty(Container, 'GroupTransparency', 0, 0.2);
 
                     Tab:Resize();
                 end;
 
                 function Tab:Hide()
+                    Tab.Active = false;
+                    Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
+                    local CurrentAnimation = Tab.ContentAnimationId;
+
                     Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.16);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.14);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
-                    SetTabboxAccentActive(false);
+                    Library:TweenProperty(Container, 'GroupTransparency', 1, 0.14);
+                    Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 17), 0.16);
 
-                    task.delay(0.14, function()
-                        if Button.BackgroundColor3 == Library.MainColor then
+                    task.delay(0.16, function()
+                        if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                             Container.Visible = false;
+                            Container.Position = UDim2.new(0, 4, 0, 25);
+                            Container.GroupTransparency = 1;
                             Block.Visible = false;
                         end;
                     end);
