@@ -1136,6 +1136,8 @@ function Library:MakeDraggable(Instance, Cutoff)
         end
 
         CancelPositionTween();
+        State.ReleaseSequence = (State.ReleaseSequence or 0) + 1;
+        local ReleaseSequence = State.ReleaseSequence;
         State.Dragging = true;
 
         local Anchor = Instance.AnchorPoint;
@@ -1168,11 +1170,46 @@ function Library:MakeDraggable(Instance, Cutoff)
 
         if Instance.Parent then
             local Manager = Library.MenuManager;
-            local ReleaseDuration = 0.14;
-            if Manager and Manager.GetReleaseDuration then
-                ReleaseDuration = Manager:GetReleaseDuration();
+            local ReleaseDuration = 0.28;
+            local ReleaseStyle = Enum.EasingStyle.Quint;
+            local ReleaseDirection = Enum.EasingDirection.Out;
+
+            if Manager then
+                if Manager.GetReleaseDuration then
+                    ReleaseDuration = Manager:GetReleaseDuration();
+                end
+                if Manager.GetEasingStyle then
+                    ReleaseStyle = Manager:GetEasingStyle();
+                end
+                if Manager.GetEasingDirection then
+                    ReleaseDirection = Manager:GetEasingDirection();
+                end
             end
-            Library:TweenMenuProperty(Instance, 'Position', State.TargetPosition, ReleaseDuration);
+
+            ReleaseDuration = math.max(tonumber(ReleaseDuration) or 0.28, 0.08);
+            local StartAnchor = Vector2.new(
+                Instance.AbsolutePosition.X + (Instance.AbsoluteSize.X * Instance.AnchorPoint.X),
+                Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Instance.AnchorPoint.Y)
+            );
+            local Started = os.clock();
+
+            while Instance.Parent and State.ReleaseSequence == ReleaseSequence do
+                local Alpha = math.clamp((os.clock() - Started) / ReleaseDuration, 0, 1);
+                local StyleAlpha = TweenService:GetValue(Alpha, ReleaseStyle, ReleaseDirection);
+                local SmoothAlpha = Alpha * Alpha * (3 - (2 * Alpha));
+                local Eased = math.clamp((StyleAlpha * 0.62) + (SmoothAlpha * 0.38), 0, 1);
+                local Position = StartAnchor:Lerp(Target, Eased);
+                Instance.Position = UDim2.fromOffset(Position.X, Position.Y);
+
+                if Alpha >= 1 then
+                    break;
+                end
+                RenderStepped:Wait();
+            end
+
+            if Instance.Parent and State.ReleaseSequence == ReleaseSequence then
+                Instance.Position = State.TargetPosition;
+            end
         end
     end);
 
@@ -4782,12 +4819,26 @@ do
         Parent = InnerFrame;
     });
 
+    WatermarkLabel.TextStrokeColor3 = Color3.new(0, 0, 0);
+    WatermarkLabel.TextStrokeTransparency = 0.08;
+
     local WatermarkTextOutline = WatermarkLabel:FindFirstChildOfClass('UIStroke');
-    if WatermarkTextOutline then
+    if not WatermarkTextOutline then
+        WatermarkTextOutline = Library:Create('UIStroke', {
+            Name = 'FormaWatermarkTextOutline';
+            Color = Color3.new(0, 0, 0);
+            Thickness = 1.1;
+            Transparency = 0.08;
+            LineJoinMode = Enum.LineJoinMode.Round;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual;
+            Parent = WatermarkLabel;
+        });
+    else
         WatermarkTextOutline.Color = Color3.new(0, 0, 0);
-        WatermarkTextOutline.Thickness = 1.2;
-        WatermarkTextOutline.Transparency = 0.06;
+        WatermarkTextOutline.Thickness = 1.1;
+        WatermarkTextOutline.Transparency = 0.08;
         WatermarkTextOutline.LineJoinMode = Enum.LineJoinMode.Round;
+        pcall(function() WatermarkTextOutline.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual; end);
     end
 
     Library.Watermark = WatermarkOuter;
@@ -4876,6 +4927,31 @@ function Library:CreateTargetHUD(Config)
         Library.TargetHUD:Destroy();
     end
 
+    local function NormalizeAutoTargetMode(Value)
+        local Mode = string.lower(tostring(Value or 'Off'));
+        if Mode == 'look' or Mode == 'crosshair' or Mode == 'camera' then
+            return 'Look';
+        elseif Mode == 'hover' or Mode == 'mouse' then
+            return 'Hover';
+        elseif Mode == 'lookorhover' or Mode == 'look_or_hover' or Mode == 'both' then
+            return 'LookOrHover';
+        end
+        return 'Off';
+    end
+
+    local RequestedAutoMode = Config.AutoTargetMode or Config.TargetMode;
+    if RequestedAutoMode == nil then
+        if Config.AutoShowOnLook and Config.AutoShowOnHover then
+            RequestedAutoMode = 'LookOrHover';
+        elseif Config.AutoShowOnLook then
+            RequestedAutoMode = 'Look';
+        elseif Config.AutoShowOnHover then
+            RequestedAutoMode = 'Hover';
+        else
+            RequestedAutoMode = 'Off';
+        end
+    end
+
     local HUD = {
         Target = nil;
         StaticInfo = nil;
@@ -4883,18 +4959,23 @@ function Library:CreateTargetHUD(Config)
         HealthProvider = Config.HealthProvider or Config.GetHealth;
         MeterProvider = Config.MeterProvider or Config.GetMeter;
         MeterText = Config.MeterText;
+        AutoDistanceMeter = Config.AutoDistanceMeter == true;
         HealthTextFormatter = Config.HealthTextFormatter;
         AnimationId = 0;
+        Visible = false;
         Labels = {};
         LabelOrder = {};
         ProviderLabelIds = {};
         HealthMax = 100;
         HealthAvailable = false;
         HealthTargetRatio = -1;
+        AutoTargetMode = NormalizeAutoTargetMode(RequestedAutoMode);
+        AutoTargetMaxDistance = math.max(tonumber(Config.AutoTargetMaxDistance or Config.MaxTargetDistance) or 1500, 1);
+        AutoTargetCandidate = nil;
     };
 
-    local BaseSize = Config.Size or UDim2.fromOffset(270, 106);
-    local BaseHeight = math.max(BaseSize.Y.Offset, 106);
+    local BaseSize = Config.Size or UDim2.fromOffset(290, 140);
+    local BaseHeight = math.max(BaseSize.Y.Offset, 140);
 
     local Outer = Library:Create('Frame', {
         BackgroundColor3 = Color3.new(0, 0, 0);
@@ -4910,7 +4991,8 @@ function Library:CreateTargetHUD(Config)
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.AccentColor;
         BorderMode = Enum.BorderMode.Inset;
-        Size = UDim2.fromScale(1, 1);
+        Position = UDim2.fromOffset(1, 1);
+        Size = UDim2.new(1, -2, 1, -2);
         ZIndex = 251;
         Parent = Outer;
     });
@@ -4924,18 +5006,33 @@ function Library:CreateTargetHUD(Config)
         BorderColor3 = 'AccentColor';
     }, true);
 
-    local AvatarOuter = Library:Create('Frame', {
+    local ContentFrame = Library:Create('Frame', {
         BackgroundColor3 = Library.BackgroundColor;
         BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
-        Position = UDim2.fromOffset(8, 8);
-        Size = UDim2.fromOffset(62, 62);
+        Position = UDim2.fromOffset(6, 6);
+        Size = UDim2.new(1, -12, 1, -12);
         ZIndex = 252;
         Parent = Inner;
     });
+    Library:AddCorner(ContentFrame, 3);
+    Library:AddToRegistry(ContentFrame, {
+        BackgroundColor3 = 'BackgroundColor';
+        BorderColor3 = 'OutlineColor';
+    }, true);
+
+    local AvatarOuter = Library:Create('Frame', {
+        BackgroundColor3 = Library.MainColor;
+        BorderColor3 = Library.OutlineColor;
+        BorderMode = Enum.BorderMode.Inset;
+        Position = UDim2.fromOffset(8, 8);
+        Size = UDim2.fromOffset(78, 78);
+        ZIndex = 253;
+        Parent = ContentFrame;
+    });
     Library:AddCorner(AvatarOuter, 3);
     Library:AddToRegistry(AvatarOuter, {
-        BackgroundColor3 = 'BackgroundColor';
+        BackgroundColor3 = 'MainColor';
         BorderColor3 = 'OutlineColor';
     }, true);
 
@@ -4945,30 +5042,30 @@ function Library:CreateTargetHUD(Config)
         Position = UDim2.fromOffset(2, 2);
         Size = UDim2.new(1, -4, 1, -4);
         Image = '';
-        ZIndex = 253;
+        ZIndex = 254;
         Parent = AvatarOuter;
     });
     Library:AddCorner(Avatar, 3);
 
     local Username = Library:CreateLabel({
-        Position = UDim2.fromOffset(78, 8);
-        Size = UDim2.new(1, -86, 0, 18);
+        Position = UDim2.fromOffset(96, 8);
+        Size = UDim2.new(1, -104, 0, 18);
         Text = 'No target';
         TextColor3 = Library.AccentColor;
         TextSize = 15;
         TextXAlignment = Enum.TextXAlignment.Left;
-        ZIndex = 253;
-        Parent = Inner;
+        ZIndex = 254;
+        Parent = ContentFrame;
     });
     Library.RegistryMap[Username].Properties.TextColor3 = 'AccentColor';
 
     local LabelsContainer = Library:Create('Frame', {
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.fromOffset(78, 28);
-        Size = UDim2.new(1, -86, 0, 0);
-        ZIndex = 253;
-        Parent = Inner;
+        Position = UDim2.fromOffset(96, 30);
+        Size = UDim2.new(1, -104, 0, 0);
+        ZIndex = 254;
+        Parent = ContentFrame;
     });
 
     Library:Create('UIListLayout', {
@@ -4980,29 +5077,52 @@ function Library:CreateTargetHUD(Config)
 
     local MeterLabel = Library:CreateLabel({
         AnchorPoint = Vector2.new(0, 1);
-        Position = UDim2.new(0, 78, 1, -39);
-        Size = UDim2.new(1, -86, 0, 14);
+        Position = UDim2.new(0, 96, 1, -43);
+        Size = UDim2.new(1, -104, 0, 14);
         Text = '';
         TextSize = 13;
         TextXAlignment = Enum.TextXAlignment.Left;
-        ZIndex = 254;
-        Parent = Inner;
+        ZIndex = 255;
+        Visible = false;
+        Parent = ContentFrame;
+    });
+
+    local HealthTitleLabel = Library:CreateLabel({
+        AnchorPoint = Vector2.new(0, 1);
+        Position = UDim2.new(0, 8, 1, -27);
+        Size = UDim2.new(0.5, -8, 0, 14);
+        Text = 'Health';
+        TextSize = 12;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 255;
+        Parent = ContentFrame;
+    });
+
+    local HealthValueLabel = Library:CreateLabel({
+        AnchorPoint = Vector2.new(1, 1);
+        Position = UDim2.new(1, -8, 1, -27);
+        Size = UDim2.new(0.5, -8, 0, 14);
+        Text = '-- HP';
+        TextSize = 12;
+        TextXAlignment = Enum.TextXAlignment.Right;
+        ZIndex = 255;
+        Parent = ContentFrame;
     });
 
     local HealthOuter = Library:Create('Frame', {
         AnchorPoint = Vector2.new(0, 1);
-        BackgroundColor3 = Library.BackgroundColor;
+        BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
         ClipsDescendants = true;
         Position = UDim2.new(0, 8, 1, -8);
         Size = UDim2.new(1, -16, 0, 14);
-        ZIndex = 254;
-        Parent = Inner;
+        ZIndex = 255;
+        Parent = ContentFrame;
     });
     Library:AddCorner(HealthOuter, 3);
     Library:AddToRegistry(HealthOuter, {
-        BackgroundColor3 = 'BackgroundColor';
+        BackgroundColor3 = 'MainColor';
         BorderColor3 = 'OutlineColor';
     }, true);
 
@@ -5012,7 +5132,7 @@ function Library:CreateTargetHUD(Config)
         ClipsDescendants = true;
         Position = UDim2.fromOffset(1, 1);
         Size = UDim2.new(1, -2, 1, -2);
-        ZIndex = 255;
+        ZIndex = 256;
         Parent = HealthOuter;
     });
     Library:AddCorner(HealthInner, 2);
@@ -5021,31 +5141,28 @@ function Library:CreateTargetHUD(Config)
         BackgroundColor3 = Color3.new(1, 1, 1);
         BorderSizePixel = 0;
         Size = UDim2.new(0, 0, 1, 0);
-        ZIndex = 255;
+        ZIndex = 256;
         Parent = HealthInner;
     });
     Library:AddCorner(HealthFill, 2);
 
     local HealthGradient = Library:Create('UIGradient', {
         Rotation = 0;
+        Offset = Vector2.new(-0.32, 0);
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 40, 40)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 70, 70)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 95, 95)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(125, 45, 45)),
         });
         Parent = HealthFill;
     });
 
-    local HealthText = Library:CreateLabel({
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Position = UDim2.fromOffset(2, 0);
-        Size = UDim2.new(1, -4, 1, 0);
-        Text = '-- HP';
-        TextSize = 12;
-        TextXAlignment = Enum.TextXAlignment.Center;
-        ZIndex = 256;
-        Parent = HealthOuter;
-    });
+    local HealthGradientTween = TweenService:Create(
+        HealthGradient,
+        TweenInfo.new(2.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        { Offset = Vector2.new(0.32, 0) }
+    );
+    HealthGradientTween:Play();
 
     local HealthDriver = Instance.new('NumberValue');
     HealthDriver.Name = 'FormaTargetHealthDriver';
@@ -5061,21 +5178,27 @@ function Library:CreateTargetHUD(Config)
     local function UpdateHealthVisual()
         local Ratio = math.clamp(HealthDriver.Value, 0, 1);
         HealthFill.Size = UDim2.new(Ratio, 0, 1, 0);
+
+        local Dark = HealthColor(Ratio, 0.52);
+        local Bright = HealthColor(Ratio, 1);
+        local Mid = HealthColor(Ratio, 0.78);
         HealthGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, HealthColor(Ratio, 0.58)),
-            ColorSequenceKeypoint.new(1, HealthColor(Ratio, 1)),
+            ColorSequenceKeypoint.new(0, Dark),
+            ColorSequenceKeypoint.new(0.46, Bright),
+            ColorSequenceKeypoint.new(0.72, Mid),
+            ColorSequenceKeypoint.new(1, Dark),
         });
 
         if HUD.HealthAvailable then
             local Current = math.max(0, math.floor((Ratio * HUD.HealthMax) + 0.5));
             if type(HUD.HealthTextFormatter) == 'function' then
                 local Success, Result = pcall(HUD.HealthTextFormatter, Current, HUD.HealthMax, Ratio, HUD.Target, HUD);
-                HealthText.Text = Success and tostring(Result) or string.format('%d / %d HP', Current, HUD.HealthMax);
+                HealthValueLabel.Text = Success and tostring(Result) or string.format('%d HP', Current);
             else
-                HealthText.Text = string.format('%d / %d HP', Current, HUD.HealthMax);
+                HealthValueLabel.Text = string.format('%d HP', Current);
             end
         else
-            HealthText.Text = '-- HP';
+            HealthValueLabel.Text = '-- HP';
         end
     end
 
@@ -5094,9 +5217,10 @@ function Library:CreateTargetHUD(Config)
 
     local function UpdateLayout()
         local Count = CountVisibleLabels();
-        local Height = math.max(BaseHeight, 72 + (Count * 14));
+        local ExtraRows = math.max(0, Count - 2);
+        local Height = BaseHeight + (ExtraRows * 14);
         Outer.Size = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset, BaseSize.Y.Scale, Height);
-        LabelsContainer.Size = UDim2.new(1, -86, 0, Count * 14);
+        LabelsContainer.Size = UDim2.new(1, -104, 0, Count * 14);
     end
 
     local function RenderLabelHandle(Handle)
@@ -5135,7 +5259,7 @@ function Library:CreateTargetHUD(Config)
             Text = '';
             TextSize = 12;
             TextXAlignment = Enum.TextXAlignment.Left;
-            ZIndex = 254;
+            ZIndex = 255;
             Parent = LabelsContainer;
         });
 
@@ -5273,6 +5397,11 @@ function Library:CreateTargetHUD(Config)
         HUD:Refresh();
     end
 
+    function HUD:SetAutoDistanceMeter(Enabled)
+        HUD.AutoDistanceMeter = not not Enabled;
+        HUD:Refresh();
+    end
+
     function HUD:SetHealthProvider(Provider)
         HUD.HealthProvider = type(Provider) == 'function' and Provider or nil;
         HUD:Refresh();
@@ -5310,7 +5439,7 @@ function Library:CreateTargetHUD(Config)
 
         HealthTween = TweenService:Create(
             HealthDriver,
-            TweenInfo.new(tonumber(Config.HealthTweenTime) or 0.38, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+            TweenInfo.new(tonumber(Config.HealthTweenTime) or 0.42, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
             { Value = Ratio }
         );
         HealthTween:Play();
@@ -5335,13 +5464,21 @@ function Library:CreateTargetHUD(Config)
     end
 
     local function ResolveMeter(Target)
-        if HUD.MeterText ~= nil then return tostring(HUD.MeterText); end
+        if HUD.MeterText ~= nil then
+            return tostring(HUD.MeterText);
+        end
+
         if HUD.MeterProvider then
             local Success, Result = pcall(HUD.MeterProvider, Target, HUD);
             if Success and Result ~= nil then return tostring(Result); end
         end
 
-        if typeof(Target) == 'Instance' and Target:IsA('Player') then
+        if type(Target) == 'table' then
+            local Value = Target.MeterText or Target.Meter;
+            if Value ~= nil then return tostring(Value); end
+        end
+
+        if HUD.AutoDistanceMeter and typeof(Target) == 'Instance' and Target:IsA('Player') then
             local Character = Target.Character;
             local Root = Character and Character:FindFirstChild('HumanoidRootPart');
             local LocalCharacter = LocalPlayer.Character;
@@ -5349,11 +5486,67 @@ function Library:CreateTargetHUD(Config)
             if Root and LocalRoot then
                 return string.format('%d studs', math.floor((Root.Position - LocalRoot.Position).Magnitude + 0.5));
             end
-        elseif type(Target) == 'table' then
-            local Value = Target.MeterText or Target.Meter or Target.Distance;
-            if Value ~= nil then return tostring(Value); end
         end
+
         return '';
+    end
+
+    local function PlayerFromPart(Part)
+        local Current = Part;
+        while Current and Current ~= workspace do
+            if Current:IsA('Model') then
+                local Player = Players:GetPlayerFromCharacter(Current);
+                if Player and Player ~= LocalPlayer then
+                    return Player;
+                end
+            end
+            Current = Current.Parent;
+        end
+        return nil;
+    end
+
+    local function GetHoverTarget()
+        return PlayerFromPart(Mouse.Target);
+    end
+
+    local function GetLookTarget()
+        local Camera = workspace.CurrentCamera;
+        if not Camera then return nil; end
+
+        local Viewport = Camera.ViewportSize;
+        local Ray = Camera:ViewportPointToRay(Viewport.X * 0.5, Viewport.Y * 0.5);
+        local Params = RaycastParams.new();
+        Params.FilterType = Enum.RaycastFilterType.Exclude;
+        Params.FilterDescendantsInstances = LocalPlayer.Character and { LocalPlayer.Character } or {};
+        Params.IgnoreWater = true;
+
+        local Result = workspace:Raycast(Ray.Origin, Ray.Direction * HUD.AutoTargetMaxDistance, Params);
+        return Result and PlayerFromPart(Result.Instance) or nil;
+    end
+
+    local function ResolveAutoTarget()
+        if HUD.AutoTargetMode == 'Hover' then
+            return GetHoverTarget();
+        elseif HUD.AutoTargetMode == 'Look' then
+            return GetLookTarget();
+        elseif HUD.AutoTargetMode == 'LookOrHover' then
+            return GetHoverTarget() or GetLookTarget();
+        end
+        return nil;
+    end
+
+    function HUD:SetAutoTargetMode(Mode)
+        HUD.AutoTargetMode = NormalizeAutoTargetMode(Mode);
+        HUD.AutoTargetCandidate = nil;
+        return HUD.AutoTargetMode;
+    end
+
+    function HUD:GetAutoTargetMode()
+        return HUD.AutoTargetMode;
+    end
+
+    function HUD:SetAutoTargetMaxDistance(Distance)
+        HUD.AutoTargetMaxDistance = math.max(tonumber(Distance) or HUD.AutoTargetMaxDistance, 1);
     end
 
     function HUD:Refresh()
@@ -5361,8 +5554,11 @@ function Library:CreateTargetHUD(Config)
 
         if not Target then
             Username.Text = 'No target';
-            MeterLabel.Text = HUD.MeterText and tostring(HUD.MeterText) or '';
+            local Meter = HUD.MeterText and tostring(HUD.MeterText) or '';
+            MeterLabel.Text = Meter;
+            MeterLabel.Visible = Meter ~= '';
             HUD:SetHealth(nil, nil, true);
+
             if HUD.InfoProvider then
                 local Success, Result = pcall(HUD.InfoProvider, Target, HUD);
                 ApplyProviderInfo(Success and Result or HUD.StaticInfo);
@@ -5371,6 +5567,7 @@ function Library:CreateTargetHUD(Config)
             else
                 ClearProviderLabels();
             end
+
             for _, Id in ipairs(HUD.LabelOrder) do
                 local Handle = HUD.Labels[Id];
                 if Handle and not Handle.IsProvider then RenderLabelHandle(Handle); end
@@ -5387,7 +5584,10 @@ function Library:CreateTargetHUD(Config)
             Username.Text = tostring(Target);
         end
 
-        MeterLabel.Text = ResolveMeter(Target);
+        local Meter = ResolveMeter(Target);
+        MeterLabel.Text = Meter;
+        MeterLabel.Visible = Meter ~= '';
+
         local Current, Maximum = ResolveHealth(Target);
         HUD:SetHealth(Current, Maximum, false);
 
@@ -5408,8 +5608,15 @@ function Library:CreateTargetHUD(Config)
     end
 
     function HUD:SetTarget(Target, Info)
+        if HUD.Target == Target and Info == nil then
+            HUD:Refresh();
+            return;
+        end
+
         HUD.Target = Target;
-        HUD.StaticInfo = Info;
+        if Info ~= nil then
+            HUD.StaticInfo = Info;
+        end
         HUD:Refresh();
 
         local UserId;
@@ -5427,7 +5634,7 @@ function Library:CreateTargetHUD(Config)
             local Expected = Target;
             task.spawn(function()
                 local Success, Content = pcall(function()
-                    return Players:GetUserThumbnailAsync(UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100);
+                    return Players:GetUserThumbnailAsync(UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150);
                 end);
                 if Success and HUD.Target == Expected and Avatar.Parent then
                     Avatar.Image = Content;
@@ -5440,9 +5647,14 @@ function Library:CreateTargetHUD(Config)
 
     function HUD:SetVisible(Visible)
         Visible = not not Visible;
+        if HUD.Visible == Visible then
+            return;
+        end
+
+        HUD.Visible = Visible;
         HUD.AnimationId = HUD.AnimationId + 1;
         local CurrentId = HUD.AnimationId;
-        local Duration = Library.MenuManager and Library.MenuManager.TweenSpeed or 0.24;
+        local Duration = Library.MenuManager and Library.MenuManager.TweenSpeed or 0.28;
 
         if Visible then
             if not Outer.Visible then
@@ -5452,7 +5664,7 @@ function Library:CreateTargetHUD(Config)
             Library:TweenUnifiedFade(Outer, 1, Duration);
         elseif Outer.Visible then
             Library:TweenUnifiedFade(Outer, 0, Duration, function(State)
-                if CurrentId == HUD.AnimationId and not Visible and State ~= Enum.PlaybackState.Cancelled and Outer.Parent then
+                if CurrentId == HUD.AnimationId and not HUD.Visible and State ~= Enum.PlaybackState.Cancelled and Outer.Parent then
                     Outer.Visible = false;
                 end
             end);
@@ -5461,7 +5673,9 @@ function Library:CreateTargetHUD(Config)
 
     function HUD:Destroy()
         HUD.AnimationId = HUD.AnimationId + 1;
+        HUD.Visible = false;
         if HealthTween then pcall(function() HealthTween:Cancel(); end); HealthTween = nil; end
+        if HealthGradientTween then pcall(function() HealthGradientTween:Cancel(); end); end
         if Outer then Outer:Destroy(); end
         if Library.TargetHUD == HUD then
             Library.TargetHUD = nil;
@@ -5470,26 +5684,52 @@ function Library:CreateTargetHUD(Config)
     end
 
     local RefreshAccumulator = 0;
+    local AutoTargetAccumulator = 0;
     Library:GiveSignal(RenderStepped:Connect(function(Delta)
-        if HUD.Target and Outer.Parent and Outer.Visible then
+        if not Outer.Parent then return; end
+
+        if HUD.Target and Outer.Visible then
             RefreshAccumulator = RefreshAccumulator + Delta;
             if RefreshAccumulator >= 0.15 then
                 RefreshAccumulator = 0;
                 HUD:Refresh();
             end
         end
+
+        if HUD.AutoTargetMode ~= 'Off' then
+            AutoTargetAccumulator = AutoTargetAccumulator + Delta;
+            if AutoTargetAccumulator >= 0.05 then
+                AutoTargetAccumulator = 0;
+                local Candidate = ResolveAutoTarget();
+                if Candidate ~= HUD.AutoTargetCandidate then
+                    HUD.AutoTargetCandidate = Candidate;
+                    if Candidate then
+                        HUD:SetTarget(Candidate);
+                    end
+                end
+
+                if Candidate then
+                    HUD:SetVisible(true);
+                else
+                    HUD:SetVisible(false);
+                end
+            end
+        end
     end));
 
     HUD.Frame = Outer;
     HUD.Inner = Inner;
+    HUD.ContentFrame = ContentFrame;
     HUD.Avatar = Avatar;
     HUD.UsernameLabel = Username;
     HUD.MeterLabel = MeterLabel;
     HUD.LabelsContainer = LabelsContainer;
+    HUD.HealthTitleLabel = HealthTitleLabel;
+    HUD.HealthValueLabel = HealthValueLabel;
     HUD.HealthBar = HealthOuter;
     HUD.HealthFill = HealthFill;
     HUD.HealthGradient = HealthGradient;
-    HUD.HealthText = HealthText;
+    HUD.HealthText = HealthValueLabel;
     HUD.InfoLabel = nil;
     Library.TargetHUD = HUD;
     Library.TargetHUDFrame = Outer;
@@ -5515,10 +5755,9 @@ function Library:CreateTargetHUD(Config)
     UpdateHealthVisual();
     UpdateLayout();
     if Config.Target then HUD:SetTarget(Config.Target, Config.Info); end
-    if Config.Visible then HUD:SetVisible(true); end
+    if Config.Visible and HUD.AutoTargetMode == 'Off' then HUD:SetVisible(true); end
     return HUD;
 end;
-
 
 function Library:Notify(Text, Time)
     local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14);
