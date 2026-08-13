@@ -12,20 +12,17 @@ local ThemeManager = {} do
 		['EDP445'] = {
 			File = 'edp445.png';
 			Size = UDim2.fromOffset(300, 303);
-			CanvasSize = Vector2.new(280, 283);
-			VisibleEdge = Vector2.new(20, 162);
+			VisibleAnchor = Vector2.new(20 / 280, 162 / 283);
 		};
 		['Jane Doe'] = {
 			File = 'janedoe.png';
 			Size = UDim2.fromOffset(300, 300);
-			CanvasSize = Vector2.new(280, 280);
-			VisibleEdge = Vector2.new(22, 192);
+			VisibleAnchor = Vector2.new(22 / 280, 192 / 280);
 		};
 		['Ibuki'] = {
 			File = 'ibuki.png';
 			Size = UDim2.fromOffset(300, 300);
-			CanvasSize = Vector2.new(280, 280);
-			VisibleEdge = Vector2.new(3, 193);
+			VisibleAnchor = Vector2.new(3 / 280, 193 / 280);
 		};
 	}
 	ThemeManager.OverlayEnabled = false
@@ -33,6 +30,9 @@ local ThemeManager = {} do
 	ThemeManager.OverlayImage = nil
 	ThemeManager.OverlayTween = nil
 	ThemeManager.OverlayAnimationId = 0
+	ThemeManager.OverlaySessionId = httpService:GenerateGUID(false)
+	ThemeManager.OverlayAssetCache = {}
+	ThemeManager.OverlayCachePrepared = false
 	ThemeManager.BuiltInThemes = {
 		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}') },
 		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414"}') },
@@ -102,12 +102,68 @@ local ThemeManager = {} do
 	end
 
 
+	function ThemeManager:PrepareOverlayCache()
+		if self.OverlayCachePrepared then
+			return
+		end
+
+		self.OverlayCachePrepared = true
+
+		if not listfiles or not delfile then
+			return
+		end
+
+		local ok, files = pcall(listfiles, 'FormaAssets/idfk')
+		if not ok or type(files) ~= 'table' then
+			return
+		end
+
+		for _, file in next, files do
+			if type(file) == 'string' and file:find('forma-overlay-', 1, true) then
+				pcall(delfile, file)
+			end
+		end
+	end
+
+	function ThemeManager:IsValidOverlayPng(data)
+		return type(data) == 'string'
+			and #data >= 24
+			and data:sub(1, 8) == '\137PNG\r\n\26\n'
+			and data:sub(13, 16) == 'IHDR'
+	end
+
+	function ThemeManager:GetPngSize(data)
+		if not self:IsValidOverlayPng(data) then
+			return nil
+		end
+
+		local function ReadUInt32BE(index)
+			local a, b, c, d = string.byte(data, index, index + 3)
+			if not a or not b or not c or not d then
+				return nil
+			end
+			return ((a * 256 + b) * 256 + c) * 256 + d
+		end
+
+		local width = ReadUInt32BE(17)
+		local height = ReadUInt32BE(21)
+		if not width or not height or width <= 0 or height <= 0 then
+			return nil
+		end
+
+		return Vector2.new(width, height)
+	end
+
 	function ThemeManager:GetOverlayAsset(name)
 		local info = self.OverlayAssets[name]
 		local getCustomAsset = getcustomasset or getsynasset
 
 		if not info or not getCustomAsset or not writefile then
 			return nil
+		end
+
+		if self.OverlayAssetCache[name] then
+			return self.OverlayAssetCache[name]
 		end
 
 		if makefolder then
@@ -120,31 +176,33 @@ local ThemeManager = {} do
 			end
 		end
 
-		local localPath = 'FormaAssets/idfk/' .. info.File
-		local needsDownload = true
+		self:PrepareOverlayCache()
 
-		if isfile then
-			local ok, exists = pcall(isfile, localPath)
-			needsDownload = not (ok and exists)
+		local url = self.OverlayBaseUrl .. info.File .. '?v=' .. self.OverlaySessionId
+		local ok, data = pcall(function()
+			return game:HttpGet(url)
+		end)
+
+		if not ok or not self:IsValidOverlayPng(data) then
+			return nil
 		end
 
-		if needsDownload then
-			local ok, data = pcall(function()
-				return game:HttpGet(self.OverlayBaseUrl .. info.File)
-			end)
+		info.SourceSize = self:GetPngSize(data)
 
-			if not ok or type(data) ~= 'string' or #data == 0 then
-				return nil
-			end
-
-			local wrote = pcall(writefile, localPath, data)
-			if not wrote then
-				return nil
-			end
+		local safeFile = info.File:gsub('[^%w%._%-]', '_')
+		local localPath = 'FormaAssets/idfk/forma-overlay-' .. self.OverlaySessionId .. '-' .. safeFile
+		local wrote = pcall(writefile, localPath, data)
+		if not wrote then
+			return nil
 		end
 
-		local ok, asset = pcall(getCustomAsset, localPath)
-		return ok and asset or nil
+		local assetOk, asset = pcall(getCustomAsset, localPath)
+		if not assetOk or not asset then
+			return nil
+		end
+
+		self.OverlayAssetCache[name] = asset
+		return asset
 	end
 
 	function ThemeManager:EnsureOverlay()
@@ -173,6 +231,10 @@ local ThemeManager = {} do
 				ZIndex = 500;
 				Parent = holder;
 			})
+
+			pcall(function()
+				self.OverlayImage.ResampleMode = Enum.ResamplerMode.Default
+			end)
 		end
 
 		return self.OverlayImage
@@ -218,12 +280,9 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:GetOverlayPosition(info)
-		local scaleX = info.Size.X.Offset / info.CanvasSize.X
-		local scaleY = info.Size.Y.Offset / info.CanvasSize.Y
-
 		return UDim2.fromOffset(
-			self.OverlayVisualInset.X - (info.VisibleEdge.X * scaleX),
-			self.OverlayVisualInset.Y - (info.VisibleEdge.Y * scaleY)
+			self.OverlayVisualInset.X - (info.Size.X.Offset * info.VisibleAnchor.X),
+			self.OverlayVisualInset.Y - (info.Size.Y.Offset * info.VisibleAnchor.Y)
 		)
 	end
 
