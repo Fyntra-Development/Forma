@@ -26,8 +26,8 @@ local ThemeManager = {} do
 		};
 		['Marin Kitagawa'] = {
 			File = 'marin-kitagawa.png';
-			Size = UDim2.fromOffset(362, 240);
-			VisibleAnchor = Vector2.new(0.08, 0.72);
+			Size = UDim2.fromOffset(300, 300);
+			VisibleAnchor = Vector2.new(0.08, 0.64);
 		};
 	}
 	ThemeManager.OverlayEnabled = false
