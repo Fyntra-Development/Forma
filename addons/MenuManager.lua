@@ -2,7 +2,7 @@ local MenuManager = {} do
 	MenuManager.Library = nil
 	MenuManager.EasingStyle = 'Quint'
 	MenuManager.EasingDirection = 'Out'
-	MenuManager.TweenSpeed = 0.24
+	MenuManager.TweenSpeed = 0.32
 
 	MenuManager.EasingStyles = {
 		'Linear', 'Sine', 'Quad', 'Cubic', 'Quart', 'Quint', 'Exponential', 'Circular', 'Back'
@@ -27,11 +27,24 @@ local MenuManager = {} do
 	end
 
 	function MenuManager:GetTweenInfo(Duration)
+		local BaseSpeed = math.clamp(tonumber(self.TweenSpeed) or 0.32, 0.12, 1.25)
+		local Requested = tonumber(Duration)
+		local Minimum = math.max(BaseSpeed * 0.62, 0.10)
+		local Effective = Requested and math.max(Requested, Minimum) or BaseSpeed
+
 		return TweenInfo.new(
-			math.max(tonumber(Duration) or self.TweenSpeed or 0.24, 0.01),
+			math.clamp(Effective, 0.10, 1.5),
 			self:GetEasingStyle(),
 			self:GetEasingDirection()
 		)
+	end
+
+	function MenuManager:GetDragSmoothTime()
+		return math.clamp((tonumber(self.TweenSpeed) or 0.32) * 0.28, 0.055, 0.18)
+	end
+
+	function MenuManager:GetReleaseDuration()
+		return math.clamp((tonumber(self.TweenSpeed) or 0.32) * 0.58, 0.10, 0.34)
 	end
 
 	function MenuManager:SetLibrary(Library)
@@ -52,7 +65,7 @@ local MenuManager = {} do
 	end
 
 	function MenuManager:SetTweenSpeed(Value)
-		self.TweenSpeed = math.clamp(tonumber(Value) or 0.24, 0.05, 1)
+		self.TweenSpeed = math.clamp(tonumber(Value) or 0.32, 0.12, 1.25)
 	end
 
 	function MenuManager:ResetMenuPositions()
@@ -87,8 +100,8 @@ local MenuManager = {} do
 		Groupbox:AddSlider('MenuManager_TweenSpeed', {
 			Text = 'Tween speed';
 			Default = self.TweenSpeed;
-			Min = 0.05;
-			Max = 1;
+			Min = 0.12;
+			Max = 1.25;
 			Rounding = 2;
 			Step = 0.01;
 			Suffix = 's';

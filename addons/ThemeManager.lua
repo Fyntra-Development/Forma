@@ -425,13 +425,6 @@ local ThemeManager = {} do
 			self:SetOverlayEnabled(Toggles.ThemeManager_OverlayEnabled.Value)
 		end)
 
-		local menuManager = self:EnsureMenuManager()
-		if menuManager and menuManager.CreateMenuManager and not Options.MenuManager_EasingStyle then
-			groupbox:AddDivider()
-			groupbox:AddLabel('Menu manager')
-			menuManager:CreateMenuManager(groupbox)
-		end
-
 		local ThemesArray = {}
 		for Name, Theme in next, self.BuiltInThemes do
 			table.insert(ThemesArray, Name)
@@ -582,6 +575,11 @@ local ThemeManager = {} do
 		assert(self.Library, 'Must set ThemeManager.Library first!')
 		local groupbox = self:CreateGroupBox(tab)
 		self:CreateThemeManager(groupbox)
+
+		local menuManager = self:EnsureMenuManager()
+		if menuManager and menuManager.BuildMenuSection and not Options.MenuManager_EasingStyle then
+			menuManager:BuildMenuSection(tab)
+		end
 	end
 
 	function ThemeManager:ApplyToGroupbox(groupbox)

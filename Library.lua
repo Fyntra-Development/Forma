@@ -269,6 +269,119 @@ function Library:TweenMenuFadeTree(Root, Hidden, Duration)
     end
 end;
 
+Library.UnifiedFadeControllers = setmetatable({}, { __mode = 'k' });
+
+local function GetUnifiedFadeController(Root)
+    local Controller = Library.UnifiedFadeControllers[Root];
+    if Controller then
+        return Controller;
+    end
+
+    local Driver = Instance.new('NumberValue');
+    Driver.Name = 'FormaUnifiedFadeDriver';
+    Driver.Value = 1;
+    Driver.Parent = Root;
+
+    Controller = {
+        Driver = Driver;
+        Progress = 1;
+        Entries = {};
+        Tween = nil;
+    };
+    Library.UnifiedFadeControllers[Root] = Controller;
+
+    Driver:GetPropertyChangedSignal('Value'):Connect(function()
+        local Progress = math.clamp(Driver.Value, 0, 1);
+        Controller.Progress = Progress;
+
+        for _, Entry in ipairs(Controller.Entries) do
+            local Instance = Entry.Instance;
+            if Instance and Instance.Parent then
+                for Property, Baseline in next, Entry.Baseline do
+                    pcall(function()
+                        Instance[Property] = 1 + ((Baseline - 1) * Progress);
+                    end);
+                end
+            end
+        end
+    end);
+
+    return Controller;
+end
+
+local function RefreshUnifiedFadeEntries(Root, Controller)
+    Library:PrimeFadeTree(Root);
+    table.clear(Controller.Entries);
+
+    local Instances = { Root };
+    for _, Descendant in ipairs(Root:GetDescendants()) do
+        if Descendant ~= Controller.Driver then
+            table.insert(Instances, Descendant);
+        end
+    end
+
+    for _, Instance in ipairs(Instances) do
+        local Baseline = Library.FadeBaselines[Instance];
+        if Baseline then
+            table.insert(Controller.Entries, {
+                Instance = Instance;
+                Baseline = Baseline;
+            });
+        end
+    end
+end
+
+function Library:SetUnifiedFadeProgress(Root, Progress)
+    if not Root then
+        return;
+    end
+
+    local Controller = GetUnifiedFadeController(Root);
+    if Controller.Tween then
+        pcall(function() Controller.Tween:Cancel(); end);
+        Controller.Tween = nil;
+    end
+
+    RefreshUnifiedFadeEntries(Root, Controller);
+    Controller.Progress = math.clamp(tonumber(Progress) or 0, 0, 1);
+    Controller.Driver.Value = Controller.Progress;
+end
+
+function Library:TweenUnifiedFade(Root, Target, Duration, Completed)
+    if not Root then
+        return nil;
+    end
+
+    local Controller = GetUnifiedFadeController(Root);
+    if Controller.Tween then
+        pcall(function() Controller.Tween:Cancel(); end);
+        Controller.Tween = nil;
+    end
+
+    RefreshUnifiedFadeEntries(Root, Controller);
+    local TargetProgress = math.clamp(tonumber(Target) or 0, 0, 1);
+    local Tween = TweenService:Create(
+        Controller.Driver,
+        Library:GetMenuTweenInfo(Duration),
+        { Value = TargetProgress }
+    );
+
+    Controller.Tween = Tween;
+    Tween:Play();
+    Tween.Completed:Connect(function(State)
+        if Controller.Tween == Tween then
+            Controller.Tween = nil;
+            Controller.Progress = TargetProgress;
+            Controller.Driver.Value = TargetProgress;
+        end
+        if Completed then
+            Completed(State);
+        end
+    end);
+
+    return Tween;
+end
+
 function Library:ResetMenuPositions(Animated)
     for Instance, State in next, Library.DraggableStates do
         if Instance and Instance.Parent and State.InitialPosition then
@@ -702,6 +815,31 @@ function Library:AddAccentGlow(Instance, Scale)
     end;
 end;
 
+function Library:AddAccentOutline(Instance, Scale)
+    if not Instance then
+        return nil;
+    end;
+
+    Scale = math.max(tonumber(Scale) or 1, 0.25);
+    local Stroke = Instance:FindFirstChild('FormaAccentOutline');
+    if not Stroke then
+        Stroke = Library:Create('UIStroke', {
+            Name = 'FormaAccentOutline';
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            Color = Library.AccentColor;
+            LineJoinMode = Enum.LineJoinMode.Round;
+            Thickness = 1.05 * Scale;
+            Transparency = 0.04;
+            Parent = Instance;
+        });
+        Library:AddToRegistry(Stroke, { Color = 'AccentColor'; });
+    else
+        Stroke.Thickness = 1.05 * Scale;
+        Stroke.Transparency = 0.04;
+    end
+    return Stroke;
+end;
+
 function Library:AddTopCorners(Instance, Radius)
     if not Instance then
         return nil;
@@ -970,9 +1108,18 @@ function Library:MakeDraggable(Instance, Cutoff)
     local State = {
         InitialPosition = Instance.Position;
         Dragging = false;
-        Tween = nil;
+        TargetPosition = Instance.Position;
     };
     Library.DraggableStates[Instance] = State;
+
+    local function CancelPositionTween()
+        local InstanceTweens = Library.PropertyTweens[Instance];
+        local PositionTween = InstanceTweens and InstanceTweens.Position;
+        if PositionTween then
+            pcall(function() PositionTween:Cancel(); end);
+            InstanceTweens.Position = nil;
+        end
+    end
 
     Instance.InputBegan:Connect(function(Input)
         if Input.UserInputType ~= Enum.UserInputType.MouseButton1 then
@@ -988,20 +1135,45 @@ function Library:MakeDraggable(Instance, Cutoff)
             return;
         end
 
+        CancelPositionTween();
         State.Dragging = true;
+
+        local Anchor = Instance.AnchorPoint;
+        local Visual = Vector2.new(
+            Instance.AbsolutePosition.X + (Instance.AbsoluteSize.X * Anchor.X),
+            Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
+        );
+        local Target = Visual;
+
         while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) and Instance.Parent do
-            local Target = UDim2.new(
-                0,
-                Mouse.X - ObjPos.X + (Instance.Size.X.Offset * Instance.AnchorPoint.X),
-                0,
-                Mouse.Y - ObjPos.Y + (Instance.Size.Y.Offset * Instance.AnchorPoint.Y)
+            Target = Vector2.new(
+                Mouse.X - ObjPos.X + (Instance.AbsoluteSize.X * Anchor.X),
+                Mouse.Y - ObjPos.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
             );
 
-            local Speed = Library.MenuManager and Library.MenuManager.TweenSpeed or 0.18;
-            Library:TweenMenuProperty(Instance, 'Position', Target, math.clamp(Speed * 0.55, 0.035, 0.22));
-            RenderStepped:Wait();
+            local Delta = RenderStepped:Wait();
+            local Manager = Library.MenuManager;
+            local SmoothTime = 0.075;
+            if Manager and Manager.GetDragSmoothTime then
+                SmoothTime = Manager:GetDragSmoothTime();
+            end
+
+            local Alpha = 1 - math.exp(-math.min(Delta, 0.05) / math.max(SmoothTime, 0.001));
+            Visual = Visual:Lerp(Target, Alpha);
+            Instance.Position = UDim2.fromOffset(Visual.X, Visual.Y);
         end
+
         State.Dragging = false;
+        State.TargetPosition = UDim2.fromOffset(Target.X, Target.Y);
+
+        if Instance.Parent then
+            local Manager = Library.MenuManager;
+            local ReleaseDuration = 0.14;
+            if Manager and Manager.GetReleaseDuration then
+                ReleaseDuration = Manager:GetReleaseDuration();
+            end
+            Library:TweenMenuProperty(Instance, 'Position', State.TargetPosition, ReleaseDuration);
+        end
     end);
 
     return State;
@@ -4640,6 +4812,7 @@ do
     Library:AddCorner(KeybindOuter, 3);
     Library:AddCorner(KeybindInner, 3);
     Library:AddAccentGlow(KeybindInner, 0.9);
+    Library:AddAccentOutline(KeybindInner, 1);
 
     local KeybindLabel = Library:CreateLabel({
         Size = UDim2.new(1, 0, 0, 20);
@@ -4724,6 +4897,7 @@ function Library:CreateTargetHUD(Config)
     Library:AddCorner(Outer, 3);
     Library:AddCorner(Inner, 3);
     Library:AddAccentGlow(Inner, 0.95);
+    Library:AddAccentOutline(Inner, 1);
     Library:AddToRegistry(Inner, {
         BackgroundColor3 = 'MainColor';
         BorderColor3 = 'AccentColor';
@@ -5063,7 +5237,7 @@ function Library:CreateWindow(...)
 
     if type(Config.Title) ~= 'string' then Config.Title = 'No title' end
     if type(Config.TabPadding) ~= 'number' then Config.TabPadding = 0 end
-    if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.2 end
+    if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.32 end
 
     if typeof(Config.Position) ~= 'UDim2' then Config.Position = UDim2.fromOffset(175, 50) end
     if typeof(Config.Size) ~= 'UDim2' then Config.Size = UDim2.fromOffset(550, 600) end
@@ -5118,6 +5292,7 @@ function Library:CreateWindow(...)
     });
 
     Library:AddAccentGlow(Inner, 1);
+    Library:AddAccentOutline(Inner, 1);
 
     local WindowLabel = Library:CreateLabel({
         Position = UDim2.new(0, 7, 0, 0);
@@ -5335,11 +5510,12 @@ function Library:CreateWindow(...)
 
         local function SetTabVisualGroups(Target, Duration, Stagger)
             local Hidden = Target >= 0.5;
+            local Progress = Hidden and 0 or 1;
 
             if not Duration or Duration <= 0 then
-                Library:SetFadeTree(TabFrame, Hidden);
+                Library:SetUnifiedFadeProgress(TabFrame, Progress);
             else
-                Library:TweenFadeTree(TabFrame, Hidden, Duration);
+                Library:TweenUnifiedFade(TabFrame, Progress, Duration);
             end;
         end;
 
@@ -5370,8 +5546,8 @@ function Library:CreateWindow(...)
 
             task.defer(function()
                 if Tab.Active then
-                    SetTabVisualGroups(0, 0.38, 0.018);
-                    Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, 0), 0.42);
+                    SetTabVisualGroups(0, 0.42, 0);
+                    Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, 0), 0.44);
                 end;
             end);
         end;
@@ -5388,10 +5564,10 @@ function Library:CreateWindow(...)
             Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.14);
             Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.14);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
-            SetTabVisualGroups(1, 0.30, 0);
-            Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, -5), 0.32);
+            SetTabVisualGroups(1, 0.34, 0);
+            Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, -5), 0.34);
 
-            task.delay(0.32, function()
+            task.delay(0.34, function()
                 if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                     TabFrame.Visible = false;
                     TabFrame.Position = UDim2.new(0, 0, 0, 7);
@@ -5658,8 +5834,8 @@ function Library:CreateWindow(...)
                     Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.16);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
                     Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 20), 0.25);
-                    Library:SetFadeTree(Container, true);
-                    Library:TweenFadeTree(Container, false, 0.22);
+                    Library:SetUnifiedFadeProgress(Container, 0);
+                    Library:TweenUnifiedFade(Container, 1, 0.30);
 
                     Tab:Resize();
                 end;
@@ -5672,10 +5848,10 @@ function Library:CreateWindow(...)
                     Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.16);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.14);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
-                    Library:TweenFadeTree(Container, true, 0.16);
-                    Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 17), 0.16);
+                    Library:TweenUnifiedFade(Container, 0, 0.24);
+                    Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 17), 0.24);
 
-                    task.delay(0.16, function()
+                    task.delay(0.24, function()
                         if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                             Container.Visible = false;
                             Container.Position = UDim2.new(0, 4, 0, 25);
@@ -5787,15 +5963,12 @@ function Library:CreateWindow(...)
     });
 
     local Toggled = false;
-    local Fading = false;
     local ToggleAnimationId = 0;
-    local MenuScale = Library:Create('UIScale', {
-        Name = 'FormaMenuScale';
-        Scale = 1;
-        Parent = Outer;
-    });
+    local CursorAnimationId = 0;
 
     local function StartFormaCursor()
+        CursorAnimationId = CursorAnimationId + 1;
+        local CurrentCursorId = CursorAnimationId;
         task.spawn(function()
             local State = InputService.MouseIconEnabled;
             local CursorAssetPath = 'FormaAssets/cursor.png';
@@ -5823,7 +5996,7 @@ function Library:CreateWindow(...)
             end
 
             if Cursor then
-                while Toggled and ScreenGui.Parent do
+                while Toggled and CurrentCursorId == CursorAnimationId and ScreenGui.Parent do
                     InputService.MouseIconEnabled = false;
                     Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y);
                     RenderStepped:Wait();
@@ -5835,38 +6008,32 @@ function Library:CreateWindow(...)
     end
 
     function Library:Toggle()
-        if Fading then return; end
-
-        Fading = true;
         Toggled = not Toggled;
         ToggleAnimationId = ToggleAnimationId + 1;
         local CurrentId = ToggleAnimationId;
         ModalElement.Modal = Toggled;
-        local FadeTime = Library.MenuManager and Library.MenuManager.TweenSpeed or Config.MenuFadeTime;
-        FadeTime = math.clamp(tonumber(FadeTime) or 0.24, 0.08, 1);
+
+        local Manager = Library.MenuManager;
+        local FadeTime = Manager and Manager.TweenSpeed or Config.MenuFadeTime;
+        FadeTime = math.clamp(math.max(tonumber(FadeTime) or 0.32, 0.26), 0.26, 1.5);
 
         if Toggled then
-            Library:PrimeFadeTree(Outer);
-            Library:SetFadeTree(Outer, true);
-            MenuScale.Scale = 0.982;
-            Outer.Visible = true;
-            Library:TweenMenuFadeTree(Outer, false, FadeTime);
-            Library:TweenMenuProperty(MenuScale, 'Scale', 1, FadeTime);
+            if not Outer.Visible then
+                Library:SetUnifiedFadeProgress(Outer, 0);
+                Outer.Visible = true;
+            end
+
+            Library:TweenUnifiedFade(Outer, 1, FadeTime);
             StartFormaCursor();
         else
-            Library:TweenMenuFadeTree(Outer, true, FadeTime);
-            Library:TweenMenuProperty(MenuScale, 'Scale', 0.982, FadeTime);
-        end
-
-        task.delay(FadeTime, function()
-            if CurrentId ~= ToggleAnimationId then return; end
-            if not Toggled then
+            CursorAnimationId = CursorAnimationId + 1;
+            Library:TweenUnifiedFade(Outer, 0, FadeTime, function(State)
+                if CurrentId ~= ToggleAnimationId or Toggled or State == Enum.PlaybackState.Cancelled then
+                    return;
+                end
                 Outer.Visible = false;
-                Library:SetFadeTree(Outer, false);
-                MenuScale.Scale = 1;
-            end
-            Fading = false;
-        end);
+            end);
+        end
     end
 
     Library:GiveSignal(InputService.InputBegan:Connect(function(Input, Processed)
