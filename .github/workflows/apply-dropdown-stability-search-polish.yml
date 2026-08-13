@@ -1,0 +1,41 @@
+name: Apply dropdown stability and search polish
+
+on:
+  push:
+    branches: [agent/dropdown-stability-search-polish]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/dropdown-stability-search-polish
+          fetch-depth: 0
+      - name: Patch runtime
+        run: python .github/scripts/dropdown_stability_search_polish.py
+      - name: Verify behavior tokens
+        shell: bash
+        run: |
+          grep -q "function Dropdown:SetValue(NewValue)" Library.lua
+          grep -q "PlaceholderText = 'Search...'" Library.lua
+          grep -q "MinThumbHeight = math.min(18, TrackHeight)" Library.lua
+          grep -q "Visible == DependencyVisible and Holder.Visible == Visible" Library.lua
+          grep -q "Library.ActiveTooltipHide(true)" Library.lua
+          grep -q "Text = tostring(Info.Default)" Library.lua
+          grep -q "VisibleAnchor = Vector2.new(0.08, 0.832)" addons/ThemeManager.lua
+          ! grep -q "DisplayLabel.Text = '<...>'" Library.lua
+          ! grep -q "local ColorFrame = Library:Create('Frame'" Library.lua
+      - name: Commit runtime changes
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua addons/ThemeManager.lua
+          if ! git diff --cached --quiet; then
+            git commit -m "Fix dropdown stability and add search polish"
+            git push origin HEAD:agent/dropdown-stability-search-polish
+          fi
