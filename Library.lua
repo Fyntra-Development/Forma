@@ -4790,6 +4790,14 @@ do
         WatermarkTextOutline.LineJoinMode = Enum.LineJoinMode.Round;
     end
 
+    local WatermarkTextOutline = WatermarkLabel:FindFirstChildOfClass('UIStroke');
+    if WatermarkTextOutline then
+        WatermarkTextOutline.Color = Color3.new(0, 0, 0);
+        WatermarkTextOutline.Thickness = 1.2;
+        WatermarkTextOutline.Transparency = 0.06;
+        WatermarkTextOutline.LineJoinMode = Enum.LineJoinMode.Round;
+    end
+
     Library.Watermark = WatermarkOuter;
     Library.WatermarkText = WatermarkLabel;
     Library:MakeDraggable(Library.Watermark);
