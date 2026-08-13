@@ -639,42 +639,66 @@ function Library:AddAccentGlow(Instance, Scale)
         return;
     end;
 
-    Scale = tonumber(Scale) or 1;
+    Scale = math.max(tonumber(Scale) or 1, 0.05);
+
+    for _, Child in ipairs(Instance:GetChildren()) do
+        if (Child:IsA('UIStroke') and Child.Name:match('^FormaAccentGlow%d+$'))
+            or (Child:IsA('Frame') and Child.Name:match('^FormaAccentGlowLayer%d+$')) then
+            Child:Destroy();
+        end
+    end
+
+    local BaseCornerRadius = 3;
+    local InstanceCorner = Instance:FindFirstChildOfClass('UICorner');
+    if InstanceCorner and InstanceCorner.CornerRadius.Scale == 0 then
+        BaseCornerRadius = math.max(InstanceCorner.CornerRadius.Offset, 0);
+    end
+
     local Layers = {
-        { 0.78, 0.18 },
-        { 1.08, 0.30 },
-        { 1.42, 0.42 },
-        { 1.82, 0.54 },
-        { 2.30, 0.64 },
-        { 2.86, 0.73 },
-        { 3.48, 0.81 },
-        { 4.14, 0.87 },
-        { 4.82, 0.92 },
-        { 5.45, 0.96 },
+        { 0.4,  2.2, 0.890 },
+        { 1.1,  2.4, 0.902 },
+        { 1.9,  2.6, 0.916 },
+        { 2.8,  2.8, 0.930 },
+        { 3.8,  3.0, 0.942 },
+        { 4.9,  3.2, 0.952 },
+        { 6.1,  3.4, 0.961 },
+        { 7.4,  3.6, 0.969 },
+        { 8.8,  3.8, 0.976 },
+        { 10.3, 4.0, 0.982 },
+        { 11.9, 4.2, 0.987 },
+        { 13.6, 4.4, 0.991 },
     };
 
     for Index, Info in ipairs(Layers) do
-        local Name = 'FormaAccentGlow' .. Index;
-        local Stroke = Instance:FindFirstChild(Name);
+        local Spread = Info[1] * Scale;
+        local Thickness = Info[2] * Scale;
+        local Layer = Library:Create('Frame', {
+            Name = 'FormaAccentGlowLayer' .. Index;
+            Active = false;
+            AnchorPoint = Vector2.new(0.5, 0.5);
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = UDim2.fromScale(0.5, 0.5);
+            Size = UDim2.new(1, Spread * 2, 1, Spread * 2);
+            ZIndex = math.max(0, Instance.ZIndex - 1);
+            Parent = Instance;
+        });
 
-        if not Stroke then
-            Stroke = Library:Create('UIStroke', {
-                Name = Name;
-                ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-                Color = Library.AccentColor;
-                LineJoinMode = Enum.LineJoinMode.Round;
-                Thickness = Info[1] * Scale;
-                Transparency = Info[2];
-                Parent = Instance;
-            });
+        Library:AddCorner(Layer, BaseCornerRadius + Spread);
 
-            Library:AddToRegistry(Stroke, {
-                Color = 'AccentColor';
-            });
-        else
-            Stroke.Thickness = Info[1] * Scale;
-            Stroke.Transparency = Info[2];
-        end;
+        local Stroke = Library:Create('UIStroke', {
+            Name = 'GlowStroke';
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            Color = Library.AccentColor;
+            LineJoinMode = Enum.LineJoinMode.Round;
+            Thickness = Thickness;
+            Transparency = Info[3];
+            Parent = Layer;
+        });
+
+        Library:AddToRegistry(Stroke, {
+            Color = 'AccentColor';
+        });
     end;
 end;
 

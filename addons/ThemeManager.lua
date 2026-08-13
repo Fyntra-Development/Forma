@@ -6,6 +6,8 @@ local ThemeManager = {} do
 
 	ThemeManager.Library = nil
 	ThemeManager.OverlayBaseUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/idfk/'
+	ThemeManager.MenuManagerUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/addons/MenuManager.lua'
+	ThemeManager.MenuManager = nil
 	ThemeManager.OverlayOrder = { 'EDP445', 'Jane Doe', 'Ibuki', 'Marin Kitagawa' }
 	ThemeManager.OverlayVisualInset = Vector2.new(10, 2)
 	ThemeManager.OverlayAssets = {
@@ -341,6 +343,50 @@ local ThemeManager = {} do
 		end
 	end
 
+	function ThemeManager:EnsureMenuManager()
+		if not self.Library then
+			return nil
+		end
+
+		if self.Library.MenuManager then
+			self.MenuManager = self.Library.MenuManager
+			return self.MenuManager
+		end
+
+		if self.MenuManager then
+			if self.MenuManager.SetLibrary then
+				self.MenuManager:SetLibrary(self.Library)
+			end
+			return self.MenuManager
+		end
+
+		if type(loadstring) ~= 'function' then
+			return nil
+		end
+
+		local success, manager = pcall(function()
+			local source = game:HttpGet(self.MenuManagerUrl)
+			local chunk, compileError = loadstring(source)
+			if not chunk then
+				error(compileError)
+			end
+			return chunk()
+		end)
+
+		if not success or type(manager) ~= 'table' then
+			return nil
+		end
+
+		self.MenuManager = manager
+		if manager.SetLibrary then
+			manager:SetLibrary(self.Library)
+		else
+			self.Library.MenuManager = manager
+		end
+
+		return manager
+	end
+
 	function ThemeManager:CreateThemeManager(groupbox)
 		groupbox:AddLabel('Background color'):AddColorPicker('BackgroundColor', { Default = self.Library.BackgroundColor });
 		groupbox:AddLabel('Main color')	:AddColorPicker('MainColor', { Default = self.Library.MainColor });
@@ -378,6 +424,13 @@ local ThemeManager = {} do
 		Toggles.ThemeManager_OverlayEnabled:OnChanged(function()
 			self:SetOverlayEnabled(Toggles.ThemeManager_OverlayEnabled.Value)
 		end)
+
+		local menuManager = self:EnsureMenuManager()
+		if menuManager and menuManager.CreateMenuManager and not Options.MenuManager_EasingStyle then
+			groupbox:AddDivider()
+			groupbox:AddLabel('Menu manager')
+			menuManager:CreateMenuManager(groupbox)
+		end
 
 		local ThemesArray = {}
 		for Name, Theme in next, self.BuiltInThemes do
