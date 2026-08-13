@@ -6003,7 +6003,9 @@ function Library:CreateWindow(...)
                 end
                 Cursor:Destroy();
             end
-            InputService.MouseIconEnabled = State;
+            if CurrentCursorId == CursorAnimationId then
+                InputService.MouseIconEnabled = State;
+            end
         end);
     end
 
