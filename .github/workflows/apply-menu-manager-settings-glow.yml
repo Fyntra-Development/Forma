@@ -1,0 +1,37 @@
+name: Apply MenuManager settings and soft glow
+
+on:
+  push:
+    branches: [agent/menu-manager-settings-soft-glow]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/menu-manager-settings-soft-glow
+          fetch-depth: 0
+      - name: Patch runtime
+        run: python .github/scripts/menu-manager-settings-glow.py
+      - name: Verify behavior tokens
+        shell: bash
+        run: |
+          grep -q "FormaAccentGlowLayer12" <(sed -n '/function Library:AddAccentGlow/,/function Library:AddTopCorners/p' Library.lua) || grep -q "{ 13.6, 4.4, 0.991 }" Library.lua
+          grep -q "ThemeManager.MenuManagerUrl" addons/ThemeManager.lua
+          grep -q "function ThemeManager:EnsureMenuManager" addons/ThemeManager.lua
+          grep -q "groupbox:AddLabel('Menu manager')" addons/ThemeManager.lua
+          grep -q "menuManager:CreateMenuManager(groupbox)" addons/ThemeManager.lua
+      - name: Commit runtime changes
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua addons/ThemeManager.lua
+          if ! git diff --cached --quiet; then
+            git commit -m "Surface MenuManager settings and soften accent glow"
+            git push origin HEAD:agent/menu-manager-settings-soft-glow
+          fi
