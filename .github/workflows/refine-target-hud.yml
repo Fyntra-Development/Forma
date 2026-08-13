@@ -1,0 +1,31 @@
+name: Refine Target HUD
+
+on:
+  push:
+    branches: [agent/target-hud-healthbar-custom-labels]
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/target-hud-healthbar-custom-labels
+          fetch-depth: 0
+      - run: python .github/scripts/refine-target-hud.py
+      - shell: bash
+        run: |
+          grep -q "local Entries = {}" Library.lua
+          grep -q "UpdateHealthVisual();" Library.lua
+      - shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua
+          if ! git diff --cached --quiet; then
+            git commit -m "Refine Target HUD provider updates"
+            git push origin HEAD:agent/target-hud-healthbar-custom-labels
+          fi
