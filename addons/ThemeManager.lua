@@ -27,7 +27,7 @@ local ThemeManager = {} do
 		['Marin Kitagawa'] = {
 			File = 'marin-kitagawa.png';
 			Size = UDim2.fromOffset(300, 300);
-			VisibleAnchor = Vector2.new(0.08, 0.832);
+			VisibleAnchor = Vector2.new(0.08, 0.842);
 		};
 	}
 	ThemeManager.OverlayEnabled = false
@@ -351,7 +351,7 @@ local ThemeManager = {} do
 
 		local FontNames = self.Library:GetFontNames()
 		local DefaultFontIndex = table.find(FontNames, self.Library.FontName) or 1
-		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex })
+		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex, Searchable = true })
 		Options.ThemeManager_Font:OnChanged(function()
 			self.Library:SetFont(Options.ThemeManager_Font.Value)
 		end)
@@ -387,7 +387,7 @@ local ThemeManager = {} do
 		table.sort(ThemesArray, function(a, b) return self.BuiltInThemes[a][1] < self.BuiltInThemes[b][1] end)
 
 		groupbox:AddDivider()
-		groupbox:AddDropdown('ThemeManager_ThemeList', { Text = 'Theme list', Values = ThemesArray, Default = 1 })
+		groupbox:AddDropdown('ThemeManager_ThemeList', { Text = 'Theme list', Values = ThemesArray, Default = 1, Searchable = true })
 
 		groupbox:AddButton('Set as default', function()
 			self:SaveDefault(Options.ThemeManager_ThemeList.Value)
@@ -400,7 +400,7 @@ local ThemeManager = {} do
 
 		groupbox:AddDivider()
 		groupbox:AddInput('ThemeManager_CustomThemeName', { Text = 'Custom theme name' })
-		groupbox:AddDropdown('ThemeManager_CustomThemeList', { Text = 'Custom themes', Values = self:ReloadCustomThemes(), AllowNull = true, Default = 1 })
+		groupbox:AddDropdown('ThemeManager_CustomThemeList', { Text = 'Custom themes', Values = self:ReloadCustomThemes(), AllowNull = true, Default = 1, Searchable = true })
 		groupbox:AddDivider()
 		
 		groupbox:AddButton('Save theme', function() 
