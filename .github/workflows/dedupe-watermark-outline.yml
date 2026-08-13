@@ -1,0 +1,38 @@
+name: Dedupe watermark outline
+
+on:
+  push:
+    branches: [agent/target-hud-healthbar-custom-labels]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/target-hud-healthbar-custom-labels
+          fetch-depth: 0
+      - shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Library.lua')
+          s = p.read_text()
+          needle = "    local WatermarkTextOutline = WatermarkLabel:FindFirstChildOfClass('UIStroke');\n"
+          first = s.index(needle)
+          second = s.index(needle, first + len(needle))
+          end = s.index('    Library.Watermark = WatermarkOuter;', second)
+          s = s[:second] + s[end:]
+          p.write_text(s)
+          assert s.count(needle) == 1
+          PY
+      - shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua
+          git commit -m "Remove duplicate watermark outline block"
+          git push origin HEAD:agent/target-hud-healthbar-custom-labels
