@@ -15,6 +15,32 @@ jobs:
         with:
           ref: agent/ui-polish-pass
           fetch-depth: 0
+      - name: Narrow duplicate groupbox matcher
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/scripts/ui_polish_patch.py')
+          text = path.read_text()
+          old = """def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 exact match, got {count}')
+              return text.replace(old, new, 1)
+          """
+          new = """def replace_once(text, old, new, label):
+              count = text.count(old)
+              if label == 'Register groupbox visual group':
+                  if count < 1:
+                      raise SystemExit(f'{label}: expected at least 1 exact match, got {count}')
+                  return text.replace(old, new, 1)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 exact match, got {count}')
+              return text.replace(old, new, 1)
+          """
+          if old not in text:
+              raise SystemExit('replace_once helper not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
       - name: Patch library and theme manager
         run: python .github/scripts/ui_polish_patch.py
       - name: Verify requested behavior
