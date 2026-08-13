@@ -1,0 +1,93 @@
+function Library:CreateTargetHUD(Config)
+    Config = Config or {};
+
+    if Library.TargetHUD and Library.TargetHUD.Destroy then
+        Library.TargetHUD:Destroy();
+    end
+
+    local HUD = {
+        Target = nil;
+        StaticInfo = nil;
+        InfoProvider = Config.InfoProvider or Config.GetInfo;
+        HealthProvider = Config.HealthProvider or Config.GetHealth;
+        MeterProvider = Config.MeterProvider or Config.GetMeter;
+        MeterText = Config.MeterText;
+        HealthTextFormatter = Config.HealthTextFormatter;
+        AnimationId = 0;
+        Labels = {};
+        LabelOrder = {};
+        ProviderLabelIds = {};
+        HealthMax = 100;
+        HealthAvailable = false;
+        HealthTargetRatio = -1;
+    };
+
+    local BaseSize = Config.Size or UDim2.fromOffset(270, 106);
+    local BaseHeight = math.max(BaseSize.Y.Offset, 106);
+
+    local Outer = Library:Create('Frame', {
+        BackgroundColor3 = Color3.new(0, 0, 0);
+        BorderColor3 = Color3.new(0, 0, 0);
+        Position = Config.Position or UDim2.new(0.5, 285, 0.5, 120);
+        Size = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset, BaseSize.Y.Scale, BaseHeight);
+        Visible = false;
+        ZIndex = 250;
+        Parent = ScreenGui;
+    });
+
+    local Inner = Library:Create('Frame', {
+        BackgroundColor3 = Library.MainColor;
+        BorderColor3 = Library.AccentColor;
+        BorderMode = Enum.BorderMode.Inset;
+        Size = UDim2.fromScale(1, 1);
+        ZIndex = 251;
+        Parent = Outer;
+    });
+
+    Library:AddCorner(Outer, 3);
+    Library:AddCorner(Inner, 3);
+    Library:AddAccentGlow(Inner, 0.95);
+    Library:AddAccentOutline(Inner, 1);
+    Library:AddToRegistry(Inner, {
+        BackgroundColor3 = 'MainColor';
+        BorderColor3 = 'AccentColor';
+    }, true);
+
+    local AvatarOuter = Library:Create('Frame', {
+        BackgroundColor3 = Library.BackgroundColor;
+        BorderColor3 = Library.OutlineColor;
+        BorderMode = Enum.BorderMode.Inset;
+        Position = UDim2.fromOffset(8, 8);
+        Size = UDim2.fromOffset(62, 62);
+        ZIndex = 252;
+        Parent = Inner;
+    });
+    Library:AddCorner(AvatarOuter, 3);
+    Library:AddToRegistry(AvatarOuter, {
+        BackgroundColor3 = 'BackgroundColor';
+        BorderColor3 = 'OutlineColor';
+    }, true);
+
+    local Avatar = Library:Create('ImageLabel', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(2, 2);
+        Size = UDim2.new(1, -4, 1, -4);
+        Image = '';
+        ZIndex = 253;
+        Parent = AvatarOuter;
+    });
+    Library:AddCorner(Avatar, 3);
+
+    local Username = Library:CreateLabel({
+        Position = UDim2.fromOffset(78, 8);
+        Size = UDim2.new(1, -86, 0, 18);
+        Text = 'No target';
+        TextColor3 = Library.AccentColor;
+        TextSize = 15;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 253;
+        Parent = Inner;
+    });
+    Library.RegistryMap[Username].Properties.TextColor3 = 'AccentColor';
+
