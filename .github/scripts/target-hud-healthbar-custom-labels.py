@@ -10,8 +10,8 @@ s = s.replace(wm, wm + """\n    local WatermarkTextOutline = WatermarkLabel:Find
 
 start = s.index('function Library:CreateTargetHUD(Config)')
 end = s.index('function Library:Notify(Text, Time)', start)
-parts = []
-for name in ['.github/patches/target-hud-1.txt', '.github/patches/target-hud-2.txt', '.github/patches/target-hud-3.txt']:
-    parts.append(Path(name).read_text())
+parts = [path.read_text() for path in sorted(Path('.github/patches').glob('target-hud-*.txt'))]
+if not parts:
+    raise SystemExit('Target HUD patch chunks missing')
 s = s[:start] + ''.join(parts) + '\n' + s[end:]
 p.write_text(s)
