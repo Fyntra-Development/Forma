@@ -27,7 +27,7 @@ local ThemeManager = {} do
 		['Marin Kitagawa'] = {
 			File = 'marin-kitagawa.png';
 			Size = UDim2.fromOffset(300, 300);
-			VisibleAnchor = Vector2.new(0.08, 0.64);
+			VisibleAnchor = Vector2.new(0.08, 0.83);
 		};
 	}
 	ThemeManager.OverlayEnabled = false
@@ -358,15 +358,14 @@ local ThemeManager = {} do
 
 		groupbox:AddSlider('ThemeManager_TextSize', {
 			Text = 'Text size';
-			Default = 100;
-			Min = 75;
-			Max = 150;
+			Default = 14;
+			Min = 9;
+			Max = 24;
 			Rounding = 0;
-			Step = 5;
-			Suffix = '%';
+			Step = 1;
 		})
 		Options.ThemeManager_TextSize:OnChanged(function()
-			self.Library:SetTextScale(Options.ThemeManager_TextSize.Value / 100)
+			self.Library:SetTextSize(Options.ThemeManager_TextSize.Value)
 		end)
 
 		groupbox:AddToggle('ThemeManager_OverlayEnabled', { Text = 'UI overlay', Default = false })
