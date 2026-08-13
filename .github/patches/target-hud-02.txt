@@ -1,0 +1,91 @@
+    local LabelsContainer = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(78, 28);
+        Size = UDim2.new(1, -86, 0, 0);
+        ZIndex = 253;
+        Parent = Inner;
+    });
+
+    Library:Create('UIListLayout', {
+        Padding = UDim.new(0, 0);
+        FillDirection = Enum.FillDirection.Vertical;
+        SortOrder = Enum.SortOrder.LayoutOrder;
+        Parent = LabelsContainer;
+    });
+
+    local MeterLabel = Library:CreateLabel({
+        AnchorPoint = Vector2.new(0, 1);
+        Position = UDim2.new(0, 78, 1, -39);
+        Size = UDim2.new(1, -86, 0, 14);
+        Text = '';
+        TextSize = 13;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 254;
+        Parent = Inner;
+    });
+
+    local HealthOuter = Library:Create('Frame', {
+        AnchorPoint = Vector2.new(0, 1);
+        BackgroundColor3 = Library.BackgroundColor;
+        BorderColor3 = Library.OutlineColor;
+        BorderMode = Enum.BorderMode.Inset;
+        ClipsDescendants = true;
+        Position = UDim2.new(0, 8, 1, -8);
+        Size = UDim2.new(1, -16, 0, 14);
+        ZIndex = 254;
+        Parent = Inner;
+    });
+    Library:AddCorner(HealthOuter, 3);
+    Library:AddToRegistry(HealthOuter, {
+        BackgroundColor3 = 'BackgroundColor';
+        BorderColor3 = 'OutlineColor';
+    }, true);
+
+    local HealthInner = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        ClipsDescendants = true;
+        Position = UDim2.fromOffset(1, 1);
+        Size = UDim2.new(1, -2, 1, -2);
+        ZIndex = 255;
+        Parent = HealthOuter;
+    });
+    Library:AddCorner(HealthInner, 2);
+
+    local HealthFill = Library:Create('Frame', {
+        BackgroundColor3 = Color3.new(1, 1, 1);
+        BorderSizePixel = 0;
+        Size = UDim2.new(0, 0, 1, 0);
+        ZIndex = 255;
+        Parent = HealthInner;
+    });
+    Library:AddCorner(HealthFill, 2);
+
+    local HealthGradient = Library:Create('UIGradient', {
+        Rotation = 0;
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 40, 40)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 70, 70)),
+        });
+        Parent = HealthFill;
+    });
+
+    local HealthText = Library:CreateLabel({
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(2, 0);
+        Size = UDim2.new(1, -4, 1, 0);
+        Text = '-- HP';
+        TextSize = 12;
+        TextXAlignment = Enum.TextXAlignment.Center;
+        ZIndex = 256;
+        Parent = HealthOuter;
+    });
+
+    local HealthDriver = Instance.new('NumberValue');
+    HealthDriver.Name = 'FormaTargetHealthDriver';
+    HealthDriver.Value = 0;
+    HealthDriver.Parent = HealthOuter;
+    local HealthTween;
+
