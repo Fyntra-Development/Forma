@@ -119,7 +119,7 @@ local MenuManager = {} do
 	function MenuManager:BuildMenuSection(Tab)
 		assert(self.Library, 'Must set MenuManager.Library')
 		local Section = Tab:AddRightGroupbox('Menu manager')
-		self:CreateMenuMager(Section)
+		self:CreateMenuManager(Section)
 		return Section
 	end
 end
