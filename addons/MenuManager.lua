@@ -44,7 +44,7 @@ local MenuManager = {} do
 	end
 
 	function MenuManager:GetReleaseDuration()
-		return math.clamp((tonumber(self.TweenSpeed) or 0.32) * 0.58, 0.10, 0.34)
+		return math.clamp((tonumber(self.TweenSpeed) or 0.32) * 0.92, 0.20, 0.68)
 	end
 
 	function MenuManager:SetLibrary(Library)
@@ -119,7 +119,7 @@ local MenuManager = {} do
 	function MenuManager:BuildMenuSection(Tab)
 		assert(self.Library, 'Must set MenuManager.Library')
 		local Section = Tab:AddRightGroupbox('Menu manager')
-		self:CreateMenuManager(Section)
+		self:CreateMenuMager(Section)
 		return Section
 	end
 end
