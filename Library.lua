@@ -1195,10 +1195,18 @@ function Library:MakeDraggable(Instance, Cutoff)
 
             while Instance.Parent and State.ReleaseSequence == ReleaseSequence do
                 local Alpha = math.clamp((os.clock() - Started) / ReleaseDuration, 0, 1);
-                local StyleAlpha = TweenService:GetValue(Alpha, ReleaseStyle, ReleaseDirection);
-                local SmoothAlpha = Alpha * Alpha * (3 - (2 * Alpha));
-                local Eased = math.clamp((StyleAlpha * 0.62) + (SmoothAlpha * 0.38), 0, 1);
-                local Position = StartAnchor:Lerp(Target, Eased);
+                local Eased;
+                if Manager and Manager.GetEasedAlpha then
+                    local Success, Value = pcall(Manager.GetEasedAlpha, Manager, Alpha, 'Release');
+                    if Success then Eased = Value; end
+                end
+                if Eased == nil then
+                    local Raw = math.clamp(TweenService:GetValue(Alpha, ReleaseStyle, ReleaseDirection), 0, 1);
+                    local Smooth = Alpha * Alpha * Alpha * (Alpha * ((Alpha * 6) - 15) + 10);
+                    local Mixed = math.clamp(Smooth + ((Raw - Smooth) * 0.20), 0, 1);
+                    Eased = Mixed * Mixed * Mixed * (Mixed * ((Mixed * 6) - 15) + 10);
+                end
+                local Position = StartAnchor:Lerp(Target, math.clamp(Eased, 0, 1));
                 Instance.Position = UDim2.fromOffset(Position.X, Position.Y);
 
                 if Alpha >= 1 then
@@ -5021,6 +5029,21 @@ function Library:CreateTargetHUD(Config)
         BorderColor3 = 'OutlineColor';
     }, true);
 
+    local function AddTargetHUDOutline(Frame, Name, Transparency)
+        local Stroke = Library:Create('UIStroke', {
+            Name = Name;
+            Color = Library.OutlineColor;
+            Thickness = 1;
+            Transparency = Transparency or 0.08;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            LineJoinMode = Enum.LineJoinMode.Round;
+            Parent = Frame;
+        });
+        Library:AddToRegistry(Stroke, { Color = 'OutlineColor'; }, true);
+        return Stroke;
+    end
+    local ContentOutline = AddTargetHUDOutline(ContentFrame, 'FormaTargetContentOutline', 0.10);
+
     local AvatarOuter = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
@@ -5035,6 +5058,7 @@ function Library:CreateTargetHUD(Config)
         BackgroundColor3 = 'MainColor';
         BorderColor3 = 'OutlineColor';
     }, true);
+    local AvatarOutline = AddTargetHUDOutline(AvatarOuter, 'FormaTargetAvatarOutline', 0.06);
 
     local Avatar = Library:Create('ImageLabel', {
         BackgroundTransparency = 1;
@@ -5125,6 +5149,7 @@ function Library:CreateTargetHUD(Config)
         BackgroundColor3 = 'MainColor';
         BorderColor3 = 'OutlineColor';
     }, true);
+    local HealthOutline = AddTargetHUDOutline(HealthOuter, 'FormaTargetHealthOutline', 0.04);
 
     local HealthInner = Library:Create('Frame', {
         BackgroundTransparency = 1;
@@ -5148,47 +5173,48 @@ function Library:CreateTargetHUD(Config)
 
     local HealthGradient = Library:Create('UIGradient', {
         Rotation = 0;
-        Offset = Vector2.new(-0.32, 0);
+        Offset = Vector2.new(-0.20, 0);
         Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 40, 40)),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 95, 95)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(125, 45, 45)),
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(95, 38, 38)),
+            ColorSequenceKeypoint.new(0.28, Color3.fromRGB(180, 55, 55)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 120, 120)),
+            ColorSequenceKeypoint.new(0.72, Color3.fromRGB(180, 55, 55)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(95, 38, 38)),
         });
         Parent = HealthFill;
     });
-
-    local HealthGradientTween = TweenService:Create(
-        HealthGradient,
-        TweenInfo.new(2.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-        { Offset = Vector2.new(0.32, 0) }
-    );
-    HealthGradientTween:Play();
 
     local HealthDriver = Instance.new('NumberValue');
     HealthDriver.Name = 'FormaTargetHealthDriver';
     HealthDriver.Value = 0;
     HealthDriver.Parent = HealthOuter;
-    local HealthTween;
+    local HealthVelocity = 0;
+    local HealthGradientPhase = 0;
+    local HealthSmoothTime = math.clamp(tonumber(Config.HealthSmoothTime or Config.HealthTweenTime) or 0.20, 0.06, 1.2);
+    local HealthGradientSpeed = math.max(tonumber(Config.HealthGradientSpeed) or 1.15, 0);
 
-    local function HealthColor(Ratio, Brightness)
-        local Hue = math.clamp(Ratio, 0, 1) * 0.33;
-        return Color3.fromHSV(Hue, 0.88, Brightness);
+    local function HealthColor(Ratio, Brightness, Saturation)
+        return Color3.fromHSV(math.clamp(Ratio, 0, 1) * 0.33, Saturation or 0.78, Brightness);
+    end
+
+    local function UpdateHealthGradient(Ratio)
+        local Deep = HealthColor(Ratio, 0.38, 0.84);
+        local Base = HealthColor(Ratio, 0.68, 0.78);
+        local Light = HealthColor(Ratio, 0.92, 0.62);
+        local Shine = Light:Lerp(Color3.new(1, 1, 1), 0.20);
+        HealthGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Deep),
+            ColorSequenceKeypoint.new(0.24, Base),
+            ColorSequenceKeypoint.new(0.50, Shine),
+            ColorSequenceKeypoint.new(0.76, Base),
+            ColorSequenceKeypoint.new(1, Deep),
+        });
     end
 
     local function UpdateHealthVisual()
         local Ratio = math.clamp(HealthDriver.Value, 0, 1);
         HealthFill.Size = UDim2.new(Ratio, 0, 1, 0);
-
-        local Dark = HealthColor(Ratio, 0.52);
-        local Bright = HealthColor(Ratio, 1);
-        local Mid = HealthColor(Ratio, 0.78);
-        HealthGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Dark),
-            ColorSequenceKeypoint.new(0.46, Bright),
-            ColorSequenceKeypoint.new(0.72, Mid),
-            ColorSequenceKeypoint.new(1, Dark),
-        });
-
+        UpdateHealthGradient(Ratio);
         if HUD.HealthAvailable then
             local Current = math.max(0, math.floor((Ratio * HUD.HealthMax) + 0.5));
             if type(HUD.HealthTextFormatter) == 'function' then
@@ -5202,6 +5228,21 @@ function Library:CreateTargetHUD(Config)
         end
     end
 
+    local function StepHealthVisual(Delta)
+        if not HUD.HealthAvailable or HUD.HealthTargetRatio < 0 then return; end
+        local Target = math.clamp(HUD.HealthTargetRatio, 0, 1);
+        local Current = math.clamp(HealthDriver.Value, 0, 1);
+        local Dt = math.min(math.max(Delta, 0), 0.05);
+        local Omega = 2 / math.max(HealthSmoothTime, 0.001);
+        local X = Omega * Dt;
+        local Exp = 1 / (1 + X + (0.48 * X * X) + (0.235 * X * X * X));
+        local Change = Current - Target;
+        local Temp = (HealthVelocity + (Omega * Change)) * Dt;
+        HealthVelocity = (HealthVelocity - (Omega * Temp)) * Exp;
+        local Next = Target + ((Change + Temp) * Exp);
+        if math.abs(Target - Next) < 0.00005 and math.abs(HealthVelocity) < 0.00005 then Next=Target; HealthVelocity=0; end
+        HealthDriver.Value = math.clamp(Next, 0, 1);
+    end
     HealthDriver:GetPropertyChangedSignal('Value'):Connect(UpdateHealthVisual);
 
     local function CountVisibleLabels()
@@ -5410,39 +5451,24 @@ function Library:CreateTargetHUD(Config)
     function HUD:SetHealth(Current, Maximum, Instant)
         Current = tonumber(Current);
         Maximum = tonumber(Maximum);
-
         if not Current or not Maximum or Maximum <= 0 then
             HUD.HealthAvailable = false;
             HUD.HealthMax = 100;
             HUD.HealthTargetRatio = 0;
-            if HealthTween then pcall(function() HealthTween:Cancel(); end); HealthTween = nil; end
+            HealthVelocity = 0;
             HealthDriver.Value = 0;
             UpdateHealthVisual();
             return;
         end
-
         HUD.HealthAvailable = true;
         HUD.HealthMax = math.max(1, Maximum);
-        local Ratio = math.clamp(Current / HUD.HealthMax, 0, 1);
-        if not Instant and math.abs(Ratio - HUD.HealthTargetRatio) <= 0.0001 then
-            UpdateHealthVisual();
-            return;
-        end
-        HUD.HealthTargetRatio = Ratio;
-
-        if HealthTween then pcall(function() HealthTween:Cancel(); end); HealthTween = nil; end
+        HUD.HealthTargetRatio = math.clamp(Current / HUD.HealthMax, 0, 1);
         if Instant then
-            HealthDriver.Value = Ratio;
+            HealthVelocity = 0;
+            HealthDriver.Value = HUD.HealthTargetRatio;
+        else
             UpdateHealthVisual();
-            return;
         end
-
-        HealthTween = TweenService:Create(
-            HealthDriver,
-            TweenInfo.new(tonumber(Config.HealthTweenTime) or 0.42, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-            { Value = Ratio }
-        );
-        HealthTween:Play();
     end
 
     local function ResolveHealth(Target)
@@ -5674,8 +5700,6 @@ function Library:CreateTargetHUD(Config)
     function HUD:Destroy()
         HUD.AnimationId = HUD.AnimationId + 1;
         HUD.Visible = false;
-        if HealthTween then pcall(function() HealthTween:Cancel(); end); HealthTween = nil; end
-        if HealthGradientTween then pcall(function() HealthGradientTween:Cancel(); end); end
         if Outer then Outer:Destroy(); end
         if Library.TargetHUD == HUD then
             Library.TargetHUD = nil;
@@ -5687,6 +5711,11 @@ function Library:CreateTargetHUD(Config)
     local AutoTargetAccumulator = 0;
     Library:GiveSignal(RenderStepped:Connect(function(Delta)
         if not Outer.Parent then return; end
+
+        StepHealthVisual(Delta);
+        HealthGradientPhase = HealthGradientPhase + (Delta * HealthGradientSpeed);
+        HealthGradient.Offset = Vector2.new(math.sin(HealthGradientPhase) * 0.22, 0);
+        HealthGradient.Rotation = math.sin(HealthGradientPhase * 0.55) * 3.5;
 
         if HUD.Target and Outer.Visible then
             RefreshAccumulator = RefreshAccumulator + Delta;
@@ -5720,6 +5749,9 @@ function Library:CreateTargetHUD(Config)
     HUD.Frame = Outer;
     HUD.Inner = Inner;
     HUD.ContentFrame = ContentFrame;
+    HUD.ContentOutline = ContentOutline;
+    HUD.AvatarOutline = AvatarOutline;
+    HUD.HealthOutline = HealthOutline;
     HUD.Avatar = Avatar;
     HUD.UsernameLabel = Username;
     HUD.MeterLabel = MeterLabel;
