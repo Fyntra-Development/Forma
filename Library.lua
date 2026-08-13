@@ -206,8 +206,8 @@ function Library:GetMenuTweenInfo(Duration)
     end
 
     return TweenInfo.new(
-        math.max(tonumber(Duration) or 0.24, 0.01),
-        Enum.EasingStyle.Quint,
+        math.max(tonumber(Duration) or 0.18, 0.01),
+        Enum.EasingStyle.Quart,
         Enum.EasingDirection.Out
     );
 end;
@@ -551,7 +551,7 @@ function Library:TweenProperty(Instance, Property, Value, Duration)
     local Success = pcall(function()
         Tween = TweenService:Create(
             Instance,
-            TweenInfo.new(Duration or 0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+            Library:GetMenuTweenInfo(Duration or 0.16),
             { [Property] = Value }
         );
     end);
@@ -727,6 +727,10 @@ function Library:Create(Class, Properties)
         _Instance.TextSize = Library:GetScaledTextSize(BaseSize);
     end;
 
+    if _Instance:IsA('UIStroke') then
+        _Instance.LineJoinMode = Enum.LineJoinMode.Miter;
+    end;
+
     return _Instance;
 end;
 
@@ -735,15 +739,12 @@ function Library:AddCorner(Instance, Radius)
         return nil;
     end;
 
-    local Corner = Instance:FindFirstChildOfClass('UICorner');
-    if not Corner then
-        Corner = Library:Create('UICorner', {
-            Parent = Instance;
-        });
+    for _, Child in ipairs(Instance:GetChildren()) do
+        if Child:IsA('UICorner') then
+            Child:Destroy();
+        end;
     end;
-
-    Corner.CornerRadius = UDim.new(0, Radius or 3);
-    return Corner;
+    return nil;
 end;
 
 
@@ -761,25 +762,18 @@ function Library:AddAccentGlow(Instance, Scale)
         end
     end
 
-    local BaseCornerRadius = 3;
-    local InstanceCorner = Instance:FindFirstChildOfClass('UICorner');
-    if InstanceCorner and InstanceCorner.CornerRadius.Scale == 0 then
-        BaseCornerRadius = math.max(InstanceCorner.CornerRadius.Offset, 0);
-    end
-
     local Layers = {
-        { 0.4,  2.2, 0.890 },
-        { 1.1,  2.4, 0.902 },
-        { 1.9,  2.6, 0.916 },
-        { 2.8,  2.8, 0.930 },
-        { 3.8,  3.0, 0.942 },
-        { 4.9,  3.2, 0.952 },
-        { 6.1,  3.4, 0.961 },
-        { 7.4,  3.6, 0.969 },
-        { 8.8,  3.8, 0.976 },
-        { 10.3, 4.0, 0.982 },
-        { 11.9, 4.2, 0.987 },
-        { 13.6, 4.4, 0.991 },
+        { 0.4,  1.4, 0.940 },
+        { 1.2,  1.6, 0.948 },
+        { 2.2,  1.8, 0.956 },
+        { 3.5,  2.0, 0.964 },
+        { 5.0,  2.2, 0.971 },
+        { 6.8,  2.5, 0.977 },
+        { 8.9,  2.8, 0.982 },
+        { 11.3, 3.1, 0.987 },
+        { 14.0, 3.5, 0.991 },
+        { 17.0, 3.9, 0.994 },
+        { 20.4, 4.3, 0.996 },
     };
 
     for Index, Info in ipairs(Layers) do
@@ -797,13 +791,11 @@ function Library:AddAccentGlow(Instance, Scale)
             Parent = Instance;
         });
 
-        Library:AddCorner(Layer, BaseCornerRadius + Spread);
-
         local Stroke = Library:Create('UIStroke', {
             Name = 'GlowStroke';
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Color = Library.AccentColor;
-            LineJoinMode = Enum.LineJoinMode.Round;
+            LineJoinMode = Enum.LineJoinMode.Miter;
             Thickness = Thickness;
             Transparency = Info[3];
             Parent = Layer;
@@ -827,15 +819,15 @@ function Library:AddAccentOutline(Instance, Scale)
             Name = 'FormaAccentOutline';
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Color = Library.AccentColor;
-            LineJoinMode = Enum.LineJoinMode.Round;
+            LineJoinMode = Enum.LineJoinMode.Miter;
             Thickness = 1.05 * Scale;
-            Transparency = 0.04;
+            Transparency = 0.14;
             Parent = Instance;
         });
         Library:AddToRegistry(Stroke, { Color = 'AccentColor'; });
     else
         Stroke.Thickness = 1.05 * Scale;
-        Stroke.Transparency = 0.04;
+        Stroke.Transparency = 0.14;
     end
     return Stroke;
 end;
@@ -845,23 +837,8 @@ function Library:AddTopCorners(Instance, Radius)
         return nil;
     end;
 
-    Radius = Radius or 3;
     Library:AddCorner(Instance, Radius);
-
-    local BottomSquare = Library:Create('Frame', {
-        BackgroundColor3 = Instance.BackgroundColor3;
-        BorderSizePixel = 0;
-        Position = UDim2.new(0, 0, 1, -Radius);
-        Size = UDim2.new(1, 0, 0, Radius);
-        ZIndex = Instance.ZIndex;
-        Parent = Instance;
-    });
-
-    Instance:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-        BottomSquare.BackgroundColor3 = Instance.BackgroundColor3;
-    end);
-
-    return BottomSquare;
+    return nil;
 end;
 
 function Library:AddTabAccentCap(Instance)
@@ -938,10 +915,15 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
     local Connection;
     local VisualLeft = 0;
     local VisualRight = 0;
+    local VisualY = 0;
+    local StartLeft = 0;
+    local StartRight = 0;
+    local StartY = 0;
     local TargetLeft = 0;
     local TargetRight = 0;
     local TargetY = 0;
-    local Direction = 1;
+    local Elapsed = 0;
+    local AnimationDuration = 0.18;
 
     local Indicator = Library:Create('Frame', {
         BackgroundTransparency = 1;
@@ -953,11 +935,9 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         Parent = Layer;
     });
 
-    Library:AddCorner(Indicator, 3);
-
     local Stroke = Library:Create('UIStroke', {
         Color = Library.AccentColor;
-        LineJoinMode = Enum.LineJoinMode.Round;
+        LineJoinMode = Enum.LineJoinMode.Miter;
         Thickness = 1;
         Transparency = 0;
         Parent = Indicator;
@@ -979,7 +959,7 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
 
     local function RenderIndicator()
         local Width = math.max(VisualRight - VisualLeft, 1);
-        Indicator.Position = UDim2.fromOffset(VisualLeft, TargetY);
+        Indicator.Position = UDim2.fromOffset(VisualLeft, VisualY);
         Indicator.Size = UDim2.fromOffset(Width, Height or Indicator.Size.Y.Offset);
     end;
 
@@ -1001,22 +981,25 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
                 return;
             end;
 
-            local LeftDistance = math.abs(TargetLeft - VisualLeft);
-            local RightDistance = math.abs(TargetRight - VisualRight);
-            local Settling = math.max(LeftDistance, RightDistance) < 7;
-            local LeadSpeed = Settling and 31 or 27;
-            local TrailSpeed = Settling and 31 or 15;
-            local LeftSpeed = Direction < 0 and LeadSpeed or TrailSpeed;
-            local RightSpeed = Direction > 0 and LeadSpeed or TrailSpeed;
+            Elapsed = Elapsed + math.min(math.max(Delta, 0), 0.05);
+            local Alpha = math.clamp(Elapsed / math.max(AnimationDuration, 0.01), 0, 1);
+            local Eased = TweenService:GetValue(Alpha, Enum.EasingStyle.Quart, Enum.EasingDirection.Out);
+            local Manager = Library.MenuManager;
+            if Manager and Manager.GetEasedAlpha then
+                local Success, Value = pcall(Manager.GetEasedAlpha, Manager, Alpha, 'TabIndicator');
+                if Success and type(Value) == 'number' then
+                    Eased = math.clamp(Value, -0.15, 1.15);
+                end
+            end
 
-            local LeftAlpha = 1 - math.exp(-Delta * LeftSpeed);
-            local RightAlpha = 1 - math.exp(-Delta * RightSpeed);
-            VisualLeft = VisualLeft + ((TargetLeft - VisualLeft) * LeftAlpha);
-            VisualRight = VisualRight + ((TargetRight - VisualRight) * RightAlpha);
+            VisualLeft = StartLeft + ((TargetLeft - StartLeft) * Eased);
+            VisualRight = StartRight + ((TargetRight - StartRight) * Eased);
+            VisualY = StartY + ((TargetY - StartY) * Eased);
 
-            if LeftDistance <= 0.08 and RightDistance <= 0.08 then
+            if Alpha >= 1 then
                 VisualLeft = TargetLeft;
                 VisualRight = TargetRight;
+                VisualY = TargetY;
                 RenderIndicator();
                 StopAnimation();
                 return;
@@ -1039,6 +1022,7 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
             StopAnimation();
             VisualLeft = NewLeft;
             VisualRight = NewRight;
+            VisualY = NewY;
             TargetLeft = NewLeft;
             TargetRight = NewRight;
             TargetY = NewY;
@@ -1047,12 +1031,15 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
             return;
         end;
 
-        local CurrentCenter = (VisualLeft + VisualRight) * 0.5;
-        local TargetCenter = (NewLeft + NewRight) * 0.5;
-        Direction = TargetCenter >= CurrentCenter and 1 or -1;
+        StartLeft = VisualLeft;
+        StartRight = VisualRight;
+        StartY = VisualY;
         TargetLeft = NewLeft;
         TargetRight = NewRight;
         TargetY = NewY;
+        Elapsed = 0;
+        local Travel = math.abs(((NewLeft + NewRight) - (VisualLeft + VisualRight)) * 0.5);
+        AnimationDuration = math.clamp(0.14 + (Travel / 1400), 0.14, 0.24);
         Indicator.Visible = true;
         StartAnimation();
     end;
@@ -1155,12 +1142,12 @@ function Library:MakeDraggable(Instance, Cutoff)
 
             local Delta = RenderStepped:Wait();
             local Manager = Library.MenuManager;
-            local SmoothTime = 0.075;
+            local SmoothTime = 0.055;
             if Manager and Manager.GetDragSmoothTime then
                 SmoothTime = Manager:GetDragSmoothTime();
             end
 
-            local Alpha = 1 - math.exp(-math.min(Delta, 0.05) / math.max(SmoothTime, 0.001));
+            local Alpha = 1 - math.exp(-math.min(Delta, 0.04) / math.max(SmoothTime, 0.001));
             Visual = Visual:Lerp(Target, Alpha);
             Instance.Position = UDim2.fromOffset(Visual.X, Visual.Y);
         end
@@ -1170,8 +1157,8 @@ function Library:MakeDraggable(Instance, Cutoff)
 
         if Instance.Parent then
             local Manager = Library.MenuManager;
-            local ReleaseDuration = 0.28;
-            local ReleaseStyle = Enum.EasingStyle.Quint;
+            local ReleaseDuration = 0.18;
+            local ReleaseStyle = Enum.EasingStyle.Quart;
             local ReleaseDirection = Enum.EasingDirection.Out;
 
             if Manager then
@@ -1186,33 +1173,33 @@ function Library:MakeDraggable(Instance, Cutoff)
                 end
             end
 
-            ReleaseDuration = math.max(tonumber(ReleaseDuration) or 0.28, 0.08);
+            ReleaseDuration = math.max(tonumber(ReleaseDuration) or 0.18, 0.08);
             local StartAnchor = Vector2.new(
                 Instance.AbsolutePosition.X + (Instance.AbsoluteSize.X * Instance.AnchorPoint.X),
                 Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Instance.AnchorPoint.Y)
             );
-            local Started = os.clock();
+            local ReleaseDistance = (Target - StartAnchor).Magnitude;
+            ReleaseDuration = math.clamp(0.08 + (ReleaseDistance / 700), 0.08, ReleaseDuration);
+            local Elapsed = 0;
 
-            while Instance.Parent and State.ReleaseSequence == ReleaseSequence do
-                local Alpha = math.clamp((os.clock() - Started) / ReleaseDuration, 0, 1);
+            while ReleaseDistance > 0.05 and Instance.Parent and State.ReleaseSequence == ReleaseSequence do
+                local Delta = RenderStepped:Wait();
+                Elapsed = Elapsed + math.min(math.max(Delta, 0), 0.05);
+                local Alpha = math.clamp(Elapsed / ReleaseDuration, 0, 1);
                 local Eased;
                 if Manager and Manager.GetEasedAlpha then
                     local Success, Value = pcall(Manager.GetEasedAlpha, Manager, Alpha, 'Release');
                     if Success then Eased = Value; end
                 end
                 if Eased == nil then
-                    local Raw = math.clamp(TweenService:GetValue(Alpha, ReleaseStyle, ReleaseDirection), 0, 1);
-                    local Smooth = Alpha * Alpha * Alpha * (Alpha * ((Alpha * 6) - 15) + 10);
-                    local Mixed = math.clamp(Smooth + ((Raw - Smooth) * 0.20), 0, 1);
-                    Eased = Mixed * Mixed * Mixed * (Mixed * ((Mixed * 6) - 15) + 10);
+                    Eased = TweenService:GetValue(Alpha, ReleaseStyle, ReleaseDirection);
                 end
-                local Position = StartAnchor:Lerp(Target, math.clamp(Eased, 0, 1));
+                local Position = StartAnchor:Lerp(Target, math.clamp(Eased, -0.25, 1.25));
                 Instance.Position = UDim2.fromOffset(Position.X, Position.Y);
 
                 if Alpha >= 1 then
                     break;
                 end
-                RenderStepped:Wait();
             end
 
             if Instance.Parent and State.ReleaseSequence == ReleaseSequence then
@@ -1297,7 +1284,7 @@ function Library:AddToolTip(Info, HoverInstance)
         Color = Library.OutlineColor,
         Thickness = 1,
         Transparency = 1,
-        LineJoinMode = Enum.LineJoinMode.Round,
+        LineJoinMode = Enum.LineJoinMode.Miter,
         Parent = Content,
     })
 
@@ -4790,6 +4777,7 @@ do
     Library:AddCorner(WatermarkOuter, 3);
     Library:AddCorner(WatermarkInner, 3);
     Library:AddAccentGlow(WatermarkInner, 0.9);
+    Library:AddAccentOutline(WatermarkInner, 0.9);
 
     local InnerFrame = Library:Create('Frame', {
         BackgroundColor3 = Color3.new(1, 1, 1);
@@ -4837,7 +4825,7 @@ do
             Color = Color3.new(0, 0, 0);
             Thickness = 1.1;
             Transparency = 0.08;
-            LineJoinMode = Enum.LineJoinMode.Round;
+            LineJoinMode = Enum.LineJoinMode.Miter;
             ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual;
             Parent = WatermarkLabel;
         });
@@ -4845,7 +4833,7 @@ do
         WatermarkTextOutline.Color = Color3.new(0, 0, 0);
         WatermarkTextOutline.Thickness = 1.1;
         WatermarkTextOutline.Transparency = 0.08;
-        WatermarkTextOutline.LineJoinMode = Enum.LineJoinMode.Round;
+        WatermarkTextOutline.LineJoinMode = Enum.LineJoinMode.Miter;
         pcall(function() WatermarkTextOutline.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual; end);
     end
 
@@ -4982,8 +4970,8 @@ function Library:CreateTargetHUD(Config)
         AutoTargetCandidate = nil;
     };
 
-    local BaseSize = Config.Size or UDim2.fromOffset(290, 140);
-    local BaseHeight = math.max(BaseSize.Y.Offset, 140);
+    local BaseSize = Config.Size or UDim2.fromOffset(290, 148);
+    local BaseHeight = math.max(BaseSize.Y.Offset, 148);
 
     local Outer = Library:Create('Frame', {
         BackgroundColor3 = Color3.new(0, 0, 0);
@@ -5036,7 +5024,7 @@ function Library:CreateTargetHUD(Config)
             Thickness = 1;
             Transparency = Transparency or 0.08;
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-            LineJoinMode = Enum.LineJoinMode.Round;
+            LineJoinMode = Enum.LineJoinMode.Miter;
             Parent = Frame;
         });
         Library:AddToRegistry(Stroke, { Color = 'OutlineColor'; }, true);
@@ -5049,7 +5037,7 @@ function Library:CreateTargetHUD(Config)
         BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
         Position = UDim2.fromOffset(8, 8);
-        Size = UDim2.fromOffset(78, 78);
+        Size = UDim2.fromOffset(76, 76);
         ZIndex = 253;
         Parent = ContentFrame;
     });
@@ -5072,8 +5060,8 @@ function Library:CreateTargetHUD(Config)
     Library:AddCorner(Avatar, 3);
 
     local Username = Library:CreateLabel({
-        Position = UDim2.fromOffset(96, 8);
-        Size = UDim2.new(1, -104, 0, 18);
+        Position = UDim2.fromOffset(94, 8);
+        Size = UDim2.new(1, -102, 0, 18);
         Text = 'No target';
         TextColor3 = Library.AccentColor;
         TextSize = 15;
@@ -5086,8 +5074,8 @@ function Library:CreateTargetHUD(Config)
     local LabelsContainer = Library:Create('Frame', {
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.fromOffset(96, 30);
-        Size = UDim2.new(1, -104, 0, 0);
+        Position = UDim2.fromOffset(94, 47);
+        Size = UDim2.new(1, -102, 0, 0);
         ZIndex = 254;
         Parent = ContentFrame;
     });
@@ -5100,12 +5088,12 @@ function Library:CreateTargetHUD(Config)
     });
 
     local MeterLabel = Library:CreateLabel({
-        AnchorPoint = Vector2.new(0, 1);
-        Position = UDim2.new(0, 96, 1, -43);
-        Size = UDim2.new(1, -104, 0, 14);
+        Position = UDim2.fromOffset(94, 29);
+        Size = UDim2.new(1, -102, 0, 14);
         Text = '';
         TextSize = 13;
         TextXAlignment = Enum.TextXAlignment.Left;
+        TextYAlignment = Enum.TextYAlignment.Center;
         ZIndex = 255;
         Visible = false;
         Parent = ContentFrame;
@@ -5113,7 +5101,7 @@ function Library:CreateTargetHUD(Config)
 
     local HealthTitleLabel = Library:CreateLabel({
         AnchorPoint = Vector2.new(0, 1);
-        Position = UDim2.new(0, 8, 1, -27);
+        Position = UDim2.new(0, 8, 1, -28);
         Size = UDim2.new(0.5, -8, 0, 14);
         Text = 'Health';
         TextSize = 12;
@@ -5124,7 +5112,7 @@ function Library:CreateTargetHUD(Config)
 
     local HealthValueLabel = Library:CreateLabel({
         AnchorPoint = Vector2.new(1, 1);
-        Position = UDim2.new(1, -8, 1, -27);
+        Position = UDim2.new(1, -8, 1, -28);
         Size = UDim2.new(0.5, -8, 0, 14);
         Text = '-- HP';
         TextSize = 12;
@@ -5172,14 +5160,12 @@ function Library:CreateTargetHUD(Config)
     Library:AddCorner(HealthFill, 2);
 
     local HealthGradient = Library:Create('UIGradient', {
-        Rotation = 0;
-        Offset = Vector2.new(-0.20, 0);
+        Rotation = 90;
+        Offset = Vector2.zero;
         Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(95, 38, 38)),
-            ColorSequenceKeypoint.new(0.28, Color3.fromRGB(180, 55, 55)),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 120, 120)),
-            ColorSequenceKeypoint.new(0.72, Color3.fromRGB(180, 55, 55)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(95, 38, 38)),
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(236, 95, 100)),
+            ColorSequenceKeypoint.new(0.50, Color3.fromRGB(211, 63, 69)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(151, 39, 45)),
         });
         Parent = HealthFill;
     });
@@ -5189,25 +5175,27 @@ function Library:CreateTargetHUD(Config)
     HealthDriver.Value = 0;
     HealthDriver.Parent = HealthOuter;
     local HealthVelocity = 0;
-    local HealthGradientPhase = 0;
     local HealthSmoothTime = math.clamp(tonumber(Config.HealthSmoothTime or Config.HealthTweenTime) or 0.20, 0.06, 1.2);
-    local HealthGradientSpeed = math.max(tonumber(Config.HealthGradientSpeed) or 1.15, 0);
 
-    local function HealthColor(Ratio, Brightness, Saturation)
-        return Color3.fromHSV(math.clamp(Ratio, 0, 1) * 0.33, Saturation or 0.78, Brightness);
+    local function HealthBaseColor(Ratio)
+        local Danger = Color3.fromRGB(211, 63, 69);
+        local Warning = Color3.fromRGB(231, 166, 63);
+        local Healthy = Color3.fromRGB(75, 195, 119);
+        Ratio = math.clamp(Ratio, 0, 1);
+        if Ratio < 0.5 then
+            return Danger:Lerp(Warning, Ratio * 2);
+        end
+        return Warning:Lerp(Healthy, (Ratio - 0.5) * 2);
     end
 
     local function UpdateHealthGradient(Ratio)
-        local Deep = HealthColor(Ratio, 0.38, 0.84);
-        local Base = HealthColor(Ratio, 0.68, 0.78);
-        local Light = HealthColor(Ratio, 0.92, 0.62);
-        local Shine = Light:Lerp(Color3.new(1, 1, 1), 0.20);
+        local Base = HealthBaseColor(Ratio);
+        local Top = Base:Lerp(Color3.new(1, 1, 1), 0.18);
+        local Bottom = Base:Lerp(Color3.new(0, 0, 0), 0.28);
         HealthGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Deep),
-            ColorSequenceKeypoint.new(0.24, Base),
-            ColorSequenceKeypoint.new(0.50, Shine),
-            ColorSequenceKeypoint.new(0.76, Base),
-            ColorSequenceKeypoint.new(1, Deep),
+            ColorSequenceKeypoint.new(0, Top),
+            ColorSequenceKeypoint.new(0.52, Base),
+            ColorSequenceKeypoint.new(1, Bottom),
         });
     end
 
@@ -5258,10 +5246,10 @@ function Library:CreateTargetHUD(Config)
 
     local function UpdateLayout()
         local Count = CountVisibleLabels();
-        local ExtraRows = math.max(0, Count - 2);
+        local ExtraRows = math.max(0, Count - 3);
         local Height = BaseHeight + (ExtraRows * 14);
         Outer.Size = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset, BaseSize.Y.Scale, Height);
-        LabelsContainer.Size = UDim2.new(1, -104, 0, Count * 14);
+        LabelsContainer.Size = UDim2.new(1, -102, 0, Count * 14);
     end
 
     local function RenderLabelHandle(Handle)
@@ -5713,10 +5701,6 @@ function Library:CreateTargetHUD(Config)
         if not Outer.Parent then return; end
 
         StepHealthVisual(Delta);
-        HealthGradientPhase = HealthGradientPhase + (Delta * HealthGradientSpeed);
-        HealthGradient.Offset = Vector2.new(math.sin(HealthGradientPhase) * 0.22, 0);
-        HealthGradient.Rotation = math.sin(HealthGradientPhase * 0.55) * 3.5;
-
         if HUD.Target and Outer.Visible then
             RefreshAccumulator = RefreshAccumulator + Delta;
             if RefreshAccumulator >= 0.15 then
@@ -5935,18 +5919,6 @@ function Library:CreateWindow(...)
     Library:AddToRegistry(Inner, {
         BackgroundColor3 = 'MainColor';
         BorderColor3 = 'AccentColor';
-    });
-
-    local WindowCornerRadius = UDim.new(0, 3);
-
-    Library:Create('UICorner', {
-        CornerRadius = WindowCornerRadius;
-        Parent = Outer;
-    });
-
-    Library:Create('UICorner', {
-        CornerRadius = WindowCornerRadius;
-        Parent = Inner;
     });
 
     Library:AddAccentGlow(Inner, 1);
@@ -6183,34 +6155,41 @@ function Library:CreateWindow(...)
                 return;
             end;
 
+            local PreviousTab = Window.ActiveTab;
+            local Direction = 1;
+            if PreviousTab and PreviousTab.Button then
+                Direction = TabButton.AbsolutePosition.X >= PreviousTab.Button.AbsolutePosition.X and 1 or -1;
+            end;
+
             for _, OtherTab in next, Window.Tabs do
                 if OtherTab ~= Tab then
-                    OtherTab:HideTab();
+                    OtherTab:HideTab(true);
                 end;
             end;
 
             Tab.Active = true;
             Window.ActiveTab = Tab;
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
+            local CurrentAnimation = Tab.ContentAnimationId;
 
             Library:TweenProperty(Blocker, 'BackgroundTransparency', 0, 0.16);
             Library:TweenProperty(TabButton, 'BackgroundColor3', Library.MainColor, 0.16);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'MainColor';
             MainTabIndicator:MoveTo(TabButton, not MainTabIndicator.Frame.Visible);
 
-            TabFrame.Position = UDim2.new(0, 0, 0, 7);
+            TabFrame.Position = UDim2.new(0, Direction * 8, 0, 0);
             TabFrame.Visible = true;
             SetTabVisualGroups(1, 0);
 
             task.defer(function()
-                if Tab.Active then
-                    SetTabVisualGroups(0, 0.42, 0);
-                    Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, 0), 0.44);
+                if Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
+                    SetTabVisualGroups(0, 0.20, 0);
+                    Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, 0), 0.22);
                 end;
             end);
         end;
 
-        function Tab:HideTab()
+        function Tab:HideTab(Instant)
             if not Tab.Active then
                 return;
             end;
@@ -6222,13 +6201,21 @@ function Library:CreateWindow(...)
             Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.14);
             Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.14);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
-            SetTabVisualGroups(1, 0.34, 0);
-            Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, -5), 0.34);
 
-            task.delay(0.34, function()
+            if Instant then
+                SetTabVisualGroups(1, 0);
+                TabFrame.Visible = false;
+                TabFrame.Position = UDim2.new(0, 0, 0, 0);
+                return;
+            end;
+
+            SetTabVisualGroups(1, 0.16, 0);
+            Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, -3), 0.18);
+
+            task.delay(0.18, function()
                 if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                     TabFrame.Visible = false;
-                    TabFrame.Position = UDim2.new(0, 0, 0, 7);
+                    TabFrame.Position = UDim2.new(0, 0, 0, 0);
                 end;
             end);
         end;
@@ -6476,14 +6463,28 @@ function Library:CreateWindow(...)
                         return;
                     end;
 
+                    local PreviousTab;
+                    for _, ExistingTab in next, Tabbox.Tabs do
+                        if ExistingTab.Active then
+                            PreviousTab = ExistingTab;
+                            break;
+                        end;
+                    end;
+                    local Direction = 1;
+                    if PreviousTab and PreviousTab.Button then
+                        Direction = Button.AbsolutePosition.X >= PreviousTab.Button.AbsolutePosition.X and 1 or -1;
+                    end;
+
                     for _, OtherTab in next, Tabbox.Tabs do
                         if OtherTab ~= Tab then
-                            OtherTab:Hide();
+                            OtherTab:Hide(true);
                         end;
                     end;
 
                     Tab.Active = true;
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
+                    local CurrentAnimation = Tab.ContentAnimationId;
+                    Container.Position = UDim2.new(0, 4 + (Direction * 7), 0, 20);
                     Container.Visible = true;
                     Block.Visible = true;
                     TabboxIndicator:MoveTo(Button, not TabboxIndicator.Frame.Visible);
@@ -6491,14 +6492,22 @@ function Library:CreateWindow(...)
                     Library:TweenProperty(Button, 'BackgroundColor3', Library.BackgroundColor, 0.16);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.16);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
-                    Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 20), 0.25);
                     Library:SetUnifiedFadeProgress(Container, 0);
-                    Library:TweenUnifiedFade(Container, 1, 0.30);
+                    task.defer(function()
+                        if Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
+                            Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 20), 0.20);
+                            Library:TweenUnifiedFade(Container, 1, 0.18);
+                        end;
+                    end);
 
                     Tab:Resize();
                 end;
 
-                function Tab:Hide()
+                function Tab:Hide(Instant)
+                    if not Tab.Active then
+                        return;
+                    end;
+
                     Tab.Active = false;
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
                     local CurrentAnimation = Tab.ContentAnimationId;
@@ -6506,13 +6515,22 @@ function Library:CreateWindow(...)
                     Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.16);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.14);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
-                    Library:TweenUnifiedFade(Container, 0, 0.24);
-                    Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 17), 0.24);
 
-                    task.delay(0.24, function()
+                    if Instant then
+                        Library:SetUnifiedFadeProgress(Container, 0);
+                        Container.Visible = false;
+                        Container.Position = UDim2.new(0, 4, 0, 20);
+                        Block.Visible = false;
+                        return;
+                    end;
+
+                    Library:TweenUnifiedFade(Container, 0, 0.14);
+                    Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 17), 0.16);
+
+                    task.delay(0.16, function()
                         if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                             Container.Visible = false;
-                            Container.Position = UDim2.new(0, 4, 0, 25);
+                            Container.Position = UDim2.new(0, 4, 0, 20);
                             Block.Visible = false;
                         end;
                     end);
