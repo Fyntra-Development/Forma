@@ -1,0 +1,36 @@
+name: Apply Target HUD smoothing and easing v2
+
+on:
+  push:
+    branches: [agent/target-hud-smoothing-easing-v2]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/target-hud-smoothing-easing-v2
+          fetch-depth: 0
+      - run: python .github/scripts/target-hud-smoothing-easing-v2.py
+      - shell: bash
+        run: |
+          grep -q "FormaTargetContentOutline" Library.lua
+          grep -q "FormaTargetAvatarOutline" Library.lua
+          grep -q "FormaTargetHealthOutline" Library.lua
+          grep -q "StepHealthVisual(Delta)" Library.lua
+          grep -q "Manager.GetEasedAlpha" Library.lua
+          grep -q "function MenuManager:GetEasedAlpha" addons/MenuManager.lua
+          ! grep -q "local HealthTween" Library.lua
+      - shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua addons/MenuManager.lua
+          if ! git diff --cached --quiet; then
+            git commit -m "Smooth Target HUD health and menu easing"
+            git push origin HEAD:agent/target-hud-smoothing-easing-v2
+          fi
