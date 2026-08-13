@@ -1,0 +1,35 @@
+name: Apply dropdown OnChanged fix
+
+on:
+  push:
+    branches: [agent/fix-dropdown-onchanged]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-dropdown-onchanged
+          fetch-depth: 0
+      - name: Patch Library
+        run: python .github/scripts/fix_dropdown_onchanged.py
+      - name: Verify API
+        shell: bash
+        run: |
+          grep -q "function Dropdown:OnChanged(Func)" Library.lua
+          grep -q "Dropdown.Changed = Func" Library.lua
+          grep -q "Func(Dropdown.Value)" Library.lua
+      - name: Commit runtime fix
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua
+          if ! git diff --cached --quiet; then
+            git commit -m "Add dropdown OnChanged API"
+            git push origin HEAD:agent/fix-dropdown-onchanged
+          fi
