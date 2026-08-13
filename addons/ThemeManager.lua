@@ -6,7 +6,7 @@ local ThemeManager = {} do
 
 	ThemeManager.Library = nil
 	ThemeManager.OverlayBaseUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/idfk/'
-	ThemeManager.OverlayOrder = { 'EDP445', 'Jane Doe', 'Ibuki' }
+	ThemeManager.OverlayOrder = { 'EDP445', 'Jane Doe', 'Ibuki', 'Marin Kitagawa' }
 	ThemeManager.OverlayVisualInset = Vector2.new(10, 2)
 	ThemeManager.OverlayAssets = {
 		['EDP445'] = {
@@ -23,6 +23,11 @@ local ThemeManager = {} do
 			File = 'ibuki.png';
 			Size = UDim2.fromOffset(300, 300);
 			VisibleAnchor = Vector2.new(3 / 280, 193 / 280);
+		};
+		['Marin Kitagawa'] = {
+			File = 'marin-kitagawa.png';
+			Size = UDim2.fromOffset(362, 240);
+			VisibleAnchor = Vector2.new(0.08, 0.72);
 		};
 	}
 	ThemeManager.OverlayEnabled = false
@@ -349,6 +354,19 @@ local ThemeManager = {} do
 		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex })
 		Options.ThemeManager_Font:OnChanged(function()
 			self.Library:SetFont(Options.ThemeManager_Font.Value)
+		end)
+
+		groupbox:AddSlider('ThemeManager_TextSize', {
+			Text = 'Text size';
+			Default = 100;
+			Min = 75;
+			Max = 150;
+			Rounding = 0;
+			Step = 5;
+			Suffix = '%';
+		})
+		Options.ThemeManager_TextSize:OnChanged(function()
+			self.Library:SetTextScale(Options.ThemeManager_TextSize.Value / 100)
 		end)
 
 		groupbox:AddToggle('ThemeManager_OverlayEnabled', { Text = 'UI overlay', Default = false })
