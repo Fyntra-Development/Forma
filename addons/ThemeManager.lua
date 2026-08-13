@@ -1,9 +1,34 @@
 local httpService = game:GetService('HttpService')
+local tweenService = game:GetService('TweenService')
 local ThemeManager = {} do
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
 	ThemeManager.Library = nil
+	ThemeManager.OverlayBaseUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/idfk/'
+	ThemeManager.OverlayOrder = { 'EDP445', 'Jane Doe', 'Ibuki' }
+	ThemeManager.OverlayAssets = {
+		['EDP445'] = {
+			File = 'edp445.png';
+			Size = UDim2.fromOffset(300, 303);
+			Position = UDim2.fromOffset(10, -160);
+		};
+		['Jane Doe'] = {
+			File = 'janedoe.png';
+			Size = UDim2.fromOffset(300, 300);
+			Position = UDim2.fromOffset(0, -190);
+		};
+		['Ibuki'] = {
+			File = 'ibuki.png';
+			Size = UDim2.fromOffset(300, 300);
+			Position = UDim2.fromOffset(0, -190);
+		};
+	}
+	ThemeManager.OverlayEnabled = false
+	ThemeManager.OverlaySelection = 'Jane Doe'
+	ThemeManager.OverlayImage = nil
+	ThemeManager.OverlayTween = nil
+	ThemeManager.OverlayAnimationId = 0
 	ThemeManager.BuiltInThemes = {
 		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}') },
 		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414"}') },
@@ -72,6 +97,171 @@ local ThemeManager = {} do
 		writefile(self.Folder .. '/themes/default.txt', theme)
 	end
 
+
+	function ThemeManager:GetOverlayAsset(name)
+		local info = self.OverlayAssets[name]
+		local getCustomAsset = getcustomasset or getsynasset
+
+		if not info or not getCustomAsset or not writefile then
+			return nil
+		end
+
+		if makefolder then
+			if not isfolder or not isfolder('FormaAssets') then
+				pcall(makefolder, 'FormaAssets')
+			end
+
+			if not isfolder or not isfolder('FormaAssets/idfk') then
+				pcall(makefolder, 'FormaAssets/idfk')
+			end
+		end
+
+		local localPath = 'FormaAssets/idfk/' .. info.File
+		local needsDownload = true
+
+		if isfile then
+			local ok, exists = pcall(isfile, localPath)
+			needsDownload = not (ok and exists)
+		end
+
+		if needsDownload then
+			local ok, data = pcall(function()
+				return game:HttpGet(self.OverlayBaseUrl .. info.File)
+			end)
+
+			if not ok or type(data) ~= 'string' or #data == 0 then
+				return nil
+			end
+
+			local wrote = pcall(writefile, localPath, data)
+			if not wrote then
+				return nil
+			end
+		end
+
+		local ok, asset = pcall(getCustomAsset, localPath)
+		return ok and asset or nil
+	end
+
+	function ThemeManager:EnsureOverlay()
+		local holder = self.Library and self.Library.WindowHolder
+
+		if not holder then
+			return nil
+		end
+
+		if self.OverlayImage and self.OverlayImage.Parent ~= holder then
+			self.OverlayImage:Destroy()
+			self.OverlayImage = nil
+		end
+
+		if not self.OverlayImage then
+			self.OverlayImage = self.Library:Create('ImageLabel', {
+				Name = 'FormaThemeOverlay';
+				Active = false;
+				BackgroundTransparency = 1;
+				BorderSizePixel = 0;
+				Image = '';
+				ImageTransparency = 1;
+				ScaleType = Enum.ScaleType.Fit;
+				Visible = false;
+				ZIndex = 500;
+				Parent = holder;
+			})
+		end
+
+		return self.OverlayImage
+	end
+
+	function ThemeManager:TweenOverlayTransparency(target)
+		local overlay = self.OverlayImage
+		if not overlay then
+			return
+		end
+
+		self.OverlayAnimationId = self.OverlayAnimationId + 1
+		local animationId = self.OverlayAnimationId
+
+		if self.OverlayTween then
+			pcall(function()
+				self.OverlayTween:Cancel()
+			end)
+		end
+
+		local tween = tweenService:Create(
+			overlay,
+			TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{ ImageTransparency = target }
+		)
+
+		self.OverlayTween = tween
+		tween:Play()
+
+		tween.Completed:Connect(function()
+			if animationId ~= self.OverlayAnimationId then
+				return
+			end
+
+			if target >= 1 and not self.OverlayEnabled then
+				overlay.Visible = false
+			end
+
+			if self.OverlayTween == tween then
+				self.OverlayTween = nil
+			end
+		end)
+	end
+
+	function ThemeManager:SetOverlayImage(name)
+		local info = self.OverlayAssets[name]
+		if not info then
+			return
+		end
+
+		self.OverlaySelection = name
+
+		local overlay = self:EnsureOverlay()
+		if not overlay then
+			return
+		end
+
+		overlay.Size = info.Size
+		overlay.Position = info.Position
+
+		if not self.OverlayEnabled then
+			overlay.Visible = false
+			return
+		end
+
+		local asset = self:GetOverlayAsset(name)
+		if not asset then
+			overlay.Visible = false
+			return
+		end
+
+		overlay.Image = asset
+		overlay.ImageTransparency = 1
+		overlay.Visible = true
+		self:TweenOverlayTransparency(0)
+	end
+
+	function ThemeManager:SetOverlayEnabled(enabled)
+		self.OverlayEnabled = not not enabled
+
+		local overlay = self:EnsureOverlay()
+		if not overlay then
+			return
+		end
+
+		if self.OverlayEnabled then
+			self:SetOverlayImage(self.OverlaySelection)
+		elseif overlay.Visible then
+			self:TweenOverlayTransparency(1)
+		else
+			overlay.Visible = false
+		end
+	end
+
 	function ThemeManager:CreateThemeManager(groupbox)
 		groupbox:AddLabel('Background color'):AddColorPicker('BackgroundColor', { Default = self.Library.BackgroundColor });
 		groupbox:AddLabel('Main color')	:AddColorPicker('MainColor', { Default = self.Library.MainColor });
@@ -85,6 +275,17 @@ local ThemeManager = {} do
 		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex })
 		Options.ThemeManager_Font:OnChanged(function()
 			self.Library:SetFont(Options.ThemeManager_Font.Value)
+		end)
+
+		groupbox:AddToggle('ThemeManager_OverlayEnabled', { Text = 'UI overlay', Default = false })
+		groupbox:AddDropdown('ThemeManager_OverlayImage', { Text = 'Overlay image', Values = self.OverlayOrder, Default = 2 })
+
+		Options.ThemeManager_OverlayImage:OnChanged(function()
+			self:SetOverlayImage(Options.ThemeManager_OverlayImage.Value)
+		end)
+
+		Toggles.ThemeManager_OverlayEnabled:OnChanged(function()
+			self:SetOverlayEnabled(Toggles.ThemeManager_OverlayEnabled.Value)
 		end)
 
 		local ThemesArray = {}
