@@ -3931,6 +3931,11 @@ do
             RecalculateListSize(Y);
         end;
 
+        function Dropdown:OnChanged(Func)
+            Dropdown.Changed = Func;
+            Func(Dropdown.Value);
+        end;
+
         function Dropdown:SetValues(NewValues)
             if NewValues then
                 Dropdown.Values = NewValues;
