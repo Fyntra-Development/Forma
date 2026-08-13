@@ -1,0 +1,40 @@
+name: Apply UI polish pass
+
+on:
+  push:
+    branches: [agent/ui-polish-pass]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ui-polish-pass
+          fetch-depth: 0
+      - name: Patch library and theme manager
+        run: python .github/scripts/ui_polish_patch.py
+      - name: Verify requested behavior
+        shell: bash
+        run: |
+          grep -q "function Library:SetTextSize(Size)" Library.lua
+          grep -q "function Library:AddAccentGlow" Library.lua
+          grep -q "StartDropdownAutoScroll" Library.lua
+          grep -q "SetTabVisualGroups(0, 0.22" Library.lua
+          grep -q "DisplayLabel.Text = '<...>'" Library.lua
+          grep -q "VisibleAnchor = Vector2.new(0.08, 0.83)" addons/ThemeManager.lua
+          grep -q "Default = 14" addons/ThemeManager.lua
+          ! grep -q "TweenPickerFade" Library.lua
+      - name: Commit runtime changes
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua addons/ThemeManager.lua
+          if ! git diff --cached --quiet; then
+            git commit -m "Polish overlays transitions and HUD styling"
+            git push origin HEAD:agent/ui-polish-pass
+          fi
