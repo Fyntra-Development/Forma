@@ -1,5 +1,4 @@
 local httpService = game:GetService('HttpService')
-local tweenService = game:GetService('TweenService')
 local ThemeManager = {} do
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
@@ -41,7 +40,7 @@ local ThemeManager = {} do
 	ThemeManager.OverlayAssetCache = {}
 	ThemeManager.OverlayCachePrepared = false
 	ThemeManager.BuiltInThemes = {
-		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}') },
+		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"d6d8d5","MainColor":"111312","AccentColor":"5d5d93","BackgroundColor":"0c0f0e","OutlineColor":"242726"}') },
 		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414"}') },
 		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d"}') },
 		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
@@ -78,6 +77,11 @@ local ThemeManager = {} do
 		end
 
 		self.Library.AccentColorDark = self.Library:GetDarkerColor(self.Library.AccentColor);
+		-- Secondary surfaces are deliberately derived instead of adding more theme
+		-- controls, so old custom themes inherit the compact reference hierarchy.
+		self.Library.HeaderColor = self.Library.MainColor:Lerp(self.Library.FontColor, 0.006)
+		self.Library.SurfaceColor = self.Library.MainColor:Lerp(self.Library.FontColor, 0.015)
+		self.Library.MutedFontColor = self.Library.FontColor:Lerp(self.Library.BackgroundColor, 0.45)
 		self.Library:UpdateColorsUsingRegistry()
 	end
 
@@ -260,16 +264,23 @@ local ThemeManager = {} do
 			pcall(function()
 				self.OverlayTween:Cancel()
 			end)
+			self.OverlayTween = nil
 		end
 
-		local tween = tweenService:Create(
+		local tween = self.Library:Animate(
 			overlay,
-			TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{ ImageTransparency = target }
+			{ ImageTransparency = target },
+			0.14,
+			nil,
+			'ThemeOverlay'
 		)
+		if not tween then
+			overlay.ImageTransparency = target
+			if target >= 1 and not self.OverlayEnabled then overlay.Visible = false end
+			return
+		end
 
 		self.OverlayTween = tween
-		tween:Play()
 
 		tween.Completed:Connect(function()
 			if animationId ~= self.OverlayAnimationId then
@@ -404,7 +415,7 @@ local ThemeManager = {} do
 
 		groupbox:AddSlider('ThemeManager_TextSize', {
 			Text = 'Text size';
-			Default = 14;
+			Default = self.Library.TextSize or 13;
 			Min = 9;
 			Max = 24;
 			Rounding = 0;
