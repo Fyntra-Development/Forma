@@ -2,9 +2,10 @@ local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
 	MenuManager.Library = nil
-	MenuManager.EasingStyle = 'Quint'
+	MenuManager.EasingStyle = 'Cubic'
 	MenuManager.EasingDirection = 'Out'
-	MenuManager.TweenSpeed = 0.24
+	MenuManager.TweenSpeed = 0.16
+	MenuManager.DefaultTweenSpeed = 0.16
 
 	MenuManager.EasingStyles = {
 		'Linear', 'Sine', 'Quad', 'Cubic', 'Quart', 'Quint', 'Exponential', 'Circular', 'Back', 'Elastic', 'Bounce'
@@ -20,13 +21,8 @@ local MenuManager = {} do
 		return 1
 	end
 
-	local function SmoothStep(Value)
-		local T = math.clamp(tonumber(Value) or 0, 0, 1)
-		return T * T * (3 - (2 * T))
-	end
-
 	function MenuManager:GetEasingStyle()
-		return Enum.EasingStyle[self.EasingStyle] or Enum.EasingStyle.Quint
+		return Enum.EasingStyle[self.EasingStyle] or Enum.EasingStyle.Cubic
 	end
 
 	function MenuManager:GetEasingDirection()
@@ -45,28 +41,32 @@ local MenuManager = {} do
 			self:GetEasingStyle(),
 			self:GetEasingDirection()
 		)
-		if not Success or type(Raw) ~= 'number' then
-			return SmoothStep(T)
-		end
-
-		-- Keep each selected easing curve intact. Back and Elastic are allowed a
-		-- small, intentional overshoot instead of being flattened into a plateau.
-		return math.clamp(Raw, -0.25, 1.25)
+		return Success and type(Raw) == 'number' and math.clamp(Raw, -0.2, 1.2) or T
 	end
 
-	function MenuManager:GetTweenInfo(Duration)
-		local BaseSpeed = math.clamp(tonumber(self.TweenSpeed) or 0.24, 0.08, 1.25)
+	function MenuManager:GetDuration(Duration)
+		local Base = math.clamp(tonumber(self.TweenSpeed) or self.DefaultTweenSpeed, 0.05, 0.6)
 		local Requested = tonumber(Duration)
-		local Effective = Requested or BaseSpeed
-		return TweenInfo.new(math.clamp(Effective, 0.05, 1.6), self:GetEasingStyle(), self:GetEasingDirection())
+		if not Requested then return Base end
+
+		-- TweenSpeed is a global response control. Explicit component timings keep
+		-- their proportions while the whole interface speeds up or slows down.
+		local Scale = Base / self.DefaultTweenSpeed
+		return math.clamp(Requested * Scale, 0.035, 1.2)
 	end
 
-	function MenuManager:GetDragSmoothTime()
-		return math.clamp((tonumber(self.TweenSpeed) or 0.24) * 0.22, 0.035, 0.12)
+	function MenuManager:GetTweenInfo(Duration, Context)
+		return TweenInfo.new(self:GetDuration(Duration), self:GetEasingStyle(), self:GetEasingDirection())
 	end
 
-	function MenuManager:GetReleaseDuration()
-		return math.clamp((tonumber(self.TweenSpeed) or 0.24) * 0.78, 0.14, 0.50)
+	function MenuManager:GetDragResponse()
+		local Scale = self:GetDuration(self.DefaultTweenSpeed) / self.DefaultTweenSpeed
+		return math.clamp(44 / math.max(Scale, 0.2), 24, 72)
+	end
+
+	function MenuManager:GetReleaseDuration(Distance)
+		local Travel = math.clamp(tonumber(Distance) or 0, 0, 120)
+		return self:GetDuration(0.09 + (Travel / 1200))
 	end
 
 	function MenuManager:SetLibrary(Library)
@@ -83,7 +83,7 @@ local MenuManager = {} do
 	end
 
 	function MenuManager:SetTweenSpeed(Value)
-		self.TweenSpeed = math.clamp(tonumber(Value) or 0.24, 0.08, 1.25)
+		self.TweenSpeed = math.clamp(tonumber(Value) or self.DefaultTweenSpeed, 0.05, 0.6)
 	end
 
 	function MenuManager:ResetMenuPositions()
@@ -96,7 +96,7 @@ local MenuManager = {} do
 		Options.MenuManager_EasingStyle:OnChanged(function() self:SetEasingStyle(Options.MenuManager_EasingStyle.Value) end)
 		Groupbox:AddDropdown('MenuManager_EasingDirection', { Text = 'Easing direction'; Values = self.EasingDirections; Default = FindIndex(self.EasingDirections, self.EasingDirection); })
 		Options.MenuManager_EasingDirection:OnChanged(function() self:SetEasingDirection(Options.MenuManager_EasingDirection.Value) end)
-		Groupbox:AddSlider('MenuManager_TweenSpeed', { Text = 'Tween speed'; Default = self.TweenSpeed; Min = 0.08; Max = 1.25; Rounding = 2; Step = 0.01; Suffix = 's'; })
+		Groupbox:AddSlider('MenuManager_TweenSpeed', { Text = 'Animation response'; Default = self.TweenSpeed; Min = 0.05; Max = 0.6; Rounding = 2; Step = 0.01; Suffix = 's'; })
 		Options.MenuManager_TweenSpeed:OnChanged(function() self:SetTweenSpeed(Options.MenuManager_TweenSpeed.Value) end)
 		Groupbox:AddButton('Reset menu positions', function() self:ResetMenuPositions() end)
 	end
