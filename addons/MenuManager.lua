@@ -12,50 +12,48 @@ local MenuManager = {} do
 	}
 	MenuManager.EasingDirections = { 'In', 'Out', 'InOut' }
 
-	-- Each native easing curve needs a slightly different amount of time to
-	-- read cleanly. In particular, Elastic and Bounce need room to settle while
-	-- Linear needs to finish quickly so that it does not feel heavy.
+	-- Normalize the native curves so each option completes cleanly instead of
+	-- being squeezed into the same duration. Curves with a settling phase get
+	-- enough time to finish; direct curves stay short and responsive.
 	MenuManager.StyleProfiles = {
-		Linear = { Scale = 0.72; Min = 0.07; Max = 0.26; Overshoot = 0; };
-		Sine = { Scale = 0.94; Min = 0.08; Max = 0.34; Overshoot = 0; };
-		Quad = { Scale = 0.90; Min = 0.08; Max = 0.34; Overshoot = 0; };
-		Cubic = { Scale = 0.88; Min = 0.08; Max = 0.34; Overshoot = 0; };
-		Quart = { Scale = 0.86; Min = 0.08; Max = 0.34; Overshoot = 0; };
-		Quint = { Scale = 0.84; Min = 0.08; Max = 0.34; Overshoot = 0; };
-		Exponential = { Scale = 0.82; Min = 0.08; Max = 0.36; Overshoot = 0; };
-		Circular = { Scale = 0.92; Min = 0.09; Max = 0.38; Overshoot = 0; };
-		Back = { Scale = 1.04; Min = 0.12; Max = 0.42; Overshoot = 0.12; };
-		Elastic = { Scale = 1.42; Min = 0.22; Max = 0.52; Overshoot = 0.16; };
-		Bounce = { Scale = 1.24; Min = 0.18; Max = 0.46; Overshoot = 0; };
+		Linear = { Scale = 0.78; Min = 0.09; Max = 0.30; Overshoot = 0; };
+		Sine = { Scale = 1.00; Min = 0.10; Max = 0.38; Overshoot = 0; };
+		Quad = { Scale = 0.96; Min = 0.10; Max = 0.38; Overshoot = 0; };
+		Cubic = { Scale = 0.94; Min = 0.10; Max = 0.38; Overshoot = 0; };
+		Quart = { Scale = 0.92; Min = 0.10; Max = 0.38; Overshoot = 0; };
+		Quint = { Scale = 0.90; Min = 0.10; Max = 0.38; Overshoot = 0; };
+		Exponential = { Scale = 0.90; Min = 0.11; Max = 0.42; Overshoot = 0; };
+		Circular = { Scale = 0.98; Min = 0.12; Max = 0.44; Overshoot = 0; };
+		Back = { Scale = 1.08; Min = 0.16; Max = 0.48; Overshoot = 0.10; };
+		Elastic = { Scale = 1.70; Min = 0.42; Max = 0.85; Overshoot = 0.18; };
+		Bounce = { Scale = 1.42; Min = 0.32; Max = 0.68; Overshoot = 0; };
 	}
 
 	-- Transparency, colors, continuous values, and direct manipulation must not
 	-- overshoot. Spatial motion still uses the selected style, so every easing
 	-- option remains visible without making fades plateau at their clamped ends.
 	MenuManager.ContextProfiles = {
-		Fade = { Style = 'Sine'; Direction = 'Out'; Scale = 1; Min = 0.10; Max = 0.34; };
-		Color = { Style = 'Sine'; Direction = 'Out'; Scale = 0.72; Min = 0.07; Max = 0.22; };
-		Layout = { Style = 'Quart'; Direction = 'Out'; Scale = 0.92; Min = 0.09; Max = 0.30; };
-		Slider = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.68; Min = 0.07; Max = 0.18; };
-		Health = { Style = 'Sine'; Direction = 'Out'; Scale = 0.96; Min = 0.10; Max = 0.30; };
-		DragRelease = { Style = 'Sine'; Direction = 'Out'; Scale = 0.62; Min = 0.045; Max = 0.10; };
-		Tab = { Style = 'Quint'; Direction = 'Out'; Scale = 1; Min = 0.16; Max = 0.32; };
-		TabExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.92; Min = 0.12; Max = 0.24; };
-		TabIndicator = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.12; Max = 0.28; };
-		Picker = { Style = 'Quart'; Direction = 'Out'; Scale = 1; Min = 0.14; Max = 0.34; };
-		Dropdown = { Style = 'Quart'; Direction = 'Out'; Scale = 1; Min = 0.14; Max = 0.34; };
-		Popup = { Style = 'Quart'; Direction = 'Out'; Scale = 1; Min = 0.14; Max = 0.34; };
-		PopupExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.9; Min = 0.11; Max = 0.24; };
-		Tooltip = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.11; Max = 0.22; };
-		Notification = { Style = 'Quint'; Direction = 'Out'; Scale = 1; Min = 0.16; Max = 0.32; };
-		NotificationExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.94; Min = 0.13; Max = 0.26; };
-		Menu = { Style = 'Quint'; Direction = 'Out'; Scale = 1; Min = 0.18; Max = 0.36; };
-		MenuExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.94; Min = 0.14; Max = 0.28; };
-		HUD = { Style = 'Quart'; Direction = 'Out'; Scale = 1; Min = 0.17; Max = 0.34; };
-		HUDExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.94; Min = 0.13; Max = 0.26; };
-		Press = { Style = 'Quad'; Direction = 'Out'; Scale = 0.72; Min = 0.055; Max = 0.12; };
-		Release = { Style = 'Back'; Direction = 'Out'; Scale = 0.82; Min = 0.10; Max = 0.20; };
-		Toggle = { Style = 'Back'; Direction = 'Out'; Scale = 0.82; Min = 0.12; Max = 0.22; };
+		Fade = { Style = 'Sine'; Direction = 'Out'; Scale = 1.00; Min = 0.11; Max = 0.30; };
+		Color = { Style = 'Sine'; Direction = 'Out'; Scale = 0.72; Min = 0.08; Max = 0.18; };
+		Layout = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.11; Max = 0.30; };
+		Dependency = { Style = 'Quart'; Direction = 'Out'; Scale = 0.90; Min = 0.11; Max = 0.24; };
+		Slider = { Style = 'Quart'; Direction = 'Out'; Scale = 0.72; Min = 0.09; Max = 0.18; };
+		Badge = { Style = 'Quart'; Direction = 'Out'; Scale = 0.88; Min = 0.10; Max = 0.22; };
+		Health = { Style = 'Sine'; Direction = 'Out'; Scale = 0.96; Min = 0.11; Max = 0.30; };
+		DragRelease = { Style = 'Sine'; Direction = 'Out'; Scale = 0.70; Min = 0.06; Max = 0.12; };
+		Tab = { Style = 'Quint'; Direction = 'Out'; Scale = 1.00; Min = 0.18; Max = 0.30; };
+		TabExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.92; Min = 0.12; Max = 0.22; };
+		TabIndicator = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.12; Max = 0.26; };
+		Picker = { Style = 'Quart'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.30; };
+		Dropdown = { Style = 'Quart'; Direction = 'Out'; Scale = 0.92; Min = 0.12; Max = 0.24; };
+		PopupExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.92; Min = 0.12; Max = 0.22; };
+		Tooltip = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.12; Max = 0.22; };
+		Notification = { Style = 'Quint'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.30; };
+		NotificationExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.94; Min = 0.13; Max = 0.24; };
+		Menu = { Style = 'Quint'; Direction = 'Out'; Scale = 1.00; Min = 0.19; Max = 0.34; };
+		MenuExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.94; Min = 0.14; Max = 0.26; };
+		HUD = { Style = 'Quart'; Direction = 'Out'; Scale = 1.00; Min = 0.18; Max = 0.32; };
+		HUDExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.94; Min = 0.13; Max = 0.24; };
 	}
 
 	MenuManager.DirectionScales = {
