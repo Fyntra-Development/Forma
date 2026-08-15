@@ -7458,7 +7458,7 @@ function Library:CreateWindow(...)
                 local Size = 0;
 
                 for _, Element in next, Groupbox.Container:GetChildren() do
-                    if (not Element:IsA('UIListLayout')) and Element.Visible then
+                    if Element:IsA('GuiObject') and Element.Visible then
                         Size = Size + Element.Size.Y.Offset;
                     end;
                 end;
@@ -7701,7 +7701,7 @@ function Library:CreateWindow(...)
                     local TabCount = 0;
 
                     for _, Child in next, TabboxButtons:GetChildren() do
-                        if not Child:IsA('UIListLayout') then
+                        if Child:IsA('GuiObject') then
                             TabCount = TabCount + 1;
                         end;
                     end;
@@ -7711,7 +7711,7 @@ function Library:CreateWindow(...)
                     end;
 
                     for _, TabButtonObject in next, TabboxButtons:GetChildren() do
-                        if not TabButtonObject:IsA('UIListLayout') then
+                        if TabButtonObject:IsA('GuiObject') then
                             TabButtonObject.Size = UDim2.new(1 / TabCount, 0, 1, 0);
                         end;
                     end;
@@ -7732,7 +7732,7 @@ function Library:CreateWindow(...)
                     local Size = 0;
 
                     for _, Element in next, Tab.Container:GetChildren() do
-                        if (not Element:IsA('UIListLayout')) and Element.Visible then
+                        if Element:IsA('GuiObject') and Element.Visible then
                             Size = Size + Element.Size.Y.Offset;
                         end;
                     end;
