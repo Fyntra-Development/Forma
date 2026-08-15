@@ -2473,13 +2473,13 @@ do
 
         local DisplayFrame = Library:Create('Frame', {
             BackgroundColor3 = ColorPicker.Value;
-            BorderColor3 = Library.BlendShade;
+            BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
             Size = UDim2.new(0, 28, 0, 14);
             ZIndex = 6;
             Parent = ToggleLabel;
         });
-        Library:AddToRegistry(DisplayFrame, { BorderColor3 = 'BlendShade'; });
+        Library:AddToRegistry(DisplayFrame, { BorderColor3 = 'OutlineColor'; });
 
         local DisplayShade = Library:Create('Frame', {
             BackgroundColor3 = Library:GetNeutralBlendShade();
@@ -2922,7 +2922,7 @@ do
             Library:Create(DisplayFrame, {
                 BackgroundColor3 = ColorPicker.Value;
                 BackgroundTransparency = ColorPicker.Transparency;
-                BorderColor3 = Library.BlendShade;
+                BorderColor3 = Library.OutlineColor;
             });
             DisplayShade.BackgroundColor3 = Library:GetNeutralBlendShade();
             DisplayShade.BackgroundTransparency = ColorPicker.Transparency;
