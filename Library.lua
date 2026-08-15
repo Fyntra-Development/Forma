@@ -194,6 +194,61 @@ Library.BaseTextSizes = setmetatable({}, { __mode = 'k' });
 Library.FadeBaselines = setmetatable({}, { __mode = 'k' });
 Library.DraggableStates = setmetatable({}, { __mode = 'k' });
 
+local MotionTransparencyProperties = {
+    BackgroundTransparency = true;
+    TextTransparency = true;
+    TextStrokeTransparency = true;
+    ImageTransparency = true;
+    ScrollBarImageTransparency = true;
+    Transparency = true;
+    GroupTransparency = true;
+}
+
+local MotionColorProperties = {
+    BackgroundColor3 = true;
+    BorderColor3 = true;
+    TextColor3 = true;
+    TextStrokeColor3 = true;
+    ImageColor3 = true;
+    ScrollBarImageColor3 = true;
+    Color = true;
+    GroupColor3 = true;
+}
+
+local MotionSpatialProperties = {
+    Position = true;
+    CanvasPosition = true;
+    AnchorPoint = true;
+    Rotation = true;
+    Scale = true;
+    Value = true;
+}
+
+local MotionLayoutProperties = {
+    Size = true;
+    CanvasSize = true;
+}
+
+function Library:ResolveMotionContext(Properties, Context)
+    if Context and Context ~= 'Property' then return Context; end
+
+    local HasTransparency = false;
+    local HasColor = false;
+    local HasSpatial = false;
+    local HasLayout = false;
+    for Property in next, Properties do
+        HasTransparency = HasTransparency or MotionTransparencyProperties[Property] == true;
+        HasColor = HasColor or MotionColorProperties[Property] == true;
+        HasSpatial = HasSpatial or MotionSpatialProperties[Property] == true;
+        HasLayout = HasLayout or MotionLayoutProperties[Property] == true;
+    end
+
+    if HasTransparency and not HasSpatial then return 'Fade'; end
+    if HasColor and not HasSpatial then return 'Color'; end
+    if HasLayout and not HasSpatial then return 'Layout'; end
+    return Context or 'Property';
+end;
+
 function Library:GetMenuTweenInfo(Duration, Context)
     local Manager = Library.MenuManager;
     if Manager and Manager.GetTweenInfo then
@@ -218,6 +273,9 @@ function Library:CancelMotion(Instance, Property)
     local function Cancel(Token)
         if Token and not Cancelled[Token] then
             Cancelled[Token] = true;
+            for TokenProperty in next, Token.Properties do
+                if Motions[TokenProperty] == Token then Motions[TokenProperty] = nil; end
+            end
             pcall(function() Token.Tween:Cancel(); end);
         end
     end
@@ -232,13 +290,15 @@ end;
 function Library:Animate(Instance, Properties, Duration, Completed, Context)
     if not Instance or type(Properties) ~= 'table' or next(Properties) == nil then return nil; end
 
+    Context = Library:ResolveMotionContext(Properties, Context);
+
     local HasChange = false;
     for Property, Value in next, Properties do
         local Success, Current = pcall(function() return Instance[Property]; end);
         if not Success or Current ~= Value then HasChange = true; break; end
     end
     if not HasChange then
-        if Completed then Completed(Enum.PlaybackState.Completed); end
+        if Completed then pcall(Completed, Enum.PlaybackState.Completed); end
         return nil;
     end
 
@@ -246,6 +306,24 @@ function Library:Animate(Instance, Properties, Duration, Completed, Context)
     if not InstanceTweens then
         InstanceTweens = {};
         Library.PropertyTweens[Instance] = InstanceTweens;
+    end
+
+    -- Repeated layout/refresh events frequently ask for the same destination.
+    -- Reuse the in-flight tween instead of restarting its easing curve, which
+    -- otherwise creates the delayed, sticky feeling seen under rapid input.
+    local SharedToken;
+    local SameTarget = true;
+    for Property, Value in next, Properties do
+        local Previous = InstanceTweens[Property];
+        if not Previous or Previous.Targets[Property] ~= Value or (SharedToken and SharedToken ~= Previous) then
+            SameTarget = false;
+            break;
+        end
+        SharedToken = Previous;
+    end
+    if SameTarget and SharedToken then
+        if Completed then table.insert(SharedToken.Callbacks, Completed); end
+        return SharedToken.Tween;
     end
 
     local PreviousTokens = {};
@@ -267,18 +345,25 @@ function Library:Animate(Instance, Properties, Duration, Completed, Context)
         for Property, Value in next, Properties do
             pcall(function() Instance[Property] = Value; end);
         end
-        if Completed then Completed(Enum.PlaybackState.Completed); end
+        if Completed then pcall(Completed, Enum.PlaybackState.Completed); end
         return nil;
     end
 
-    local Token = { Tween = Tween; Properties = Properties; };
+    local Token = {
+        Tween = Tween;
+        Properties = Properties;
+        Targets = table.clone(Properties);
+        Callbacks = {};
+    };
+    if Completed then table.insert(Token.Callbacks, Completed); end
     for Property in next, Properties do InstanceTweens[Property] = Token; end
 
     Tween.Completed:Connect(function(State)
         for Property in next, Properties do
             if InstanceTweens[Property] == Token then InstanceTweens[Property] = nil; end
         end
-        if Completed then Completed(State); end
+        for _, Callback in ipairs(Token.Callbacks) do pcall(Callback, State); end
+        table.clear(Token.Callbacks);
     end);
 
     Tween:Play();
@@ -398,7 +483,7 @@ function Library:SetUnifiedFadeProgress(Root, Progress)
     Controller.Driver.Value = Controller.Progress;
 end
 
-function Library:TweenUnifiedFade(Root, Target, Duration, Completed)
+function Library:TweenUnifiedFade(Root, Target, Duration, Completed, Context)
     if not Root then
         return nil;
     end
@@ -410,7 +495,7 @@ function Library:TweenUnifiedFade(Root, Target, Duration, Completed)
             { GroupTransparency = 1 - TargetProgress },
             Duration,
             Completed,
-            'Fade'
+            Context or 'Fade'
         );
     end
 
@@ -426,7 +511,7 @@ function Library:TweenUnifiedFade(Root, Target, Duration, Completed)
         { Value = TargetProgress },
         Duration,
         nil,
-        'Fade'
+        Context or 'Fade'
     );
 
     Controller.Tween = Tween;
@@ -1001,10 +1086,13 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         end;
 
         Indicator.Visible = true;
+        local Travel = math.abs(NewLeft - Indicator.Position.X.Offset)
+            + (math.abs(Button.AbsoluteSize.X - Indicator.Size.X.Offset) * 0.35);
+        local Duration = 0.13 + math.clamp(Travel / 1800, 0, 0.055);
         Library:Animate(Indicator, {
             Position = TargetPosition;
             Size = TargetSize;
-        }, 0.14, nil, 'TabIndicator');
+        }, Duration, nil, 'TabIndicator');
     end;
 
     function Controller:Refresh(Button)
@@ -1061,6 +1149,9 @@ function Library:MakeDraggable(Instance, Cutoff)
         TargetPosition = Instance.Position;
         DragConnection = nil;
         InputConnection = nil;
+        Input = nil;
+        ObjectOffset = nil;
+        Anchor = nil;
     };
     Library.DraggableStates[Instance] = State;
 
@@ -1081,9 +1172,24 @@ function Library:MakeDraggable(Instance, Cutoff)
 
     local function FinishDrag()
         if not State.Dragging then return; end
+
+        -- Capture the pointer once more at release. Input may end between render
+        -- steps, and using the previous frame's target is the source of the
+        -- visible release snap.
+        if State.Input and State.ObjectOffset and State.Anchor then
+            local Pointer = GetPointer(State.Input);
+            State.TargetAnchor = Vector2.new(
+                Pointer.X - State.ObjectOffset.X + (Instance.AbsoluteSize.X * State.Anchor.X),
+                Pointer.Y - State.ObjectOffset.Y + (Instance.AbsoluteSize.Y * State.Anchor.Y)
+            );
+        end
+
         State.Dragging = false;
         Disconnect('DragConnection');
         Disconnect('InputConnection');
+        State.Input = nil;
+        State.ObjectOffset = nil;
+        State.Anchor = nil;
 
         if not Instance.Parent then return; end
         local Target = State.TargetAnchor;
@@ -1102,7 +1208,7 @@ function Library:MakeDraggable(Instance, Cutoff)
         end
 
         local Manager = Library.MenuManager;
-        local Duration = 0.1 + math.clamp(Distance / 1200, 0, 0.08);
+        local Duration = 0.055 + math.clamp(Distance / 1600, 0, 0.03);
         if Manager and Manager.GetReleaseDuration then
             local Success, Value = pcall(Manager.GetReleaseDuration, Manager, Distance);
             if Success and type(Value) == 'number' then Duration = Value; end
@@ -1129,6 +1235,9 @@ function Library:MakeDraggable(Instance, Cutoff)
         State.Dragging = true;
 
         local Anchor = Instance.AnchorPoint;
+        State.Input = Input;
+        State.ObjectOffset = ObjPos;
+        State.Anchor = Anchor;
         State.VisualAnchor = Vector2.new(
             Instance.AbsolutePosition.X + (Instance.AbsoluteSize.X * Anchor.X),
             Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
@@ -1147,14 +1256,10 @@ function Library:MakeDraggable(Instance, Cutoff)
                 CurrentPointer.Y - ObjPos.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
             );
 
-            local Manager = Library.MenuManager;
-            local Response = 48;
-            if Manager and Manager.GetDragResponse then
-                local Success, Value = pcall(Manager.GetDragResponse, Manager);
-                if Success and type(Value) == 'number' then Response = Value; end
-            end
-            local Alpha = 1 - math.exp(-math.min(math.max(Delta, 0), 0.05) * Response);
-            State.VisualAnchor = State.VisualAnchor:Lerp(State.TargetAnchor, Alpha);
+            -- Dragging follows the pointer directly. Smoothing cursor input by
+            -- interpolating every frame adds latency and leaves the UI behind
+            -- the cursor; only the sub-frame release correction is animated.
+            State.VisualAnchor = State.TargetAnchor;
             Instance.Position = UDim2.fromOffset(State.VisualAnchor.X, State.VisualAnchor.Y);
         end);
 
@@ -2106,7 +2211,7 @@ do
                 Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 4);
             });
 
-            if ExitTween then ExitTween.Completed:Connect(function(State)
+            local function FinishHide(State)
                 if CurrentId ~= PickerAnimationId or State == Enum.PlaybackState.Cancelled then
                     return;
                 end;
@@ -2115,7 +2220,12 @@ do
                 PickerFrameOuter.Position = TargetPosition;
                 Library:SetFadeTree(PickerFrameOuter, false);
                 table.clear(PickerTweens);
-            end); end
+            end
+            if ExitTween then
+                ExitTween.Completed:Connect(FinishHide);
+            else
+                FinishHide(Enum.PlaybackState.Completed);
+            end
         end;
 
         function ColorPicker:SetValue(HSV, Transparency)
@@ -4303,7 +4413,7 @@ do
             end
 
             PlayDropdownTween(DropdownArrow, Library:GetMenuTweenInfo(0.10, 'Dropdown'), { Rotation = 0 });
-            if ExitTween then ExitTween.Completed:Connect(function(State)
+            local function FinishClose(State)
                 if CurrentId ~= DropdownAnimationId or Dropdown.Opened or State == Enum.PlaybackState.Cancelled then return; end
                 ListOuter.Visible = false;
                 ListOuter.Position = ListTargetPosition;
@@ -4314,7 +4424,12 @@ do
                     Library:SetFadeTree(SearchOuter, false);
                 end
                 table.clear(DropdownTweens);
-            end); end
+            end
+            if ExitTween then
+                ExitTween.Completed:Connect(FinishClose);
+            else
+                FinishClose(Enum.PlaybackState.Completed);
+            end
         end;
 
         DropdownOuter.InputBegan:Connect(function(Input)
@@ -4791,6 +4906,11 @@ function Library:CreateTargetHUD(Config)
         Visible = false;
         ZIndex = 250;
         Parent = ScreenGui;
+    });
+
+    local HUDScale = Library:Create('UIScale', {
+        Scale = 0.985;
+        Parent = Outer;
     });
 
     local Inner = Library:Create('Frame', {
@@ -5464,20 +5584,23 @@ function Library:CreateTargetHUD(Config)
         HUD.Visible = Visible;
         HUD.AnimationId = HUD.AnimationId + 1;
         local CurrentId = HUD.AnimationId;
-        local Duration = tonumber(Config.AnimationTime or Config.TweenTime) or 0.14;
+        local Duration = tonumber(Config.AnimationTime or Config.TweenTime) or 0.18;
 
         if Visible then
             if not Outer.Visible then
                 Library:SetUnifiedFadeProgress(Outer, 0);
+                HUDScale.Scale = 0.985;
                 Outer.Visible = true;
             end
-            Library:TweenUnifiedFade(Outer, 1, Duration);
+            Library:Animate(HUDScale, { Scale = 1; }, Duration, nil, 'HUD');
+            Library:TweenUnifiedFade(Outer, 1, Duration, nil, 'HUD');
         elseif Outer.Visible then
+            Library:Animate(HUDScale, { Scale = 0.985; }, Duration, nil, 'HUDExit');
             Library:TweenUnifiedFade(Outer, 0, Duration, function(State)
                 if CurrentId == HUD.AnimationId and not HUD.Visible and State ~= Enum.PlaybackState.Cancelled and Outer.Parent then
                     Outer.Visible = false;
                 end
-            end);
+            end, 'HUDExit');
         end
     end
 
@@ -5661,7 +5784,7 @@ function Library:Notify(Text, Time)
             GroupTransparency = 1;
         }, 0.13, function(State)
             if State ~= Enum.PlaybackState.Cancelled and NotifyOuter.Parent then NotifyOuter:Destroy(); end
-        end, 'Notification');
+        end, 'NotificationExit');
     end);
 end;
 
@@ -5678,7 +5801,7 @@ function Library:CreateWindow(...)
 
     if type(Config.Title) ~= 'string' then Config.Title = 'No title' end
     if type(Config.TabPadding) ~= 'number' then Config.TabPadding = 0 end
-    if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.14 end
+    if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.18 end
 
     if typeof(Config.Position) ~= 'UDim2' then Config.Position = UDim2.fromOffset(175, 50) end
     if typeof(Config.Size) ~= 'UDim2' then Config.Size = UDim2.fromOffset(550, 600) end
@@ -5702,6 +5825,11 @@ function Library:CreateWindow(...)
         Visible = false;
         ZIndex = 1;
         Parent = ScreenGui;
+    });
+
+    local MenuScale = Library:Create('UIScale', {
+        Scale = 0.985;
+        Parent = Outer;
     });
 
     Library:MakeDraggable(Outer, 25);
@@ -5939,17 +6067,6 @@ function Library:CreateWindow(...)
             end);
         end;
 
-        local function SetTabVisualGroups(Target, Duration, Stagger)
-            local Hidden = Target >= 0.5;
-            local Progress = Hidden and 0 or 1;
-
-            if not Duration or Duration <= 0 then
-                Library:SetUnifiedFadeProgress(TabFrame, Progress);
-            else
-                Library:TweenUnifiedFade(TabFrame, Progress, Duration);
-            end;
-        end;
-
         function Tab:ShowTab()
             if Tab.Active then
                 MainTabIndicator:MoveTo(TabButton, false);
@@ -5963,33 +6080,36 @@ function Library:CreateWindow(...)
             end;
 
             for _, OtherTab in next, Window.Tabs do
-                if OtherTab ~= Tab then
-                    OtherTab:HideTab(true);
+                if OtherTab ~= Tab and OtherTab.Active then
+                    OtherTab:HideTab(OtherTab ~= PreviousTab, -Direction);
                 end;
             end;
 
             Tab.Active = true;
             Window.ActiveTab = Tab;
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
-            local CurrentAnimation = Tab.ContentAnimationId;
 
             Library:TweenProperty(Blocker, 'BackgroundTransparency', 0, 0.10);
             Library:TweenProperty(TabButton, 'BackgroundColor3', Library.MainColor, 0.10);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'MainColor';
             MainTabIndicator:MoveTo(TabButton, not MainTabIndicator.Frame.Visible);
 
-            TabFrame.Position = UDim2.new(0, Direction * 8, 0, 0);
-            TabFrame.Visible = true;
-            SetTabVisualGroups(1, 0);
-
-            if Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
-                SetTabVisualGroups(0, 0.12, 0);
-                Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, 0), 0.14);
+            if not TabFrame.Visible then
+                Library:CancelMotion(TabFrame);
+                TabFrame.Position = UDim2.new(0, Direction * 9, 0, 0);
+                TabFrame.GroupTransparency = 1;
             end;
+            TabFrame.Visible = true;
+            Library:Animate(TabFrame, {
+                Position = UDim2.new(0, 0, 0, 0);
+            }, 0.17, nil, 'Tab');
+            Library:Animate(TabFrame, {
+                GroupTransparency = 0;
+            }, 0.15, nil, 'Fade');
         end;
 
-        function Tab:HideTab(Instant)
-            if not Tab.Active then
+        function Tab:HideTab(Instant, Direction)
+            if not Tab.Active and not TabFrame.Visible then
                 return;
             end;
 
@@ -6002,23 +6122,31 @@ function Library:CreateWindow(...)
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
 
             if Instant then
-                SetTabVisualGroups(1, 0);
+                Library:CancelMotion(TabFrame);
+                TabFrame.GroupTransparency = 1;
                 TabFrame.Visible = false;
                 TabFrame.Position = UDim2.new(0, 0, 0, 0);
                 return;
             end;
 
-            SetTabVisualGroups(1, 0.10, 0);
-            local ExitTween = Library:TweenProperty(TabFrame, 'Position', UDim2.new(0, 0, 0, -3), 0.11);
-
-            local function FinishHide(State)
+            local ExitDirection = tonumber(Direction) or 0;
+            Library:Animate(TabFrame, {
+                Position = UDim2.new(0, ExitDirection * 6, 0, -2);
+            }, 0.135, nil, 'TabExit');
+            local ExitTween = Library:Animate(TabFrame, {
+                GroupTransparency = 1;
+            }, 0.12, function(State)
                 if State == Enum.PlaybackState.Cancelled then return; end
                 if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                     TabFrame.Visible = false;
                     TabFrame.Position = UDim2.new(0, 0, 0, 0);
                 end;
+            end, 'Fade');
+
+            if not ExitTween and not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
+                TabFrame.Visible = false;
+                TabFrame.Position = UDim2.new(0, 0, 0, 0);
             end;
-            if ExitTween then ExitTween.Completed:Connect(FinishHide); else FinishHide(Enum.PlaybackState.Completed); end
         end;
 
         function Tab:SetLayoutOrder(Position)
@@ -6278,15 +6406,18 @@ function Library:CreateWindow(...)
                     end;
 
                     for _, OtherTab in next, Tabbox.Tabs do
-                        if OtherTab ~= Tab then
-                            OtherTab:Hide(true);
+                        if OtherTab ~= Tab and OtherTab.Active then
+                            OtherTab:Hide(OtherTab ~= PreviousTab, -Direction);
                         end;
                     end;
 
                     Tab.Active = true;
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
-                    local CurrentAnimation = Tab.ContentAnimationId;
-                    Container.Position = UDim2.new(0, 4 + (Direction * 7), 0, 20);
+                    if not Container.Visible then
+                        Library:CancelMotion(Container);
+                        Container.Position = UDim2.new(0, 4 + (Direction * 8), 0, 20);
+                        Container.GroupTransparency = 1;
+                    end;
                     Container.Visible = true;
                     Block.Visible = true;
                     TabboxIndicator:MoveTo(Button, not TabboxIndicator.Frame.Visible);
@@ -6294,17 +6425,18 @@ function Library:CreateWindow(...)
                     Library:TweenProperty(Button, 'BackgroundColor3', Library.BackgroundColor, 0.10);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.10);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
-                    Library:SetUnifiedFadeProgress(Container, 0);
-                    if Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
-                        Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 20), 0.13);
-                        Library:TweenUnifiedFade(Container, 1, 0.11);
-                    end;
+                    Library:Animate(Container, {
+                        Position = UDim2.new(0, 4, 0, 20);
+                    }, 0.16, nil, 'Tab');
+                    Library:Animate(Container, {
+                        GroupTransparency = 0;
+                    }, 0.14, nil, 'Fade');
 
                     Tab:Resize();
                 end;
 
-                function Tab:Hide(Instant)
-                    if not Tab.Active then
+                function Tab:Hide(Instant, Direction)
+                    if not Tab.Active and not Container.Visible then
                         return;
                     end;
 
@@ -6317,25 +6449,34 @@ function Library:CreateWindow(...)
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
 
                     if Instant then
-                        Library:SetUnifiedFadeProgress(Container, 0);
+                        Library:CancelMotion(Container);
+                        Container.GroupTransparency = 1;
                         Container.Visible = false;
                         Container.Position = UDim2.new(0, 4, 0, 20);
                         Block.Visible = false;
                         return;
                     end;
 
-                    Library:TweenUnifiedFade(Container, 0, 0.09);
-                    local ExitTween = Library:TweenProperty(Container, 'Position', UDim2.new(0, 4, 0, 17), 0.10);
-
-                    local function FinishHide(State)
+                    local ExitDirection = tonumber(Direction) or 0;
+                    Library:Animate(Container, {
+                        Position = UDim2.new(0, 4 + (ExitDirection * 5), 0, 18);
+                    }, 0.125, nil, 'TabExit');
+                    local ExitTween = Library:Animate(Container, {
+                        GroupTransparency = 1;
+                    }, 0.11, function(State)
                         if State == Enum.PlaybackState.Cancelled then return; end
                         if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                             Container.Visible = false;
                             Container.Position = UDim2.new(0, 4, 0, 20);
                             Block.Visible = false;
                         end;
+                    end, 'Fade');
+
+                    if not ExitTween and not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
+                        Container.Visible = false;
+                        Container.Position = UDim2.new(0, 4, 0, 20);
+                        Block.Visible = false;
                     end;
-                    if ExitTween then ExitTween.Completed:Connect(FinishHide); else FinishHide(Enum.PlaybackState.Completed); end
                 end;
 
                 function Tab:Resize()
@@ -6498,19 +6639,22 @@ function Library:CreateWindow(...)
         if Toggled then
             if not Outer.Visible then
                 Library:SetUnifiedFadeProgress(Outer, 0);
+                MenuScale.Scale = 0.985;
                 Outer.Visible = true;
             end
 
-            Library:TweenUnifiedFade(Outer, 1, FadeTime);
+            Library:Animate(MenuScale, { Scale = 1; }, FadeTime, nil, 'Menu');
+            Library:TweenUnifiedFade(Outer, 1, FadeTime, nil, 'Menu');
             StartFormaCursor();
         else
             CursorAnimationId = CursorAnimationId + 1;
+            Library:Animate(MenuScale, { Scale = 0.985; }, FadeTime, nil, 'MenuExit');
             Library:TweenUnifiedFade(Outer, 0, FadeTime, function(State)
                 if CurrentId ~= ToggleAnimationId or Toggled or State == Enum.PlaybackState.Cancelled then
                     return;
                 end
                 Outer.Visible = false;
-            end);
+            end, 'MenuExit');
         end
     end
 
