@@ -49,7 +49,7 @@ local ThemeManager = {} do
 		{ Key = 'BlendShade'; Label = 'Blend Shade' };
 		{ Key = 'OutlineColor'; Label = 'Outline color' };
 		{ Key = 'FontColor'; Label = 'Font color' };
-		{ Key = 'DisabledTextColor'; Label = 'Disabled Text Color' };
+		{ Key = 'DisabledTextColor'; Label = 'Inactive Text Color' };
 		{ Key = 'Contrast'; Label = 'Contrast' };
 		{ Key = 'Inline'; Label = 'Inline' };
 	}
