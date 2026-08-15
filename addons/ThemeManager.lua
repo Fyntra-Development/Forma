@@ -46,6 +46,7 @@ local ThemeManager = {} do
 		{ Key = 'BackgroundColor'; Label = 'Background color' };
 		{ Key = 'MainColor'; Label = 'Main color' };
 		{ Key = 'AccentColor'; Label = 'Accent color' };
+		{ Key = 'BlendShade'; Label = 'Blend Shade' };
 		{ Key = 'OutlineColor'; Label = 'Outline color' };
 		{ Key = 'FontColor'; Label = 'Font color' };
 		{ Key = 'DisabledTextColor'; Label = 'Disabled Text Color' };
@@ -53,14 +54,14 @@ local ThemeManager = {} do
 		{ Key = 'Inline'; Label = 'Inline' };
 	}
 	ThemeManager.BuiltInThemes = {
-		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232","DisabledTextColor":"8f8f8f","Contrast":"242424","Inline":"0c0c0c"}') },
-		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414","DisabledTextColor":"929292","Contrast":"2b2b2b","Inline":"111111"}') },
-		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d","DisabledTextColor":"9a91b8","Contrast":"28214f","Inline":"100c24"}') },
-		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","Contrast":"2d2d2d","Inline":"111111"}') },
-		['Mint'] 			= { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","Contrast":"2d2d2d","Inline":"111111"}') },
-		['Tokyo Night'] 	= { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232","DisabledTextColor":"8b8ba4","Contrast":"212133","Inline":"0e0e16"}') },
-		['Ubuntu'] 			= { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919","DisabledTextColor":"a0a0a0","Contrast":"494949","Inline":"222222"}') },
-		['Quartz'] 			= { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f","DisabledTextColor":"9692a6","Contrast":"2b2938","Inline":"121018"}') },
+		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BlendShade":"07152f","BackgroundColor":"141414","OutlineColor":"323232","DisabledTextColor":"8f8f8f","Contrast":"242424","Inline":"0c0c0c"}') },
+		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BlendShade":"21182a","BackgroundColor":"232323","OutlineColor":"141414","DisabledTextColor":"929292","Contrast":"2b2b2b","Inline":"111111"}') },
+		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BlendShade":"280d19","BackgroundColor":"191335","OutlineColor":"3c355d","DisabledTextColor":"9a91b8","Contrast":"28214f","Inline":"100c24"}') },
+		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BlendShade":"2b1119","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","Contrast":"2d2d2d","Inline":"111111"}') },
+		['Mint'] 			= { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BlendShade":"0f2a20","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","Contrast":"2d2d2d","Inline":"111111"}') },
+		['Tokyo Night'] 	= { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BlendShade":"19162b","BackgroundColor":"16161f","OutlineColor":"323232","DisabledTextColor":"8b8ba4","Contrast":"212133","Inline":"0e0e16"}') },
+		['Ubuntu'] 			= { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BlendShade":"2d160d","BackgroundColor":"323232","OutlineColor":"191919","DisabledTextColor":"a0a0a0","Contrast":"494949","Inline":"222222"}') },
+		['Quartz'] 			= { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BlendShade":"111c22","BackgroundColor":"1d1b26","OutlineColor":"27232f","DisabledTextColor":"9692a6","Contrast":"2b2938","Inline":"121018"}') },
 	}
 
 	function ThemeManager:ApplyTheme(theme)
@@ -70,12 +71,21 @@ local ThemeManager = {} do
 		if not data then return end
 
 		local scheme = data[2]
-		for idx, col in next, customThemeData or scheme do
+		local colors = customThemeData or scheme
+		for idx, col in next, colors do
 			self.Library[idx] = Color3.fromHex(col)
 
 			if Options[idx] then
 				Options[idx]:SetValueRGB(Color3.fromHex(col))
 			end
+		end
+
+		-- Older custom themes predate Blend Shade. Derive a dark companion from
+		-- their accent instead of leaking the shade from whichever theme ran last.
+		if colors.AccentColor and not colors.BlendShade then
+			local blendShade = Color3.fromHex(colors.AccentColor):Lerp(Color3.new(0, 0, 0), 0.72)
+			self.Library.BlendShade = blendShade
+			if Options.BlendShade then Options.BlendShade:SetValueRGB(blendShade) end
 		end
 
 		self:ThemeUpdate()
