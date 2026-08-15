@@ -226,6 +226,42 @@ MainLeft:AddSlider("CompactSlider", {
     Compact = true,
 })
 
+local ControlTabs = Tabs.Main:AddLeftTabbox("Control modes")
+local RoutingTab = ControlTabs:AddTab("Routing")
+local DisplayTab = ControlTabs:AddTab("Display")
+
+RoutingTab:AddDropdown("RoutingMode", {
+    Text = "Routing mode",
+    Values = { "Automatic", "Manual", "Priority" },
+    Default = 1,
+})
+
+local RoutingModeDependency = RoutingTab:AddDependencyBox()
+
+RoutingModeDependency:AddToggle("CustomRoute", {
+    Text = "Use custom route",
+    Default = false,
+})
+
+RoutingModeDependency:AddDropdown("RouteEndpoint", {
+    Text = "Route endpoint",
+    Values = { "Nearest", "Spawn", "Objective" },
+    Default = 1,
+})
+
+RoutingModeDependency:SetupDependencies({
+    {
+        Options.RoutingMode,
+        { "Manual", "Priority" },
+    },
+})
+
+DisplayTab:AddDropdown("StatusDisplay", {
+    Text = "Status display",
+    Values = { "Compact", "Detailed", "Minimal" },
+    Default = 1,
+})
+
 local MainRight = Tabs.Main:AddRightGroupbox("Profile")
 
 MainRight:AddInput("TextInput", {
@@ -332,6 +368,20 @@ MainRight:AddDropdown("MultiDropdown", {
             print(Name, Enabled)
         end
     end,
+})
+
+local DistanceDependency = MainRight:AddDependencyBox()
+
+DistanceDependency:AddToggle("ESPDistanceReadout", {
+    Text = "Show distance readout",
+    Default = false,
+})
+
+DistanceDependency:SetupDependencies({
+    {
+        Options.MultiDropdown,
+        "Distance",
+    },
 })
 
 local ColorLabel = MainRight:AddLabel("Accent preview")
