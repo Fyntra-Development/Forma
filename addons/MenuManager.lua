@@ -2,15 +2,62 @@ local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
 	MenuManager.Library = nil
-	MenuManager.EasingStyle = 'Cubic'
+	MenuManager.EasingStyle = 'Sine'
 	MenuManager.EasingDirection = 'Out'
-	MenuManager.TweenSpeed = 0.16
-	MenuManager.DefaultTweenSpeed = 0.16
+	MenuManager.TweenSpeed = 0.18
+	MenuManager.DefaultTweenSpeed = 0.18
 
 	MenuManager.EasingStyles = {
 		'Linear', 'Sine', 'Quad', 'Cubic', 'Quart', 'Quint', 'Exponential', 'Circular', 'Back', 'Elastic', 'Bounce'
 	}
 	MenuManager.EasingDirections = { 'In', 'Out', 'InOut' }
+
+	-- Each native easing curve needs a slightly different amount of time to
+	-- read cleanly. In particular, Elastic and Bounce need room to settle while
+	-- Linear needs to finish quickly so that it does not feel heavy.
+	MenuManager.StyleProfiles = {
+		Linear = { Scale = 0.72; Min = 0.07; Max = 0.26; Overshoot = 0; };
+		Sine = { Scale = 0.94; Min = 0.08; Max = 0.34; Overshoot = 0; };
+		Quad = { Scale = 0.90; Min = 0.08; Max = 0.34; Overshoot = 0; };
+		Cubic = { Scale = 0.88; Min = 0.08; Max = 0.34; Overshoot = 0; };
+		Quart = { Scale = 0.86; Min = 0.08; Max = 0.34; Overshoot = 0; };
+		Quint = { Scale = 0.84; Min = 0.08; Max = 0.34; Overshoot = 0; };
+		Exponential = { Scale = 0.82; Min = 0.08; Max = 0.36; Overshoot = 0; };
+		Circular = { Scale = 0.92; Min = 0.09; Max = 0.38; Overshoot = 0; };
+		Back = { Scale = 1.04; Min = 0.12; Max = 0.42; Overshoot = 0.12; };
+		Elastic = { Scale = 1.42; Min = 0.22; Max = 0.52; Overshoot = 0.16; };
+		Bounce = { Scale = 1.24; Min = 0.18; Max = 0.46; Overshoot = 0; };
+	}
+
+	-- Transparency, colors, continuous values, and direct manipulation must not
+	-- overshoot. Spatial motion still uses the selected style, so every easing
+	-- option remains visible without making fades plateau at their clamped ends.
+	MenuManager.ContextProfiles = {
+		Fade = { Style = 'Sine'; Direction = 'Out'; Scale = 0.88; Min = 0.085; Max = 0.26; };
+		Color = { Style = 'Sine'; Direction = 'Out'; Scale = 0.72; Min = 0.07; Max = 0.22; };
+		Layout = { Style = 'Quart'; Direction = 'Out'; Scale = 0.84; Min = 0.085; Max = 0.28; };
+		Slider = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.68; Min = 0.07; Max = 0.18; };
+		Health = { Style = 'Sine'; Direction = 'Out'; Scale = 0.96; Min = 0.10; Max = 0.30; };
+		DragRelease = { Style = 'Sine'; Direction = 'Out'; Scale = 0.62; Min = 0.045; Max = 0.10; };
+		Tab = { Direction = 'Out'; Scale = 0.94; Min = 0.11; Max = 0.30; };
+		TabExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.72; Min = 0.09; Max = 0.20; };
+		TabIndicator = { Direction = 'Out'; Scale = 0.88; Min = 0.09; Max = 0.30; };
+		Picker = { Direction = 'Out'; Scale = 0.92; Min = 0.09; Max = 0.34; };
+		Dropdown = { Direction = 'Out'; Scale = 0.92; Min = 0.09; Max = 0.34; };
+		Tooltip = { Style = 'Quart'; Direction = 'Out'; Scale = 0.76; Min = 0.08; Max = 0.20; };
+		Notification = { Style = 'Quart'; Direction = 'Out'; Scale = 0.90; Min = 0.10; Max = 0.28; };
+		NotificationExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.76; Min = 0.09; Max = 0.22; };
+		Menu = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.12; Max = 0.32; };
+		MenuExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.80; Min = 0.10; Max = 0.25; };
+		HUD = { Style = 'Quart'; Direction = 'Out'; Scale = 0.92; Min = 0.11; Max = 0.30; };
+		HUDExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.78; Min = 0.09; Max = 0.22; };
+	}
+
+	MenuManager.DirectionScales = {
+		In = 0.82;
+		Out = 1;
+		InOut = 1.06;
+	}
 
 	local function FindIndex(List, Value)
 		for Index, Item in ipairs(List) do
@@ -22,51 +69,71 @@ local MenuManager = {} do
 	end
 
 	function MenuManager:GetEasingStyle()
-		return Enum.EasingStyle[self.EasingStyle] or Enum.EasingStyle.Cubic
+		return Enum.EasingStyle[self.EasingStyle] or Enum.EasingStyle.Sine
 	end
 
 	function MenuManager:GetEasingDirection()
 		return Enum.EasingDirection[self.EasingDirection] or Enum.EasingDirection.Out
 	end
 
+	function MenuManager:GetMotionProfile(Context)
+		local ContextProfile = self.ContextProfiles[Context] or {}
+		local StyleName = ContextProfile.Style or self.EasingStyle
+		local DirectionName = ContextProfile.Direction or self.EasingDirection
+		local StyleProfile = self.StyleProfiles[StyleName] or self.StyleProfiles.Sine
+
+		return {
+			StyleName = StyleName;
+			DirectionName = DirectionName;
+			Style = Enum.EasingStyle[StyleName] or Enum.EasingStyle.Sine;
+			Direction = Enum.EasingDirection[DirectionName] or Enum.EasingDirection.Out;
+			Scale = (StyleProfile.Scale or 1) * (ContextProfile.Scale or 1) * (self.DirectionScales[DirectionName] or 1);
+			Min = ContextProfile.Min or StyleProfile.Min or 0.06;
+			Max = ContextProfile.Max or StyleProfile.Max or 0.45;
+			Overshoot = StyleProfile.Overshoot or 0;
+		}
+	end
+
 	function MenuManager:GetEasedAlpha(Alpha, Context)
 		local T = math.clamp(tonumber(Alpha) or 0, 0, 1)
 		if T <= 0 then return 0 end
 		if T >= 1 then return 1 end
+		local Profile = self:GetMotionProfile(Context)
 
 		local Success, Raw = pcall(
 			TweenService.GetValue,
 			TweenService,
 			T,
-			self:GetEasingStyle(),
-			self:GetEasingDirection()
+			Profile.Style,
+			Profile.Direction
 		)
-		return Success and type(Raw) == 'number' and math.clamp(Raw, -0.2, 1.2) or T
+		if not Success or type(Raw) ~= 'number' then return T end
+		return math.clamp(Raw, -Profile.Overshoot, 1 + Profile.Overshoot)
 	end
 
-	function MenuManager:GetDuration(Duration)
-		local Base = math.clamp(tonumber(self.TweenSpeed) or self.DefaultTweenSpeed, 0.05, 0.6)
+	function MenuManager:GetDuration(Duration, Context)
+		local Base = math.clamp(tonumber(self.TweenSpeed) or self.DefaultTweenSpeed, 0.08, 0.45)
 		local Requested = tonumber(Duration)
-		if not Requested then return Base end
-
-		-- TweenSpeed is a global response control. Explicit component timings keep
-		-- their proportions while the whole interface speeds up or slows down.
-		local Scale = Base / self.DefaultTweenSpeed
-		return math.clamp(Requested * Scale, 0.035, 1.2)
+		local Profile = self:GetMotionProfile(Context)
+		local GlobalScale = Base / self.DefaultTweenSpeed
+		local Effective = (Requested or self.DefaultTweenSpeed) * GlobalScale * Profile.Scale
+		return math.clamp(Effective, Profile.Min, Profile.Max)
 	end
 
 	function MenuManager:GetTweenInfo(Duration, Context)
-		return TweenInfo.new(self:GetDuration(Duration), self:GetEasingStyle(), self:GetEasingDirection())
+		local Profile = self:GetMotionProfile(Context)
+		return TweenInfo.new(self:GetDuration(Duration, Context), Profile.Style, Profile.Direction)
 	end
 
 	function MenuManager:GetDragResponse()
-		local Scale = self:GetDuration(self.DefaultTweenSpeed) / self.DefaultTweenSpeed
-		return math.clamp(44 / math.max(Scale, 0.2), 24, 72)
+		-- Kept for backwards compatibility. Dragging itself is now direct and only
+		-- the final sub-frame correction is eased.
+		return 1
 	end
 
 	function MenuManager:GetReleaseDuration(Distance)
-		local Travel = math.clamp(tonumber(Distance) or 0, 0, 120)
-		return self:GetDuration(0.09 + (Travel / 1200))
+		local Travel = math.clamp(tonumber(Distance) or 0, 0, 48)
+		return self:GetDuration(0.055 + (Travel / 1600), 'DragRelease')
 	end
 
 	function MenuManager:SetLibrary(Library)
@@ -83,7 +150,7 @@ local MenuManager = {} do
 	end
 
 	function MenuManager:SetTweenSpeed(Value)
-		self.TweenSpeed = math.clamp(tonumber(Value) or self.DefaultTweenSpeed, 0.05, 0.6)
+		self.TweenSpeed = math.clamp(tonumber(Value) or self.DefaultTweenSpeed, 0.08, 0.45)
 	end
 
 	function MenuManager:ResetMenuPositions()
@@ -96,7 +163,7 @@ local MenuManager = {} do
 		Options.MenuManager_EasingStyle:OnChanged(function() self:SetEasingStyle(Options.MenuManager_EasingStyle.Value) end)
 		Groupbox:AddDropdown('MenuManager_EasingDirection', { Text = 'Easing direction'; Values = self.EasingDirections; Default = FindIndex(self.EasingDirections, self.EasingDirection); })
 		Options.MenuManager_EasingDirection:OnChanged(function() self:SetEasingDirection(Options.MenuManager_EasingDirection.Value) end)
-		Groupbox:AddSlider('MenuManager_TweenSpeed', { Text = 'Animation response'; Default = self.TweenSpeed; Min = 0.05; Max = 0.6; Rounding = 2; Step = 0.01; Suffix = 's'; })
+		Groupbox:AddSlider('MenuManager_TweenSpeed', { Text = 'Animation response'; Default = self.TweenSpeed; Min = 0.08; Max = 0.45; Rounding = 2; Step = 0.01; Suffix = 's'; })
 		Options.MenuManager_TweenSpeed:OnChanged(function() self:SetTweenSpeed(Options.MenuManager_TweenSpeed.Value) end)
 		Groupbox:AddButton('Reset menu positions', function() self:ResetMenuPositions() end)
 	end
