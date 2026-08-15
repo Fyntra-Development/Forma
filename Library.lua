@@ -6,6 +6,7 @@ local Players = game:GetService('Players');
 local RunService = game:GetService('RunService')
 local TweenService = game:GetService('TweenService');
 local HttpService = game:GetService('HttpService');
+local MarketplaceService = game:GetService('MarketplaceService');
 local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
@@ -128,6 +129,54 @@ local Library = {
     Signals = {};
     ScreenGui = ScreenGui;
 };
+
+local function NormalizeGameName(Value)
+    if Value == nil then return nil; end;
+    local Name = tostring(Value):gsub('^%s+', ''):gsub('%s+$', '');
+    local Normalized = Name:lower():gsub('[%s%p_]+', '');
+    if Name == '' or Normalized == 'ugc' or Normalized == 'game'
+        or Normalized == 'place' or Normalized == 'unknowngame' then
+        return nil;
+    end;
+    return Name;
+end;
+
+function Library:DetectGameName()
+    local Candidates = {};
+    local UniverseId = tonumber(game.GameId) or 0;
+    if UniverseId > 0 then
+        local Success, Result = pcall(function()
+            local Url = 'https://games.roblox.com/v1/games?universeIds=' .. tostring(UniverseId);
+            local Response = game:HttpGet(Url);
+            local Decoded = HttpService:JSONDecode(Response);
+            return Decoded and Decoded.data and Decoded.data[1] and Decoded.data[1].name;
+        end);
+        if Success then table.insert(Candidates, Result); end;
+    end;
+
+    local PlaceId = tonumber(game.PlaceId) or 0;
+    if PlaceId > 0 then
+        local Success, Result = pcall(function()
+            local Info = MarketplaceService:GetProductInfo(PlaceId, Enum.InfoType.Asset);
+            return Info and Info.Name;
+        end);
+        if Success then table.insert(Candidates, Result); end;
+    end;
+
+    table.insert(Candidates, game.Name);
+    for _, Candidate in ipairs(Candidates) do
+        local Name = NormalizeGameName(Candidate);
+        if Name then
+            Library.GameName = Name;
+            return Name;
+        end;
+    end;
+
+    Library.GameName = 'Unknown Game';
+    return Library.GameName;
+end;
+
+Library.GameName = Library:DetectGameName();
 
 local RainbowStep = 0
 local Hue = 0
@@ -1019,14 +1068,19 @@ function Library:GetMovingAccentGradientColor()
     });
 end;
 
-function Library:GetBlendColorSequence(Color)
-    local Base = Color or Library.AccentColor;
-    local Shade = Library.BlendShade or Library:GetDarkerColor(Base);
-    return ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Shade);
-        ColorSequenceKeypoint.new(0.58, Base:Lerp(Shade, 0.18));
-        ColorSequenceKeypoint.new(1, Base);
+function Library:GetBlendShadeTransparency(Strength)
+    Strength = math.clamp(tonumber(Strength) or 0.48, 0, 0.82);
+    return NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1 - Strength);
+        NumberSequenceKeypoint.new(0.58, 0.88);
+        NumberSequenceKeypoint.new(1, 1);
     });
+end;
+
+function Library:GetNeutralBlendShade()
+    local Shade = Library.BlendShade or Color3.fromRGB(24, 24, 24);
+    local Luminance = (Shade.R * 0.2126) + (Shade.G * 0.7152) + (Shade.B * 0.0722);
+    return Color3.new(Luminance, Luminance, Luminance);
 end;
 
 function Library:AddMovingAccentGradient(Parent, Duration)
@@ -2418,7 +2472,7 @@ do
         ColorPicker:SetHSVFromRGB(ColorPicker.Value);
 
         local DisplayFrame = Library:Create('Frame', {
-            BackgroundColor3 = Color3.new(1, 1, 1);
+            BackgroundColor3 = ColorPicker.Value;
             BorderColor3 = Library.BlendShade;
             BorderMode = Enum.BorderMode.Inset;
             Size = UDim2.new(0, 28, 0, 14);
@@ -2427,15 +2481,23 @@ do
         });
         Library:AddToRegistry(DisplayFrame, { BorderColor3 = 'BlendShade'; });
 
-        local DisplayGradient = Library:Create('UIGradient', {
-            Color = Library:GetBlendColorSequence(ColorPicker.Value);
-            Rotation = 90;
+        local DisplayShade = Library:Create('Frame', {
+            BackgroundColor3 = Library:GetNeutralBlendShade();
+            BackgroundTransparency = ColorPicker.Transparency;
+            BorderSizePixel = 0;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 7;
             Parent = DisplayFrame;
         });
-        Library:AddToRegistry(DisplayGradient, {
-            Color = function()
-                return Library:GetBlendColorSequence(ColorPicker.Value);
+        Library:AddToRegistry(DisplayShade, {
+            BackgroundColor3 = function()
+                return Library:GetNeutralBlendShade();
             end;
+        });
+        Library:Create('UIGradient', {
+            Rotation = -135;
+            Transparency = Library:GetBlendShadeTransparency(0.42);
+            Parent = DisplayShade;
         });
 
         local CheckerFrame = Library:Create('ImageLabel', {
@@ -2858,11 +2920,12 @@ do
             SatVibMap.BackgroundColor3 = Color3.fromHSV(ColorPicker.Hue, 1, 1);
 
             Library:Create(DisplayFrame, {
-                BackgroundColor3 = Color3.new(1, 1, 1);
+                BackgroundColor3 = ColorPicker.Value;
                 BackgroundTransparency = ColorPicker.Transparency;
                 BorderColor3 = Library.BlendShade;
             });
-            DisplayGradient.Color = Library:GetBlendColorSequence(ColorPicker.Value);
+            DisplayShade.BackgroundColor3 = Library:GetNeutralBlendShade();
+            DisplayShade.BackgroundTransparency = ColorPicker.Transparency;
 
             if TransparencyBoxInner then
                 TransparencyBoxInner.BackgroundColor3 = ColorPicker.Value;
@@ -3633,11 +3696,24 @@ do
                 local StartedAt = os.clock();
                 local Deadline = StartedAt + Duration;
                 local Confirmed = false;
-                local FlashOn = false;
-                local NextFlash = StartedAt;
 
                 Button.Locked = true;
-                SetLabelColor('RiskColor');
+                SetLabelColor('FontColor');
+                Library:Animate(Button.Label, {
+                    TextColor3 = Library.AccentColor;
+                }, 0.12, nil, 'WarningFlash');
+                Library:Animate(Button.Inner, {
+                    BackgroundColor3 = Library.AccentColor:Lerp(Library.MainColor, 0.52);
+                }, 0.12, nil, 'WarningFlash');
+                task.delay(0.24, function()
+                    if Button.ConfirmSequence ~= Sequence or not Button.Inner.Parent then return; end;
+                    Library:Animate(Button.Label, {
+                        TextColor3 = Library.FontColor;
+                    }, 0.16, nil, 'WarningFlash');
+                    Library:Animate(Button.Inner, {
+                        BackgroundColor3 = Library.MainColor;
+                    }, 0.16, nil, 'WarningFlash');
+                end);
 
                 if Button.ConfirmConnection then Button.ConfirmConnection:Disconnect(); end;
                 Button.ConfirmConnection = Button.Outer.InputBegan:Connect(function(Input)
@@ -3653,15 +3729,6 @@ do
                         if Remaining <= 0 then break; end;
 
                         Button.Label.Text = string.format('Are you sure? (%.1fs)', Remaining);
-                        if Now >= NextFlash then
-                            FlashOn = not FlashOn;
-                            NextFlash = Now + 0.18;
-                            Library:Animate(Button.Inner, {
-                                BackgroundColor3 = FlashOn
-                                    and Library.RiskColor:Lerp(Library.MainColor, 0.56)
-                                    or Library.MainColor;
-                            }, 0.14, nil, 'Color');
-                        end;
                         task.wait(0.05);
                     end;
 
@@ -3678,6 +3745,7 @@ do
                         }, 0.12, nil, 'Color');
                     end;
                     if Button.Label.Parent then
+                        Library:CancelMotion(Button.Label, 'TextColor3');
                         SetLabelColor('FontColor');
                         Button.Label.Text = Button.Text;
                     end;
@@ -4070,23 +4138,30 @@ do
             BorderColor3 = 'OutlineColor';
         });
 
-        local ToggleFill = Library:Create('Frame', {
-            BackgroundColor3 = Color3.new(1, 1, 1);
-            BackgroundTransparency = 1;
+        local ToggleFill = Library:Create('CanvasGroup', {
+            BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
+            ClipsDescendants = true;
+            GroupTransparency = 1;
             Size = UDim2.fromScale(1, 1);
             ZIndex = 7;
             Parent = ToggleInner;
         });
-        local ToggleGradient = Library:Create('UIGradient', {
-            Color = Library:GetBlendColorSequence(Library.AccentColor);
-            Rotation = 90;
+        Library:AddCorner(ToggleFill, 3);
+        Library:AddToRegistry(ToggleFill, { BackgroundColor3 = 'AccentColor'; });
+
+        local ToggleShade = Library:Create('Frame', {
+            BackgroundColor3 = Library.BlendShade;
+            BorderSizePixel = 0;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 8;
             Parent = ToggleFill;
         });
-        Library:AddToRegistry(ToggleGradient, {
-            Color = function()
-                return Library:GetBlendColorSequence(Library.AccentColor);
-            end;
+        Library:AddToRegistry(ToggleShade, { BackgroundColor3 = 'BlendShade'; });
+        Library:Create('UIGradient', {
+            Rotation = -90;
+            Transparency = Library:GetBlendShadeTransparency(0.50);
+            Parent = ToggleShade;
         });
 
         local ToggleLabel = Library:CreateLabel({
@@ -4129,14 +4204,17 @@ do
 
         function Toggle:Display()
             local BorderKey = Toggle.Value and 'BlendShade' or 'OutlineColor';
+            local TextColorKey = Toggle.Risky and 'RiskColor'
+                or (Toggle.Value and 'FontColor' or 'DisabledTextColor');
 
             Library:TweenProperty(ToggleInner, 'BackgroundColor3', Library.MainColor, 0.11);
             Library:TweenProperty(ToggleInner, 'BorderColor3', Library[BorderKey], 0.11);
-            Library:TweenProperty(ToggleFill, 'BackgroundTransparency', Toggle.Value and 0 or 1, 0.11);
-            ToggleGradient.Color = Library:GetBlendColorSequence(Library.AccentColor);
+            Library:TweenProperty(ToggleFill, 'GroupTransparency', Toggle.Value and 0 or 1, 0.11);
+            Library:TweenProperty(ToggleLabel, 'TextColor3', Library[TextColorKey], 0.11);
 
             Library.RegistryMap[ToggleInner].Properties.BackgroundColor3 = 'MainColor';
             Library.RegistryMap[ToggleInner].Properties.BorderColor3 = BorderKey;
+            Library.RegistryMap[ToggleLabel].Properties.TextColor3 = TextColorKey;
 
         end;
 
@@ -4320,8 +4398,9 @@ do
         });
 
         local Fill = Library:Create('Frame', {
-            BackgroundColor3 = Color3.new(1, 1, 1);
+            BackgroundColor3 = Library.AccentColor;
             BorderColor3 = Library.BlendShade;
+            ClipsDescendants = true;
             Size = UDim2.new(0, 0, 1, 0);
             ZIndex = 7;
             Parent = SliderInner;
@@ -4329,16 +4408,21 @@ do
 
         Library:AddCorner(Fill, 3);
         Library:AddToRegistry(Fill, {
+            BackgroundColor3 = 'AccentColor';
             BorderColor3 = 'BlendShade';
         });
-        local FillGradient = Library:Create('UIGradient', {
-            Color = Library:GetBlendColorSequence(Library.AccentColor);
+        local FillShade = Library:Create('Frame', {
+            BackgroundColor3 = Library.BlendShade;
+            BorderSizePixel = 0;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 8;
             Parent = Fill;
         });
-        Library:AddToRegistry(FillGradient, {
-            Color = function()
-                return Library:GetBlendColorSequence(Library.AccentColor);
-            end;
+        Library:AddToRegistry(FillShade, { BackgroundColor3 = 'BlendShade'; });
+        Library:Create('UIGradient', {
+            Rotation = -90;
+            Transparency = Library:GetBlendShadeTransparency(0.48);
+            Parent = FillShade;
         });
 
         if Info.Compact then
@@ -4356,8 +4440,9 @@ do
 
         local Thumb = Library:Create('Frame', {
             AnchorPoint = Vector2.new(0.5, 0.5);
-            BackgroundColor3 = Color3.new(1, 1, 1);
+            BackgroundColor3 = Library.AccentColor;
             BorderColor3 = Library.BlendShade;
+            ClipsDescendants = true;
             Position = UDim2.new(0, 20, 0.5, 0);
             Size = UDim2.fromOffset(7, 13);
             ZIndex = 10;
@@ -4366,17 +4451,21 @@ do
 
         Library:AddCorner(Thumb, 3);
         Library:AddToRegistry(Thumb, {
+            BackgroundColor3 = 'AccentColor';
             BorderColor3 = 'BlendShade';
         });
-        local ThumbGradient = Library:Create('UIGradient', {
-            Color = Library:GetBlendColorSequence(Library.AccentColor);
-            Rotation = 90;
+        local ThumbShade = Library:Create('Frame', {
+            BackgroundColor3 = Library.BlendShade;
+            BorderSizePixel = 0;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 11;
             Parent = Thumb;
         });
-        Library:AddToRegistry(ThumbGradient, {
-            Color = function()
-                return Library:GetBlendColorSequence(Library.AccentColor);
-            end;
+        Library:AddToRegistry(ThumbShade, { BackgroundColor3 = 'BlendShade'; });
+        Library:Create('UIGradient', {
+            Rotation = -90;
+            Transparency = Library:GetBlendShadeTransparency(0.48);
+            Parent = ThumbShade;
         });
 
         local ValueBadge = Library:Create('Frame', {
@@ -4447,12 +4536,12 @@ do
         end
 
         function Slider:UpdateColors()
-            Fill.BackgroundColor3 = Color3.new(1, 1, 1);
+            Fill.BackgroundColor3 = Library.AccentColor;
             Fill.BorderColor3 = Library.BlendShade;
-            FillGradient.Color = Library:GetBlendColorSequence(Library.AccentColor);
-            Thumb.BackgroundColor3 = Color3.new(1, 1, 1);
+            FillShade.BackgroundColor3 = Library.BlendShade;
+            Thumb.BackgroundColor3 = Library.AccentColor;
             Thumb.BorderColor3 = Library.BlendShade;
-            ThumbGradient.Color = Library:GetBlendColorSequence(Library.AccentColor);
+            ThumbShade.BackgroundColor3 = Library.BlendShade;
         end;
 
         local IsDragging = false;
@@ -5119,7 +5208,7 @@ do
 
                 function Row:UpdateButton()
                     local Selected = Info.Multi and Dropdown.Value[Value] or Dropdown.Value == Value;
-                    local TextColorKey = Selected and 'AccentColor' or 'FontColor';
+                    local TextColorKey = Selected and 'AccentColor' or 'DisabledTextColor';
                     Library:TweenProperty(ButtonLabel, 'TextColor3', Library[TextColorKey], 0.10);
                     Library.RegistryMap[ButtonLabel].Properties.TextColor3 = TextColorKey;
                 end;
@@ -5698,7 +5787,7 @@ do
     Library:AddMovingAccentGradient(AccentBar, 2.4);
 
     Library.WatermarkInfo = Library.WatermarkInfo or {
-        GameName = tostring(game.Name or 'Unknown Game');
+        GameName = tostring(Library.GameName or 'Unknown Game');
         Username = tostring(LocalPlayer and LocalPlayer.Name or 'Unknown');
         UserId = tostring(LocalPlayer and LocalPlayer.UserId or 0);
     };
@@ -5752,7 +5841,7 @@ do
         local Info = Library.WatermarkInfo or {};
         local Details = {};
         if Info.ShowGameName ~= false then
-            table.insert(Details, 'Game: ' .. tostring(Info.GameName or game.Name or 'Unknown Game'));
+            table.insert(Details, 'Game: ' .. tostring(Info.GameName or Library.GameName or 'Unknown Game'));
         end;
         if Info.ShowUsername ~= false then
             table.insert(Details, 'Username: ' .. tostring(Info.Username or (LocalPlayer and LocalPlayer.Name) or 'Unknown'));
@@ -5888,6 +5977,9 @@ function Library:SetWatermarkInfo(Info)
     if type(Info) ~= 'table' then return; end;
     Library.WatermarkInfo = Library.WatermarkInfo or {};
     for Key, Value in next, Info do
+        if Key == 'GameName' then
+            Value = NormalizeGameName(Value) or Library.GameName or 'Unknown Game';
+        end;
         Library.WatermarkInfo[Key] = Value;
     end;
     if Library.UpdateWatermarkText and Library.WatermarkText then
@@ -6752,15 +6844,30 @@ function Library:CreateTargetHUD(Config)
     return HUD;
 end;
 
-function Library:Notify(Text, Time)
-    local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14);
+function Library:Notify(Text, Time, Title)
+    if type(Text) == 'table' then
+        local Info = Text;
+        Title = Info.Title;
+        Time = Info.Duration or Info.Time or Time;
+        Text = Info.Text or Info.Message or Info.Description or '';
+    end;
 
-    YSize = YSize + 7
+    Text = tostring(Text or '');
+    Title = Title ~= nil and tostring(Title) or '';
+    local HasTitle = Title ~= '';
+    local TextSize = HasTitle and 13 or 14;
+    local TextWidth, TextHeight = Library:GetTextBounds(Text, Library.Font, TextSize);
+    local TitleWidth, TitleHeight = 0, 0;
+    if HasTitle then
+        TitleWidth, TitleHeight = Library:GetTextBounds(Title, Library.Font, 14);
+    end;
+    local XSize = math.max(TextWidth, TitleWidth) + 14;
+    local YSize = HasTitle and (TitleHeight + TextHeight + 10) or (TextHeight + 7);
 
     local NotifyOuter = Library:Create('CanvasGroup', {
         BorderColor3 = Color3.new(0, 0, 0);
         Position = UDim2.new(0, 100, 0, 10);
-        Size = UDim2.new(0, XSize + 12, 0, YSize);
+        Size = UDim2.new(0, XSize, 0, YSize);
         ClipsDescendants = false;
         GroupTransparency = 1;
         ZIndex = 100;
@@ -6809,12 +6916,26 @@ function Library:Notify(Text, Time)
         end
     });
 
-    local NotifyLabel = Library:CreateLabel({
-        Position = UDim2.new(0, 4, 0, 0);
-        Size = UDim2.new(1, -4, 1, 0);
+    if HasTitle then
+        local NotifyTitle = Library:CreateLabel({
+            Position = UDim2.fromOffset(5, 1);
+            Size = UDim2.new(1, -10, 0, TitleHeight + 2);
+            Text = Title;
+            TextColor3 = Library.AccentColor;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            TextSize = 14;
+            ZIndex = 104;
+            Parent = InnerFrame;
+        });
+        Library.RegistryMap[NotifyTitle].Properties.TextColor3 = 'AccentColor';
+    end;
+
+    Library:CreateLabel({
+        Position = UDim2.fromOffset(5, HasTitle and (TitleHeight + 3) or 0);
+        Size = UDim2.new(1, -10, 0, TextHeight + (HasTitle and 2 or 7));
         Text = Text;
         TextXAlignment = Enum.TextXAlignment.Left;
-        TextSize = 14;
+        TextSize = TextSize;
         ZIndex = 103;
         Parent = InnerFrame;
     });
@@ -6836,13 +6957,14 @@ function Library:Notify(Text, Time)
     Library:Animate(NotifyInner, { Position = UDim2.fromOffset(0, 0); }, 0.24, nil, 'Notification');
     Library:TweenUnifiedFade(NotifyOuter, 1, 0.21, nil, 'Fade');
 
-    task.delay(Time or 5, function()
+    task.delay(math.max(tonumber(Time) or 5, 0.1), function()
         if not NotifyOuter.Parent then return; end
         Library:Animate(NotifyInner, { Position = UDim2.fromOffset(-10, 0); }, 0.18, nil, 'NotificationExit');
         Library:TweenUnifiedFade(NotifyOuter, 0, 0.18, function(State)
             if State ~= Enum.PlaybackState.Cancelled and NotifyOuter.Parent then NotifyOuter:Destroy(); end
         end, 'Fade');
     end);
+    return NotifyOuter;
 end;
 
 function Library:CreateWindow(...)
@@ -6857,7 +6979,8 @@ function Library:CreateWindow(...)
     end
 
     if type(Config.Title) ~= 'string' then Config.Title = 'No title' end
-    local GameName = Config.GameName or Config.Game or Config.Subtitle or game.Name or 'Unknown Game'
+    local ExplicitGameName = Config.GameName or Config.Game or Config.Subtitle;
+    local GameName = NormalizeGameName(ExplicitGameName) or Library.GameName or 'Unknown Game';
     GameName = tostring(GameName)
     if Config.GameName or Config.Game or Config.Subtitle then
         Library:SetWatermarkInfo({ GameName = GameName; });
@@ -7033,7 +7156,7 @@ function Library:CreateWindow(...)
     end;
 
     function Window:SetWindowSubtitle(NewGameName)
-        GameName = tostring(NewGameName or 'Unknown Game');
+        GameName = tostring(NormalizeGameName(NewGameName) or Library.GameName or 'Unknown Game');
         WindowSubtitle.Text = 'for ' .. GameName;
         task.defer(UpdateWindowHeaderLayout);
     end;
