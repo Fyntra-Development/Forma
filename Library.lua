@@ -553,6 +553,7 @@ local function RefreshUnifiedFadeEntries(Root, Controller)
 
     Controller.Entries = Entries;
     Controller.EntryMap = EntryMap;
+    Controller.EntriesInitialized = true;
 end
 
 function Library:SetUnifiedFadeProgress(Root, Progress)
@@ -576,6 +577,29 @@ function Library:SetUnifiedFadeProgress(Root, Progress)
     RefreshUnifiedFadeEntries(Root, Controller);
     ApplyUnifiedFadeProgress(Controller, Value);
     Controller.Driver.Value = Controller.Progress;
+end
+
+function Library:SetCachedUnifiedFadeProgress(Root, Progress)
+    if not Root then
+        return;
+    end
+
+    local Value = math.clamp(tonumber(Progress) or 0, 0, 1);
+    local Controller = GetUnifiedFadeController(Root);
+    if not Controller.EntriesInitialized then
+        Library:SetUnifiedFadeProgress(Root, Value);
+        return;
+    end
+
+    if Controller.Tween then
+        local PreviousTween = Controller.Tween;
+        Controller.Tween = nil;
+        pcall(function() PreviousTween:Cancel(); end);
+    end
+
+    if Controller.Driver.Value ~= Value then
+        Controller.Driver.Value = Value;
+    end
 end
 
 function Library:TweenUnifiedFade(Root, Target, Duration, Completed, Context)
@@ -639,6 +663,7 @@ function Library:BindScrollReveal(ScrollingFrame, Config)
         VisibilityRoot = Config.VisibilityRoot;
         Filter = Config.Filter;
         TargetResolver = Config.TargetResolver;
+        EdgeFade = math.max(tonumber(Config.EdgeFade) or 0, 0);
         Shown = setmetatable({}, { __mode = 'k' });
         Tracked = setmetatable({}, { __mode = 'k' });
         Queued = false;
@@ -667,23 +692,34 @@ function Library:BindScrollReveal(ScrollingFrame, Config)
                     local Top = Child.AbsolutePosition.Y;
                     local Bottom = Top + Height;
                     local Visible = Height > 1 and Bottom > ViewTop and Top < ViewBottom;
+                    local FadeProgress = 1;
+                    if Visible and self.EdgeFade > 0 then
+                        local TopProgress = math.clamp((Bottom - ViewTop) / self.EdgeFade, 0, 1);
+                        local BottomProgress = math.clamp((ViewBottom - Top) / self.EdgeFade, 0, 1);
+                        FadeProgress = math.min(TopProgress, BottomProgress);
+                    end;
                     local Previous = self.Shown[Target];
 
                     if Previous == nil then
                         self.Shown[Target] = Visible;
                         Library:SetUnifiedFadeProgress(Target, 0);
                         if Visible then
-                            Library:TweenUnifiedFade(Target, 1, 0.22, nil, 'ScrollReveal');
+                            Library:TweenUnifiedFade(Target, FadeProgress, 0.22, nil, 'ScrollReveal');
                         end
                     elseif Previous ~= Visible then
                         self.Shown[Target] = Visible;
                         Library:TweenUnifiedFade(
                             Target,
-                            Visible and 1 or 0,
+                            Visible and FadeProgress or 0,
                             Visible and 0.22 or 0.13,
                             nil,
                             'ScrollReveal'
                         );
+                    elseif Visible and self.EdgeFade > 0 then
+                        -- Scroll positions can update every rendered frame. Apply the
+                        -- clipped-edge fade directly so rows follow both viewport
+                        -- boundaries without queuing a tween for every scroll step.
+                        Library:SetCachedUnifiedFadeProgress(Target, FadeProgress);
                     end
                 end
             end
@@ -5234,6 +5270,7 @@ do
                     Dropdown:Display();
                     Library:SafeCallback(Dropdown.Callback, Dropdown.Value);
                     Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
+                    Library:UpdateDependencyBoxes();
                     Library:AttemptSave();
                 end);
 
@@ -5281,11 +5318,13 @@ do
             Dropdown:Display();
             Library:SafeCallback(Dropdown.Callback, Dropdown.Value);
             Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
+            Library:UpdateDependencyBoxes();
         end;
 
         function Dropdown:SetValues(NewValues)
             if NewValues then Dropdown.Values = NewValues; end
             Dropdown:BuildDropdownList();
+            Library:UpdateDependencyBoxes();
         end;
 
         ApplyDropdownSearch = function(Instant)
@@ -5328,6 +5367,7 @@ do
 
         DropdownScrollReveal = Library:BindScrollReveal(Scrolling, {
             VisibilityRoot = ListOuter;
+            EdgeFade = ROW_HEIGHT - 2;
             Filter = function(Child)
                 return Buttons[Child] ~= nil and Child.Active;
             end;
@@ -5526,6 +5566,7 @@ do
         Dropdown.SearchFrame = SearchOuter;
         Dropdown.ListFrame = ListOuter;
         Options[Idx] = Dropdown;
+        Library:UpdateDependencyBoxes();
         return Dropdown;
     end;
 
@@ -5670,7 +5711,40 @@ do
             for _, Dependency in next, Depbox.Dependencies do
                 local Elem = Dependency[1];
                 local Value = Dependency[2];
-                if Elem.Type == 'Toggle' and Elem.Value ~= Value then
+                local Mode = Dependency[3];
+                local Matches = Elem.Value == Value;
+
+                if Elem.Type == 'Dropdown' then
+                    if Elem.Multi then
+                        if type(Value) == 'table' then
+                            local MatchAll = Mode == 'All';
+                            Matches = MatchAll;
+
+                            for Key, Item in next, Value do
+                                local Expected = type(Key) == 'number' and Item or Key;
+                                local Selected = Elem.Value[Expected] == true;
+
+                                if MatchAll then
+                                    if not Selected then
+                                        Matches = false;
+                                        break;
+                                    end
+                                elseif Selected then
+                                    Matches = true;
+                                    break;
+                                end
+                            end
+                        else
+                            Matches = Elem.Value[Value] == true;
+                        end
+                    elseif type(Value) == 'table' then
+                        Matches = table.find(Value, Elem.Value) ~= nil;
+                    else
+                        Matches = Elem.Value == Value;
+                    end
+                end
+
+                if not Matches then
                     ShouldShow = false;
                     break;
                 end;
