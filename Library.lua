@@ -1007,6 +1007,44 @@ function Library:AddCorner(Instance, Radius)
     return nil;
 end;
 
+function Library:GetMovingAccentGradientColor()
+    local Accent = Library.AccentColor;
+    return ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Accent));
+        ColorSequenceKeypoint.new(0.34, Accent);
+        ColorSequenceKeypoint.new(0.5, Accent:Lerp(Color3.new(1, 1, 1), 0.38));
+        ColorSequenceKeypoint.new(0.66, Accent);
+        ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Accent));
+    });
+end;
+
+function Library:AddMovingAccentGradient(Parent, Duration)
+    if not Parent then return nil; end;
+
+    local Existing = Parent:FindFirstChild('FormaMovingAccentGradient');
+    if Existing and Existing:IsA('UIGradient') then return Existing; end;
+
+    local Gradient = Library:Create('UIGradient', {
+        Name = 'FormaMovingAccentGradient';
+        Color = Library:GetMovingAccentGradientColor();
+        Offset = Vector2.new(-1, 0);
+        Rotation = 0;
+        Parent = Parent;
+    });
+    Library:AddToRegistry(Gradient, {
+        Color = function()
+            return Library:GetMovingAccentGradientColor();
+        end;
+    });
+
+    TweenService:Create(
+        Gradient,
+        TweenInfo.new(tonumber(Duration) or 2.4, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false),
+        { Offset = Vector2.new(1, 0); }
+    ):Play();
+    return Gradient;
+end;
+
 
 function Library:AddAccentGlow(Instance, Scale)
     if not Instance then
@@ -1089,6 +1127,7 @@ function Library:AddAccentOutline(Instance, Scale)
         Stroke.Thickness = 1.05 * Scale;
         Stroke.Transparency = 0.14;
     end
+    Library:AddMovingAccentGradient(Stroke, 2.4);
     return Stroke;
 end;
 
@@ -1351,6 +1390,10 @@ function Library:MakeDraggable(Instance, Cutoff)
         Input = nil;
         ObjectOffset = nil;
         Anchor = nil;
+        VisualAnchor = nil;
+        TargetAnchor = nil;
+        DragResponse = 120;
+        MaxDragLag = 2.5;
     };
     Library.DraggableStates[Instance] = State;
 
@@ -1372,8 +1415,9 @@ function Library:MakeDraggable(Instance, Cutoff)
     local function FinishDrag()
         if not State.Dragging then return; end
 
-        -- Resolve the exact final pointer location before disconnecting so the
-        -- surface never trails the cursor or performs a delayed release tween.
+        -- Resolve the exact final pointer location before disconnecting. The
+        -- live filter is intentionally limited to a couple of pixels, and the
+        -- release always lands exactly under the pointer without a settle tween.
         if State.Input and State.ObjectOffset and State.Anchor then
             local Pointer = GetPointer(State.Input);
             State.TargetAnchor = Vector2.new(
@@ -1419,12 +1463,21 @@ function Library:MakeDraggable(Instance, Cutoff)
         State.Input = Input;
         State.ObjectOffset = ObjPos;
         State.Anchor = Anchor;
-        State.TargetAnchor = Vector2.new(
+        State.VisualAnchor = Vector2.new(
             Instance.AbsolutePosition.X + (Instance.AbsoluteSize.X * Anchor.X),
             Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
         );
+        State.TargetAnchor = State.VisualAnchor;
+        State.DragResponse = 120;
+        local Manager = Library.MenuManager;
+        if Manager and Manager.GetDragResponse then
+            local Success, Response = pcall(Manager.GetDragResponse, Manager);
+            if Success and type(Response) == 'number' then
+                State.DragResponse = math.clamp(Response, 90, 180);
+            end;
+        end;
 
-        State.DragConnection = RenderStepped:Connect(function()
+        State.DragConnection = RenderStepped:Connect(function(Delta)
             if not State.Dragging or not Instance.Parent then
                 FinishDrag();
                 return;
@@ -1435,7 +1488,19 @@ function Library:MakeDraggable(Instance, Cutoff)
                 CurrentPointer.X - ObjPos.X + (Instance.AbsoluteSize.X * Anchor.X),
                 CurrentPointer.Y - ObjPos.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
             );
-            Instance.Position = UDim2.fromOffset(State.TargetAnchor.X, State.TargetAnchor.Y);
+
+            -- A very fast exponential micro-filter removes pointer stair-steps,
+            -- while the maximum error clamp prevents the floaty lag produced by
+            -- the previous unrestricted smoothing pass.
+            local SafeDelta = math.min(tonumber(Delta) or (1 / 60), 1 / 20);
+            local FollowAlpha = 1 - math.exp(-(State.DragResponse or 120) * SafeDelta);
+            State.VisualAnchor = State.VisualAnchor:Lerp(State.TargetAnchor, FollowAlpha);
+            local Remaining = State.TargetAnchor - State.VisualAnchor;
+            local MaxLag = State.MaxDragLag or 2.5;
+            if Remaining.Magnitude > MaxLag then
+                State.VisualAnchor = State.TargetAnchor - Remaining.Unit * MaxLag;
+            end;
+            Instance.Position = UDim2.fromOffset(State.VisualAnchor.X, State.VisualAnchor.Y);
         end);
 
         State.InputConnection = Input.Changed:Connect(function()
@@ -5490,29 +5555,13 @@ do
     });
     Library:AddToRegistry(AccentBar, { BackgroundColor3 = 'AccentColor'; });
 
-    local AccentGradient = Library:Create('UIGradient', {
-        Offset = Vector2.new(-1, 0);
-        Rotation = 0;
-        Parent = AccentBar;
-    });
-    Library:AddToRegistry(AccentGradient, {
-        Color = function()
-            local Accent = Library.AccentColor;
-            return ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Accent));
-                ColorSequenceKeypoint.new(0.34, Accent);
-                ColorSequenceKeypoint.new(0.5, Accent:Lerp(Color3.new(1, 1, 1), 0.38));
-                ColorSequenceKeypoint.new(0.66, Accent);
-                ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Accent));
-            });
-        end;
-    });
-    AccentGradient.Color = Library.RegistryMap[AccentGradient].Properties.Color();
-    TweenService:Create(
-        AccentGradient,
-        TweenInfo.new(2.4, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false),
-        { Offset = Vector2.new(1, 0); }
-    ):Play();
+    Library:AddMovingAccentGradient(AccentBar, 2.4);
+
+    Library.WatermarkInfo = Library.WatermarkInfo or {
+        GameName = tostring(game.Name or 'Unknown Game');
+        Username = tostring(LocalPlayer and LocalPlayer.Name or 'Unknown');
+        UserId = tostring(LocalPlayer and LocalPlayer.UserId or 0);
+    };
 
     local WatermarkTitle = Library:CreateLabel({
         Position = UDim2.fromOffset(8, 1);
@@ -5537,6 +5586,17 @@ do
         Parent = InnerFrame;
     });
 
+    local WatermarkDetails = Library:CreateLabel({
+        Position = UDim2.fromOffset(8, 19);
+        Size = UDim2.new(0, 0, 0, 15);
+        Text = '';
+        TextColor3 = Library.FontColor;
+        TextSize = 13;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 207;
+        Parent = InnerFrame;
+    });
+
     local LegacyWatermarkText = Library:CreateLabel({
         Text = '';
         TextTransparency = 1;
@@ -5549,18 +5609,42 @@ do
         local Title, Stats = Text:match('^(.-)(%s+%-%s+.+)$');
         if not Title then Title, Stats = Text, ''; end
 
+        local Info = Library.WatermarkInfo or {};
+        local Details = {};
+        if Info.ShowGameName ~= false then
+            table.insert(Details, 'Game: ' .. tostring(Info.GameName or game.Name or 'Unknown Game'));
+        end;
+        if Info.ShowUsername ~= false then
+            table.insert(Details, 'Username: ' .. tostring(Info.Username or (LocalPlayer and LocalPlayer.Name) or 'Unknown'));
+        end;
+        if Info.ShowUserId ~= false then
+            table.insert(Details, 'User ID: ' .. tostring(Info.UserId or (LocalPlayer and LocalPlayer.UserId) or 0));
+        end;
+        if Info.ShowDate ~= false then
+            table.insert(Details, 'Date: ' .. tostring(Info.Date or os.date('%Y-%m-%d')));
+        end;
+        local DetailsText = table.concat(Details, '  |  ');
+
         local TitleWidth, TitleHeight = Library:GetTextBounds(Title, Library.Font, 15);
         local StatsWidth, StatsHeight = Library:GetTextBounds(Stats, Library.Font, 15);
-        local ContentHeight = math.max(TitleHeight, StatsHeight, 16);
-        local OuterHeight = math.max(ContentHeight + 8, 26);
+        local DetailsWidth, DetailsHeight = Library:GetTextBounds(DetailsText, Library.Font, 13);
+        local TopHeight = math.max(TitleHeight, StatsHeight, 16) + 2;
+        local DetailsY = TopHeight + 1;
+        local OuterHeight = math.max(DetailsY + DetailsHeight + 6, 40);
         local StatsX = 8 + TitleWidth;
         WatermarkTitle.Text = Title;
         WatermarkTitle.Position = UDim2.fromOffset(8, 1);
-        WatermarkTitle.Size = UDim2.new(0, TitleWidth, 1, -2);
+        WatermarkTitle.Size = UDim2.fromOffset(TitleWidth, TopHeight);
         WatermarkStats.Text = Stats;
         WatermarkStats.Position = UDim2.fromOffset(StatsX, 1);
-        WatermarkStats.Size = UDim2.new(0, StatsWidth, 1, -2);
-        WatermarkOuter.Size = UDim2.fromOffset(math.max(StatsX + StatsWidth + 9, 96), OuterHeight);
+        WatermarkStats.Size = UDim2.fromOffset(StatsWidth, TopHeight);
+        WatermarkDetails.Text = DetailsText;
+        WatermarkDetails.Position = UDim2.fromOffset(8, DetailsY);
+        WatermarkDetails.Size = UDim2.fromOffset(DetailsWidth, math.max(DetailsHeight, 14));
+        WatermarkOuter.Size = UDim2.fromOffset(
+            math.max(StatsX + StatsWidth + 9, DetailsWidth + 17, 230),
+            OuterHeight
+        );
     end
     LegacyWatermarkText:GetPropertyChangedSignal('Text'):Connect(function()
         UpdateWatermarkText(LegacyWatermarkText.Text);
@@ -5570,6 +5654,7 @@ do
     Library.WatermarkText = LegacyWatermarkText;
     Library.WatermarkTitle = WatermarkTitle;
     Library.WatermarkStats = WatermarkStats;
+    Library.WatermarkDetails = WatermarkDetails;
     Library.UpdateWatermarkText = UpdateWatermarkText;
     Library.WatermarkAnimationId = 0;
     Library:MakeDraggable(Library.Watermark);
@@ -5659,8 +5744,20 @@ function Library:SetWatermarkVisibility(Bool)
     end
 end;
 
-function Library:SetWatermark(Text)
+function Library:SetWatermarkInfo(Info)
+    if type(Info) ~= 'table' then return; end;
+    Library.WatermarkInfo = Library.WatermarkInfo or {};
+    for Key, Value in next, Info do
+        Library.WatermarkInfo[Key] = Value;
+    end;
+    if Library.UpdateWatermarkText and Library.WatermarkText then
+        Library.UpdateWatermarkText(Library.WatermarkText.Text);
+    end;
+end;
+
+function Library:SetWatermark(Text, Info)
     Text = tostring(Text or '');
+    if type(Info) == 'table' then Library:SetWatermarkInfo(Info); end;
     Library.WatermarkText.Text = Text;
     if Library.UpdateWatermarkText then Library.UpdateWatermarkText(Text); end
     Library:SetWatermarkVisibility(true);
@@ -6622,6 +6719,9 @@ function Library:CreateWindow(...)
     if type(Config.Title) ~= 'string' then Config.Title = 'No title' end
     local GameName = Config.GameName or Config.Game or Config.Subtitle or game.Name or 'Unknown Game'
     GameName = tostring(GameName)
+    if Config.GameName or Config.Game or Config.Subtitle then
+        Library:SetWatermarkInfo({ GameName = GameName; });
+    end
     if type(Config.TabPadding) ~= 'number' then Config.TabPadding = 0 end
     if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.24 end
 

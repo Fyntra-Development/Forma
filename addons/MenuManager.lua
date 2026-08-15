@@ -135,9 +135,10 @@ local MenuManager = {} do
 	end
 
 	function MenuManager:GetDragResponse()
-		-- Exponential response (per second) used by direct-manipulation surfaces.
-		-- 34 is responsive at high refresh rates while filtering cursor stair-steps.
-		return 34
+		-- High-response micro-filter used by direct-manipulation surfaces. The
+		-- library also caps visual error to 2.5 px, preserving smoothness without
+		-- allowing the window or HUDs to trail behind the pointer.
+		return 120
 	end
 
 	function MenuManager:GetReleaseDuration(Distance)
