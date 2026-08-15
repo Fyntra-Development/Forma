@@ -4668,7 +4668,7 @@ do
             ValueEditor.Visible = false;
             ValueLabel.Visible = true;
             ValueEditor.Text = tostring(Slider.Value);
-        end;
+       end);
 
         local function Nudge(Direction)
             Slider:SetValue(Slider.Value + (Slider.Step * Direction));
