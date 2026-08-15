@@ -47,6 +47,11 @@ local MenuManager = {} do
 		Picker = { Style = 'Quart'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.30; };
 		Dropdown = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.00; Min = 0.16; Max = 0.28; };
 		DropdownSearch = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.00; Min = 0.15; Max = 0.25; };
+		ScrollReveal = { Style = 'Sine'; Direction = 'Out'; Scale = 1.00; Min = 0.15; Max = 0.27; };
+		Typing = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.96; Min = 0.13; Max = 0.22; };
+		TypingIndicator = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.76; Min = 0.08; Max = 0.15; };
+		TypingScroll = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.82; Min = 0.09; Max = 0.17; };
+		Resize = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.86; Min = 0.10; Max = 0.20; };
 		PopupExit = { Style = 'Sine'; Direction = 'InOut'; Scale = 0.96; Min = 0.15; Max = 0.24; };
 		Tooltip = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.28; };
 		Notification = { Style = 'Quint'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.30; };

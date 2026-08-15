@@ -108,7 +108,6 @@ local Library = {
     AccentColor = Color3.fromRGB(0, 85, 255);
     OutlineColor = Color3.fromRGB(50, 50, 50);
     DisabledTextColor = Color3.fromRGB(143, 143, 143);
-    TabButtonLowContrast = Color3.fromRGB(24, 24, 24);
     Contrast = Color3.fromRGB(36, 36, 36);
     Inline = Color3.fromRGB(12, 12, 12);
     RiskColor = Color3.fromRGB(255, 50, 50),
@@ -200,6 +199,9 @@ Library.PropertyTweens = setmetatable({}, { __mode = 'k' });
 Library.BaseTextSizes = setmetatable({}, { __mode = 'k' });
 Library.FadeBaselines = setmetatable({}, { __mode = 'k' });
 Library.DraggableStates = setmetatable({}, { __mode = 'k' });
+Library.ResizeHitboxes = setmetatable({}, { __mode = 'k' });
+Library.ScrollRevealStates = setmetatable({}, { __mode = 'k' });
+Library.TypingControllers = setmetatable({}, { __mode = 'k' });
 
 local MotionTransparencyProperties = {
     BackgroundTransparency = true;
@@ -573,6 +575,127 @@ function Library:TweenUnifiedFade(Root, Target, Duration, Completed, Context)
     return Tween;
 end
 
+function Library:BindScrollReveal(ScrollingFrame, Config)
+    if not ScrollingFrame or not ScrollingFrame:IsA('ScrollingFrame') then
+        return nil;
+    end
+
+    Config = Config or {};
+    local Existing = Library.ScrollRevealStates[ScrollingFrame];
+    if Existing then return Existing; end
+
+    local State = {
+        ScrollingFrame = ScrollingFrame;
+        VisibilityRoot = Config.VisibilityRoot;
+        Filter = Config.Filter;
+        TargetResolver = Config.TargetResolver;
+        Shown = setmetatable({}, { __mode = 'k' });
+        Tracked = setmetatable({}, { __mode = 'k' });
+        Queued = false;
+    };
+    Library.ScrollRevealStates[ScrollingFrame] = State;
+
+    local function IsAvailable()
+        local Root = State.VisibilityRoot;
+        return ScrollingFrame.Parent ~= nil and (not Root or Root.Visible);
+    end
+
+    function State:Refresh()
+        self.Queued = false;
+        if not IsAvailable() then return; end
+
+        local ViewTop = ScrollingFrame.AbsolutePosition.Y + 2;
+        local ViewBottom = ScrollingFrame.AbsolutePosition.Y + ScrollingFrame.AbsoluteSize.Y - 2;
+
+        for _, Child in ipairs(ScrollingFrame:GetChildren()) do
+            local IsGui = Child:IsA('GuiObject');
+            local Allowed = IsGui and (not self.Filter or self.Filter(Child));
+            if Allowed then
+                local Target = self.TargetResolver and self.TargetResolver(Child) or Child;
+                if Target and Target.Parent then
+                    local Height = Child.AbsoluteSize.Y;
+                    local Top = Child.AbsolutePosition.Y;
+                    local Bottom = Top + Height;
+                    local Visible = Height > 1 and Bottom > ViewTop and Top < ViewBottom;
+                    local Previous = self.Shown[Target];
+
+                    if Previous == nil then
+                        self.Shown[Target] = Visible;
+                        Library:SetUnifiedFadeProgress(Target, 0);
+                        if Visible then
+                            Library:TweenUnifiedFade(Target, 1, 0.22, nil, 'ScrollReveal');
+                        end
+                    elseif Previous ~= Visible then
+                        self.Shown[Target] = Visible;
+                        Library:TweenUnifiedFade(
+                            Target,
+                            Visible and 1 or 0,
+                            Visible and 0.22 or 0.13,
+                            nil,
+                            'ScrollReveal'
+                        );
+                    end
+                end
+            end
+        end
+    end
+
+    function State:QueueRefresh()
+        if self.Queued then return; end
+        self.Queued = true;
+        task.defer(function()
+            if ScrollingFrame.Parent then self:Refresh(); end
+        end);
+    end
+
+    function State:TrackChild(Child)
+        if not Child:IsA('GuiObject') or self.Tracked[Child] then return; end
+        self.Tracked[Child] = true;
+
+        -- Layout changes (dependency boxes, searchable rows, and window
+        -- resizing) can move content without changing CanvasPosition. Follow
+        -- the rendered geometry so reveal fades start at the actual viewport
+        -- edge instead of waiting for the next scroll input.
+        Library:GiveSignal(Child:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()
+            self:QueueRefresh();
+        end));
+        Library:GiveSignal(Child:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()
+            self:QueueRefresh();
+        end));
+        Library:GiveSignal(Child:GetPropertyChangedSignal('Visible'):Connect(function()
+            self:QueueRefresh();
+        end));
+    end
+
+    Library:GiveSignal(ScrollingFrame:GetPropertyChangedSignal('CanvasPosition'):Connect(function()
+        State:QueueRefresh();
+    end));
+    Library:GiveSignal(ScrollingFrame:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()
+        State:QueueRefresh();
+    end));
+    Library:GiveSignal(ScrollingFrame.ChildAdded:Connect(function(Child)
+        State:TrackChild(Child);
+        State:QueueRefresh();
+    end));
+    Library:GiveSignal(ScrollingFrame.ChildRemoved:Connect(function()
+        State:QueueRefresh();
+    end));
+
+    if State.VisibilityRoot then
+        Library:GiveSignal(State.VisibilityRoot:GetPropertyChangedSignal('Visible'):Connect(function()
+            State:QueueRefresh();
+        end));
+    end
+
+
+    for _, Child in ipairs(ScrollingFrame:GetChildren()) do
+        State:TrackChild(Child);
+    end
+
+    State:QueueRefresh();
+    return State;
+end
+
 function Library:ResetMenuPositions(Animated)
     for Instance, State in next, Library.DraggableStates do
         if Instance and Instance.Parent and State.InitialPosition then
@@ -617,6 +740,14 @@ function Library:UpdateFont()
             Library:ApplyFont(Descendant);
         end;
     end;
+    task.defer(function()
+        for _, Controller in next, Library.TypingControllers do
+            if Controller.Refresh then Controller.Refresh(); end
+        end
+        if Library.UpdateWatermarkText and Library.WatermarkText then
+            Library.UpdateWatermarkText(Library.WatermarkText.Text);
+        end
+    end);
 end;
 
 function Library:LoadFont(Name)
@@ -708,6 +839,15 @@ function Library:SetTextSize(Size)
             end);
         end;
     end;
+
+    task.defer(function()
+        for _, Controller in next, Library.TypingControllers do
+            if Controller.Refresh then Controller.Refresh(); end
+        end
+        if Library.UpdateWatermarkText and Library.WatermarkText then
+            Library.UpdateWatermarkText(Library.WatermarkText.Text);
+        end
+    end);
 
     return Size;
 end;
@@ -1135,6 +1275,20 @@ function Library:CreateLabel(Properties, IsHud)
     return Library:Create(_Instance, Properties);
 end;
 
+function Library:IsPointOverResizeHandle(Point)
+    for Hitbox, Owner in next, Library.ResizeHitboxes do
+        if Hitbox and Hitbox.Parent and Hitbox.Visible and Owner and Owner.Visible then
+            local Position = Hitbox.AbsolutePosition;
+            local Size = Hitbox.AbsoluteSize;
+            if Point.X >= Position.X and Point.X <= Position.X + Size.X
+                and Point.Y >= Position.Y and Point.Y <= Position.Y + Size.Y then
+                return true;
+            end
+        end
+    end
+    return false;
+end;
+
 function Library:MakeDraggable(Instance, Cutoff)
     if not Instance then
         return nil;
@@ -1226,6 +1380,9 @@ function Library:MakeDraggable(Instance, Cutoff)
         end
 
         local Pointer = GetPointer(Input);
+        if Library:IsPointOverResizeHandle(Pointer) then
+            return;
+        end
         local ObjPos = Pointer - Instance.AbsolutePosition;
 
         if ObjPos.Y > (Cutoff or 40) then
@@ -1283,6 +1440,429 @@ function Library:MakeDraggable(Instance, Cutoff)
     end);
 
     return State;
+end;
+
+function Library:MakeResizable(Instance, Config)
+    if not Instance then return nil; end
+    Config = Config or {};
+
+    local function ResolveVector(Value, Fallback)
+        if typeof(Value) == 'Vector2' then return Value; end
+        if typeof(Value) == 'UDim2' then return Vector2.new(Value.X.Offset, Value.Y.Offset); end
+        return Fallback;
+    end
+
+    local MinSize = ResolveVector(Config.MinSize, Vector2.new(420, 320));
+    local MaxSize = ResolveVector(Config.MaxSize, Vector2.new(math.huge, math.huge));
+    local Response = math.clamp(tonumber(Config.Response) or 30, 18, 60);
+    local State = {
+        InitialSize = Instance.Size;
+        Resizing = false;
+        ActiveHandle = nil;
+        RenderConnection = nil;
+        InputConnection = nil;
+        Handles = {};
+    };
+
+    local function GetPointer(Input)
+        if Input and Input.UserInputType == Enum.UserInputType.Touch then
+            return Vector2.new(Input.Position.X, Input.Position.Y);
+        end
+        return Vector2.new(Mouse.X, Mouse.Y);
+    end
+
+    local function Disconnect(Name)
+        if State[Name] then
+            State[Name]:Disconnect();
+            State[Name] = nil;
+        end
+    end
+
+    local function SetHandleVisible(Handle, Visible)
+        if not Handle or not Handle.Visual then return; end
+        Library:Animate(
+            Handle.Visual,
+            { BackgroundTransparency = Visible and 0.06 or 1 },
+            Visible and 0.15 or 0.20,
+            nil,
+            'Fade'
+        );
+    end
+
+    local function CalculateTarget(Handle, Pointer)
+        Pointer = Pointer - (State.PointerOffset or Vector2.zero);
+        local Left = State.StartPosition.X;
+        local Top = State.StartPosition.Y;
+        local Right = Left + State.StartSize.X;
+        local Bottom = Top + State.StartSize.Y;
+        local Camera = workspace.CurrentCamera;
+        local Viewport = Camera and Camera.ViewportSize or Vector2.new(1920, 1080);
+        local Maximum = Vector2.new(
+            math.min(MaxSize.X, math.max(Viewport.X - 16, MinSize.X)),
+            math.min(MaxSize.Y, math.max(Viewport.Y - 16, MinSize.Y))
+        );
+
+        if Handle.Horizontal < 0 then
+            Left = math.clamp(Pointer.X, Right - Maximum.X, Right - MinSize.X);
+        else
+            Right = math.clamp(Pointer.X, Left + MinSize.X, Left + Maximum.X);
+        end
+
+        if Handle.Vertical < 0 then
+            Top = math.clamp(Pointer.Y, Bottom - Maximum.Y, Bottom - MinSize.Y);
+        else
+            Bottom = math.clamp(Pointer.Y, Top + MinSize.Y, Top + Maximum.Y);
+        end
+
+        local Size = Vector2.new(Right - Left, Bottom - Top);
+        local Anchor = Instance.AnchorPoint;
+        local Position = Vector2.new(Left + (Size.X * Anchor.X), Top + (Size.Y * Anchor.Y));
+        State.TargetSize = Size;
+        State.TargetPosition = Position;
+    end
+
+    local function FinishResize()
+        if not State.Resizing then return; end
+        local Handle = State.ActiveHandle;
+        if State.Input then CalculateTarget(Handle, GetPointer(State.Input)); end
+
+        State.Resizing = false;
+        State.ActiveHandle = nil;
+        State.Input = nil;
+        State.PointerOffset = nil;
+        Disconnect('RenderConnection');
+        Disconnect('InputConnection');
+        SetHandleVisible(Handle, Handle and Handle.Hovering);
+
+        if not Instance.Parent or not State.TargetPosition or not State.TargetSize then return; end
+        Library:Animate(Instance, {
+            Position = UDim2.fromOffset(State.TargetPosition.X, State.TargetPosition.Y);
+            Size = UDim2.fromOffset(State.TargetSize.X, State.TargetSize.Y);
+        }, 0.13, nil, 'Resize');
+    end
+
+    local Corners = {
+        { Name = 'TopLeft'; Anchor = Vector2.new(0, 0); Position = UDim2.fromScale(0, 0); Horizontal = -1; Vertical = -1; };
+        { Name = 'TopRight'; Anchor = Vector2.new(1, 0); Position = UDim2.fromScale(1, 0); Horizontal = 1; Vertical = -1; };
+        { Name = 'BottomLeft'; Anchor = Vector2.new(0, 1); Position = UDim2.fromScale(0, 1); Horizontal = -1; Vertical = 1; };
+        { Name = 'BottomRight'; Anchor = Vector2.new(1, 1); Position = UDim2.fromScale(1, 1); Horizontal = 1; Vertical = 1; };
+    };
+
+    for _, Corner in ipairs(Corners) do
+        local Hitbox = Library:Create('Frame', {
+            Name = 'FormaResize' .. Corner.Name;
+            Active = true;
+            AnchorPoint = Corner.Anchor;
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = Corner.Position;
+            Size = UDim2.fromOffset(14, 14);
+            ZIndex = 250;
+            Parent = Instance;
+        });
+
+        local Visual = Library:Create('Frame', {
+            AnchorPoint = Corner.Anchor;
+            BackgroundColor3 = Library.AccentColor;
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = Corner.Position;
+            Size = UDim2.fromOffset(6, 6);
+            ZIndex = 251;
+            Parent = Hitbox;
+        });
+        Library:AddToRegistry(Visual, { BackgroundColor3 = 'AccentColor'; });
+
+        local Handle = {
+            Hitbox = Hitbox;
+            Visual = Visual;
+            Horizontal = Corner.Horizontal;
+            Vertical = Corner.Vertical;
+            Hovering = false;
+        };
+        State.Handles[Corner.Name] = Handle;
+        Library.ResizeHitboxes[Hitbox] = Instance;
+
+        Hitbox.MouseEnter:Connect(function()
+            Handle.Hovering = true;
+            SetHandleVisible(Handle, true);
+        end);
+        Hitbox.MouseLeave:Connect(function()
+            Handle.Hovering = false;
+            if State.ActiveHandle ~= Handle then SetHandleVisible(Handle, false); end
+        end);
+
+        Hitbox.InputBegan:Connect(function(Input)
+            if State.Resizing or (Input.UserInputType ~= Enum.UserInputType.MouseButton1
+                and Input.UserInputType ~= Enum.UserInputType.Touch) then
+                return;
+            end
+
+            Library:CancelMotion(Instance, 'Position');
+            Library:CancelMotion(Instance, 'Size');
+            State.Resizing = true;
+            State.ActiveHandle = Handle;
+            State.Input = Input;
+            State.StartPosition = Instance.AbsolutePosition;
+            State.StartSize = Instance.AbsoluteSize;
+            local Pointer = GetPointer(Input);
+            local Edge = Vector2.new(
+                State.StartPosition.X + (Handle.Horizontal > 0 and State.StartSize.X or 0),
+                State.StartPosition.Y + (Handle.Vertical > 0 and State.StartSize.Y or 0)
+            );
+            State.PointerOffset = Pointer - Edge;
+            State.VisualPosition = Vector2.new(
+                State.StartPosition.X + (State.StartSize.X * Instance.AnchorPoint.X),
+                State.StartPosition.Y + (State.StartSize.Y * Instance.AnchorPoint.Y)
+            );
+            State.VisualSize = State.StartSize;
+            CalculateTarget(Handle, Pointer);
+            SetHandleVisible(Handle, true);
+
+            State.RenderConnection = RenderStepped:Connect(function(Delta)
+                if not State.Resizing or not Instance.Parent then
+                    FinishResize();
+                    return;
+                end
+
+                CalculateTarget(Handle, GetPointer(Input));
+                local SafeDelta = math.min(tonumber(Delta) or (1 / 60), 1 / 20);
+                local Alpha = 1 - math.exp(-Response * SafeDelta);
+                State.VisualPosition = State.VisualPosition:Lerp(State.TargetPosition, Alpha);
+                State.VisualSize = State.VisualSize:Lerp(State.TargetSize, Alpha);
+                Instance.Position = UDim2.fromOffset(State.VisualPosition.X, State.VisualPosition.Y);
+                Instance.Size = UDim2.fromOffset(State.VisualSize.X, State.VisualSize.Y);
+            end);
+
+            State.InputConnection = Input.Changed:Connect(function()
+                if Input.UserInputState == Enum.UserInputState.End then FinishResize(); end
+            end);
+        end);
+    end
+
+    State.Finish = FinishResize;
+    return State;
+end;
+
+function Library:EnableTypingAnimation(TextBox)
+    if not TextBox or not TextBox:IsA('TextBox') then
+        return nil;
+    end
+    if TextBox:GetAttribute('FormaTypingAnimation') then return Library.TypingControllers[TextBox]; end
+    TextBox:SetAttribute('FormaTypingAnimation', true);
+
+    local Parent = TextBox.Parent;
+    if not Parent then return nil; end
+    local BaseSize = Library.BaseTextSizes[TextBox] or 14;
+    local OriginalTextTransparency = TextBox.TextTransparency;
+    local OriginalStrokeTransparency = TextBox.TextStrokeTransparency;
+    local PreviousCharacters = {};
+    local CharacterLabels = {};
+
+    local Layer = Library:Create('Frame', {
+        Name = 'FormaTypingLayer';
+        Active = false;
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        ClipsDescendants = true;
+        Position = TextBox.Position;
+        Size = TextBox.Size;
+        ZIndex = TextBox.ZIndex + 1;
+        Parent = Parent;
+    });
+
+    local Placeholder = Library:CreateLabel({
+        Active = false;
+        Position = UDim2.fromScale(0, 0);
+        Size = UDim2.fromScale(1, 1);
+        Text = TextBox.PlaceholderText;
+        TextColor3 = Library.DisabledTextColor;
+        TextSize = BaseSize;
+        TextTransparency = 0.14;
+        TextXAlignment = TextBox.TextXAlignment;
+        TextYAlignment = TextBox.TextYAlignment;
+        ZIndex = Layer.ZIndex + 1;
+        Parent = Layer;
+    });
+    Library.RegistryMap[Placeholder].Properties.TextColor3 = 'DisabledTextColor';
+
+    local Indicator = Library:Create('Frame', {
+        Name = 'FormaTypingIndicator';
+        AnchorPoint = Vector2.new(0, 0.5);
+        BackgroundColor3 = Library.AccentColor;
+        BackgroundTransparency = 0.04;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0.5, 0);
+        Size = UDim2.fromOffset(1, math.max(TextBox.TextSize - 2, 7));
+        ZIndex = Layer.ZIndex + 3;
+        Parent = Layer;
+    });
+    Library:AddToRegistry(Indicator, { BackgroundColor3 = 'AccentColor'; });
+    Library:SetUnifiedFadeProgress(Indicator, 0);
+
+    local Cache = Library.FadeBaselines[TextBox] or {};
+    Cache.TextTransparency = 1;
+    Cache.TextStrokeTransparency = 1;
+    Library.FadeBaselines[TextBox] = Cache;
+    TextBox.TextTransparency = 1;
+    TextBox.TextStrokeTransparency = 1;
+
+    local function SplitCharacters(Text)
+        local Result = {};
+        local Success = pcall(function()
+            for _, Codepoint in utf8.codes(Text) do
+                table.insert(Result, utf8.char(Codepoint));
+            end
+        end);
+        if not Success then
+            table.clear(Result);
+            for Index = 1, #Text do table.insert(Result, Text:sub(Index, Index)); end
+        end
+        return Result;
+    end
+
+    local function Measure(Text)
+        if Text == '' then return 0; end
+        local Width = Library:GetTextBounds(Text, Library.Font, BaseSize, Vector2.new(100000, 100000));
+        return tonumber(Width) or 0;
+    end
+
+    local function GetTextOrigin(TextWidth)
+        local Available = math.max(TextBox.AbsoluteSize.X, 0);
+        if TextBox.TextXAlignment == Enum.TextXAlignment.Center then
+            return (Available - TextWidth) * 0.5;
+        elseif TextBox.TextXAlignment == Enum.TextXAlignment.Right then
+            return Available - TextWidth;
+        end
+        return 0;
+    end
+
+    local function ClearCharacters()
+        for _, Label in ipairs(CharacterLabels) do
+            Library:RemoveFromRegistry(Label);
+            Label:Destroy();
+        end
+        table.clear(CharacterLabels);
+    end
+
+    local function GetInsertedRange(Characters)
+        local Prefix = 0;
+        local Limit = math.min(#PreviousCharacters, #Characters);
+        while Prefix < Limit and PreviousCharacters[Prefix + 1] == Characters[Prefix + 1] do
+            Prefix = Prefix + 1;
+        end
+
+        local Suffix = 0;
+        while Suffix < (#PreviousCharacters - Prefix) and Suffix < (#Characters - Prefix)
+            and PreviousCharacters[#PreviousCharacters - Suffix] == Characters[#Characters - Suffix] do
+            Suffix = Suffix + 1;
+        end
+
+        return Prefix + 1, #Characters - Suffix;
+    end
+
+    local function UpdateIndicator(Instant)
+        local Cursor = TextBox.CursorPosition;
+        local BeforeCursor = TextBox.Text;
+        if Cursor and Cursor >= 1 then BeforeCursor = TextBox.Text:sub(1, Cursor - 1); end
+        local X = GetTextOrigin(Measure(TextBox.Text or '')) + Measure(BeforeCursor);
+        local Target = UDim2.new(0, X, 0.5, 0);
+        Indicator.Size = UDim2.fromOffset(1, math.max(TextBox.TextSize - 2, 7));
+        if Instant then
+            Library:CancelMotion(Indicator, 'Position');
+            Indicator.Position = Target;
+        else
+            Library:Animate(Indicator, { Position = Target }, 0.11, nil, 'TypingIndicator');
+        end
+    end
+
+    local function Rebuild(AnimateInserted)
+        local Characters = SplitCharacters(TextBox.Text or '');
+        local InsertStart, InsertEnd = GetInsertedRange(Characters);
+        local OriginX = GetTextOrigin(Measure(TextBox.Text or ''));
+        ClearCharacters();
+
+        local Prefix = '';
+        for Index, Character in ipairs(Characters) do
+            local StartX = OriginX + Measure(Prefix);
+            Prefix = Prefix .. Character;
+            local EndX = OriginX + Measure(Prefix);
+            local IsInserted = AnimateInserted and Index >= InsertStart and Index <= InsertEnd;
+            local Label = Library:CreateLabel({
+                Active = false;
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(StartX, IsInserted and 1 or 0);
+                Size = UDim2.new(0, math.max(EndX - StartX + 1, 1), 1, 0);
+                Text = Character;
+                TextColor3 = Library.FontColor;
+                TextSize = BaseSize;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                TextYAlignment = TextBox.TextYAlignment;
+                ZIndex = Layer.ZIndex + 2;
+                Parent = Layer;
+            });
+            table.insert(CharacterLabels, Label);
+
+            if IsInserted then
+                Library:SetUnifiedFadeProgress(Label, 0);
+                Library:Animate(Label, { Position = UDim2.fromOffset(StartX, 0) }, 0.16, nil, 'Typing');
+                Library:TweenUnifiedFade(Label, 1, 0.17, nil, 'Typing');
+            end
+        end
+
+        PreviousCharacters = Characters;
+        Placeholder.Visible = #Characters == 0;
+        UpdateIndicator(not AnimateInserted);
+    end
+
+    local function SyncLayer()
+        Layer.Position = TextBox.Position;
+        Layer.Size = TextBox.Size;
+        Layer.Visible = TextBox.Visible;
+        Placeholder.Text = TextBox.PlaceholderText;
+        Placeholder.TextXAlignment = TextBox.TextXAlignment;
+    end
+
+    TextBox:GetPropertyChangedSignal('Text'):Connect(function()
+        Rebuild(TextBox:IsFocused());
+    end);
+    TextBox:GetPropertyChangedSignal('CursorPosition'):Connect(function()
+        UpdateIndicator(false);
+    end);
+    TextBox:GetPropertyChangedSignal('Position'):Connect(SyncLayer);
+    TextBox:GetPropertyChangedSignal('Size'):Connect(function()
+        SyncLayer();
+        Rebuild(false);
+    end);
+    TextBox:GetPropertyChangedSignal('Visible'):Connect(SyncLayer);
+    TextBox:GetPropertyChangedSignal('TextXAlignment'):Connect(function()
+        SyncLayer();
+        Rebuild(false);
+    end);
+    TextBox:GetPropertyChangedSignal('TextSize'):Connect(function()
+        Rebuild(false);
+    end);
+    TextBox:GetPropertyChangedSignal('PlaceholderText'):Connect(SyncLayer);
+    TextBox.Focused:Connect(function()
+        UpdateIndicator(true);
+        Library:TweenUnifiedFade(Indicator, 1, 0.16, nil, 'Fade');
+    end);
+    TextBox.FocusLost:Connect(function()
+        Library:TweenUnifiedFade(Indicator, 0, 0.18, nil, 'Fade');
+    end);
+
+    SyncLayer();
+    Rebuild(false);
+
+    local Controller = {
+        Layer = Layer;
+        Indicator = Indicator;
+        Refresh = function() Rebuild(false); end;
+        OriginalTextTransparency = OriginalTextTransparency;
+        OriginalStrokeTransparency = OriginalStrokeTransparency;
+    };
+    Library.TypingControllers[TextBox] = Controller;
+    return Controller;
 end;
 
 function Library:AddToolTip(Info, HoverInstance)
@@ -1926,6 +2506,8 @@ do
             TextColor3 = 'FontColor';
             PlaceholderColor3 = 'DisabledTextColor';
         });
+        Library:EnableTypingAnimation(HueBox);
+        Library:EnableTypingAnimation(RgbBox);
 
         local TransparencyBoxOuter, TransparencyBoxInner, TransparencyCursor;
         
@@ -3212,24 +3794,41 @@ do
             end);
         end
 
+        local BoxTargetX = Box.Position.X.Offset;
+        local function MoveInput(TargetX, Instant)
+            BoxTargetX = TargetX;
+            local Target = UDim2.fromOffset(TargetX, 0);
+            if Instant then
+                Library:CancelMotion(Box, 'Position');
+                Box.Position = Target;
+            else
+                Library:Animate(Box, { Position = Target }, 0.12, nil, 'TypingScroll');
+            end
+        end
+
         local function Update()
             local PADDING = 2
             local reveal = Container.AbsoluteSize.X
 
             if not Box:IsFocused() or Box.TextBounds.X <= reveal - 2 * PADDING then
-                Box.Position = UDim2.new(0, PADDING, 0, 0)
+                MoveInput(PADDING, not Box:IsFocused())
             else
                 local cursor = Box.CursorPosition
                 if cursor ~= -1 then
                     local subtext = string.sub(Box.Text, 1, cursor-1)
-                    local width = TextService:GetTextSize(subtext, Box.TextSize, Box.Font, Vector2.new(math.huge, math.huge)).X
+                    local width = Library:GetTextBounds(
+                        subtext,
+                        Library.Font,
+                        Library.BaseTextSizes[Box] or 14,
+                        Vector2.new(100000, 100000)
+                    )
 
-                    local currentCursorPos = Box.Position.X.Offset + width
+                    local currentCursorPos = BoxTargetX + width
 
                     if currentCursorPos < PADDING then
-                        Box.Position = UDim2.fromOffset(PADDING-width, 0)
+                        MoveInput(PADDING - width, false)
                     elseif currentCursorPos > reveal - PADDING - 1 then
-                        Box.Position = UDim2.fromOffset(reveal-width-PADDING-1, 0)
+                        MoveInput(reveal - width - PADDING - 1, false)
                     end
                 end
             end
@@ -3242,9 +3841,7 @@ do
         Box.FocusLost:Connect(Update)
         Box.Focused:Connect(Update)
 
-        Library:AddToRegistry(Box, {
-            TextColor3 = 'FontColor';
-        });
+        Textbox.TypingAnimation = Library:EnableTypingAnimation(Box);
 
         function Textbox:OnChanged(Func)
             Textbox.Changed = Func;
@@ -3631,6 +4228,7 @@ do
         Library:AddToRegistry(ValueEditor, {
             TextColor3 = 'FontColor';
         });
+        Library:EnableTypingAnimation(ValueEditor);
 
         Library:OnHighlight(SliderOuter, SliderOuter,
             { BorderColor3 = 'AccentColor' },
@@ -4106,6 +4704,7 @@ do
                 TextColor3 = 'FontColor';
                 PlaceholderColor3 = 'DisabledTextColor';
             });
+            Library:EnableTypingAnimation(SearchBox);
         end
 
         local Scrolling = Library:Create('ScrollingFrame', {
@@ -4265,6 +4864,7 @@ do
         local Buttons = {};
         local ButtonOrder = {};
         local ApplyDropdownSearch;
+        local DropdownScrollReveal;
 
         function Dropdown:BuildDropdownList()
             table.clear(Buttons);
@@ -4352,6 +4952,7 @@ do
                 local Rows = math.max(1, math.min(#ButtonOrder, MAX_DROPDOWN_ITEMS));
                 RecalculateListSize(Rows * ROW_HEIGHT, false);
             end
+            if DropdownScrollReveal then DropdownScrollReveal:QueueRefresh(); end
         end;
 
         function Dropdown:OnChanged(Func)
@@ -4411,6 +5012,7 @@ do
             RecalculateListSize(Rows * ROW_HEIGHT, not Instant);
             Scrolling.CanvasPosition = Vector2.new(0, 0);
             task.defer(UpdateDropdownScrollVisuals);
+            if DropdownScrollReveal then DropdownScrollReveal:QueueRefresh(); end
         end;
 
         local SearchUpdateId = 0;
@@ -4425,6 +5027,17 @@ do
                 end);
             end);
         end
+
+        DropdownScrollReveal = Library:BindScrollReveal(Scrolling, {
+            VisibilityRoot = ListOuter;
+            Filter = function(Child)
+                return Buttons[Child] ~= nil and Child.Active;
+            end;
+            TargetResolver = function(Child)
+                local Row = Buttons[Child];
+                return Row and Row.Label or nil;
+            end;
+        });
 
         local DropdownTweens = {};
         local DropdownAnimationId = 0;
@@ -4521,6 +5134,7 @@ do
             Library.OpenedFrames[ListOuter] = true;
             PlayDropdownTween(ListOuter, 0.24, { Position = ListTargetPosition });
             Library:TweenUnifiedFade(ListOuter, 1, 0.23, nil, 'Fade');
+            if DropdownScrollReveal then DropdownScrollReveal:QueueRefresh(); end
             PlayDropdownTween(DropdownArrow, 0.17, { Rotation = 180 });
             StartDropdownAutoScroll();
         end;
@@ -4809,31 +5423,31 @@ do
     });
 
     local WatermarkOuter = Library:Create('CanvasGroup', {
+        BackgroundColor3 = Library.Inline;
         BorderColor3 = Color3.new(0, 0, 0);
         GroupTransparency = 1;
         Position = UDim2.new(0, 100, 0, -25);
-        Size = UDim2.new(0, 213, 0, 20);
+        Size = UDim2.new(0, 213, 0, 22);
         ZIndex = 200;
         Visible = false;
         Parent = ScreenGui;
     });
+    Library:AddToRegistry(WatermarkOuter, { BackgroundColor3 = 'Inline'; });
 
     local WatermarkInner = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
-        BorderColor3 = Library.AccentColor;
+        BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
-        Size = UDim2.new(1, 0, 1, 0);
+        Position = UDim2.fromOffset(1, 1);
+        Size = UDim2.new(1, -2, 1, -2);
         ZIndex = 201;
         Parent = WatermarkOuter;
     });
 
     Library:AddToRegistry(WatermarkInner, {
-        BorderColor3 = 'AccentColor';
+        BackgroundColor3 = 'MainColor';
+        BorderColor3 = 'OutlineColor';
     });
-    Library:AddCorner(WatermarkOuter, 3);
-    Library:AddCorner(WatermarkInner, 3);
-    Library:AddAccentGlow(WatermarkInner, 0.9);
-    Library:AddAccentOutline(WatermarkInner, 0.9);
 
     local InnerFrame = Library:Create('Frame', {
         BackgroundColor3 = Color3.new(1, 1, 1);
@@ -4862,39 +5476,136 @@ do
         end
     });
 
-    local WatermarkLabel = Library:CreateLabel({
-        Position = UDim2.new(0, 5, 0, 0);
-        Size = UDim2.new(1, -4, 1, 0);
+    local AccentBar = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(0, 0);
+        Size = UDim2.new(1, 0, 0, 1);
+        ZIndex = 206;
+        Parent = WatermarkInner;
+    });
+    Library:AddToRegistry(AccentBar, { BackgroundColor3 = 'AccentColor'; });
+
+    local AccentGradient = Library:Create('UIGradient', {
+        Offset = Vector2.new(-1, 0);
+        Rotation = 0;
+        Parent = AccentBar;
+    });
+    Library:AddToRegistry(AccentGradient, {
+        Color = function()
+            local Accent = Library.AccentColor;
+            return ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Accent));
+                ColorSequenceKeypoint.new(0.34, Accent);
+                ColorSequenceKeypoint.new(0.5, Accent:Lerp(Color3.new(1, 1, 1), 0.38));
+                ColorSequenceKeypoint.new(0.66, Accent);
+                ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Accent));
+            });
+        end;
+    });
+    AccentGradient.Color = Library.RegistryMap[AccentGradient].Properties.Color();
+    TweenService:Create(
+        AccentGradient,
+        TweenInfo.new(2.4, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false),
+        { Offset = Vector2.new(1, 0); }
+    ):Play();
+
+    local Logo = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(5, 4);
+        Size = UDim2.fromOffset(13, 13);
+        ZIndex = 207;
+        Parent = InnerFrame;
+    });
+    local LogoWingTop = Library:Create('Frame', {
+        AnchorPoint = Vector2.new(0.5, 0.5);
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(5, 4);
+        Rotation = 28;
+        Size = UDim2.fromOffset(9, 3);
+        ZIndex = 208;
+        Parent = Logo;
+    });
+    local LogoWingBottom = Library:Create('Frame', {
+        AnchorPoint = Vector2.new(0.5, 0.5);
+        BackgroundColor3 = Library.AccentColorDark;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(6, 8);
+        Rotation = -24;
+        Size = UDim2.fromOffset(8, 3);
+        ZIndex = 208;
+        Parent = Logo;
+    });
+    local LogoTip = Library:Create('Frame', {
+        AnchorPoint = Vector2.new(0.5, 0.5);
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(10, 6);
+        Rotation = -45;
+        Size = UDim2.fromOffset(4, 4);
+        ZIndex = 209;
+        Parent = Logo;
+    });
+    Library:AddToRegistry(LogoWingTop, { BackgroundColor3 = 'AccentColor'; });
+    Library:AddToRegistry(LogoWingBottom, { BackgroundColor3 = 'AccentColorDark'; });
+    Library:AddToRegistry(LogoTip, { BackgroundColor3 = 'AccentColor'; });
+
+    local WatermarkTitle = Library:CreateLabel({
+        Position = UDim2.fromOffset(22, 1);
+        Size = UDim2.new(0, 0, 1, -1);
+        Text = '';
+        TextColor3 = Library.AccentColor;
         TextSize = 14;
         TextXAlignment = Enum.TextXAlignment.Left;
-        ZIndex = 203;
+        ZIndex = 207;
+        Parent = InnerFrame;
+    });
+    Library.RegistryMap[WatermarkTitle].Properties.TextColor3 = 'AccentColor';
+
+    local WatermarkStats = Library:CreateLabel({
+        Position = UDim2.fromOffset(22, 1);
+        Size = UDim2.new(0, 0, 1, -1);
+        Text = '';
+        TextColor3 = Library.FontColor;
+        TextSize = 14;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 207;
         Parent = InnerFrame;
     });
 
-    WatermarkLabel.TextStrokeColor3 = Color3.new(0, 0, 0);
-    WatermarkLabel.TextStrokeTransparency = 0.08;
+    local LegacyWatermarkText = Library:CreateLabel({
+        Text = '';
+        TextTransparency = 1;
+        Visible = false;
+        Parent = InnerFrame;
+    });
 
-    local WatermarkTextOutline = WatermarkLabel:FindFirstChildOfClass('UIStroke');
-    if not WatermarkTextOutline then
-        WatermarkTextOutline = Library:Create('UIStroke', {
-            Name = 'FormaWatermarkTextOutline';
-            Color = Color3.new(0, 0, 0);
-            Thickness = 1.1;
-            Transparency = 0.08;
-            LineJoinMode = Enum.LineJoinMode.Miter;
-            ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual;
-            Parent = WatermarkLabel;
-        });
-    else
-        WatermarkTextOutline.Color = Color3.new(0, 0, 0);
-        WatermarkTextOutline.Thickness = 1.1;
-        WatermarkTextOutline.Transparency = 0.08;
-        WatermarkTextOutline.LineJoinMode = Enum.LineJoinMode.Miter;
-        pcall(function() WatermarkTextOutline.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual; end);
+    local function UpdateWatermarkText(Text)
+        Text = tostring(Text or '');
+        local Title, Stats = Text:match('^(.-)(%s+%-%s+.+)$');
+        if not Title then Title, Stats = Text, ''; end
+
+        local TitleWidth = Library:GetTextBounds(Title, Library.Font, 14);
+        local StatsWidth = Library:GetTextBounds(Stats, Library.Font, 14);
+        local StatsX = 22 + TitleWidth;
+        WatermarkTitle.Text = Title;
+        WatermarkTitle.Size = UDim2.fromOffset(TitleWidth, 19);
+        WatermarkStats.Text = Stats;
+        WatermarkStats.Position = UDim2.fromOffset(StatsX, 1);
+        WatermarkStats.Size = UDim2.fromOffset(StatsWidth, 19);
+        WatermarkOuter.Size = UDim2.fromOffset(math.max(StatsX + StatsWidth + 7, 72), 22);
     end
+    LegacyWatermarkText:GetPropertyChangedSignal('Text'):Connect(function()
+        UpdateWatermarkText(LegacyWatermarkText.Text);
+    end);
 
     Library.Watermark = WatermarkOuter;
-    Library.WatermarkText = WatermarkLabel;
+    Library.WatermarkText = LegacyWatermarkText;
+    Library.WatermarkTitle = WatermarkTitle;
+    Library.WatermarkStats = WatermarkStats;
+    Library.UpdateWatermarkText = UpdateWatermarkText;
     Library.WatermarkAnimationId = 0;
     Library:MakeDraggable(Library.Watermark);
 
@@ -4984,11 +5695,10 @@ function Library:SetWatermarkVisibility(Bool)
 end;
 
 function Library:SetWatermark(Text)
-    local X, Y = Library:GetTextBounds(Text, Library.Font, 14);
-    Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3);
-    Library:SetWatermarkVisibility(true)
-
+    Text = tostring(Text or '');
     Library.WatermarkText.Text = Text;
+    if Library.UpdateWatermarkText then Library.UpdateWatermarkText(Text); end
+    Library:SetWatermarkVisibility(true);
 end;
 
 
@@ -5950,6 +6660,7 @@ function Library:CreateWindow(...)
     if type(Config.TabPadding) ~= 'number' then Config.TabPadding = 0 end
     if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.24 end
 
+    if typeof(Config.AnchorPoint) ~= 'Vector2' then Config.AnchorPoint = Vector2.zero end
     if typeof(Config.Position) ~= 'UDim2' then Config.Position = UDim2.fromOffset(175, 50) end
     if typeof(Config.Size) ~= 'UDim2' then Config.Size = UDim2.fromOffset(550, 600) end
 
@@ -5974,7 +6685,14 @@ function Library:CreateWindow(...)
         Parent = ScreenGui;
     });
 
-    Library:MakeDraggable(Outer, 25);
+    Window.DragState = Library:MakeDraggable(Outer, 25);
+    if Config.Resizable ~= false then
+        Window.ResizeState = Library:MakeResizable(Outer, {
+            MinSize = Config.MinSize or Vector2.new(420, 320);
+            MaxSize = Config.MaxSize;
+            Response = Config.ResizeResponse or 30;
+        });
+    end
 
     local Inner = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
@@ -6115,6 +6833,17 @@ function Library:CreateWindow(...)
         task.defer(UpdateWindowHeaderLayout);
     end;
 
+    function Window:SetWindowSize(Size, Animated)
+        if typeof(Size) == 'Vector2' then Size = UDim2.fromOffset(Size.X, Size.Y); end
+        if typeof(Size) ~= 'UDim2' then return; end
+        if Animated == false then
+            Library:CancelMotion(Outer, 'Size');
+            Outer.Size = Size;
+        else
+            Library:Animate(Outer, { Size = Size }, 0.18, nil, 'Resize');
+        end
+    end;
+
     function Window:AddTab(Name)
         local Tab = {
             Groupboxes = {};
@@ -6125,7 +6854,7 @@ function Library:CreateWindow(...)
         local TabButtonWidth = Library:GetTextBounds(Name, Library.Font, 16);
 
         local TabButton = Library:Create('Frame', {
-            BackgroundColor3 = Library.TabButtonLowContrast;
+            BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Library.OutlineColor;
             BorderSizePixel = 0;
             Size = UDim2.new(0, TabButtonWidth + 8 + 4, 1, 0);
@@ -6136,7 +6865,7 @@ function Library:CreateWindow(...)
         Library:AddTopCorners(TabButton, 3);
 
         Library:AddToRegistry(TabButton, {
-            BackgroundColor3 = 'TabButtonLowContrast';
+            BackgroundColor3 = 'BackgroundColor';
             BorderColor3 = 'OutlineColor';
         });
 
@@ -6195,7 +6924,7 @@ function Library:CreateWindow(...)
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Position = UDim2.new(0, 8 - 1, 0, 8 - 1);
-            Size = UDim2.new(0.5, -12 + 2, 0, 507 + 2);
+            Size = UDim2.new(0.5, -12 + 2, 1, -14);
             CanvasSize = UDim2.new(0, 0, 0, 0);
             BottomImage = '';
             TopImage = '';
@@ -6208,7 +6937,7 @@ function Library:CreateWindow(...)
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Position = UDim2.new(0.5, 4 + 1, 0, 8 - 1);
-            Size = UDim2.new(0.5, -12 + 2, 0, 507 + 2);
+            Size = UDim2.new(0.5, -12 + 2, 1, -14);
             CanvasSize = UDim2.new(0, 0, 0, 0);
             BottomImage = '';
             TopImage = '';
@@ -6238,6 +6967,11 @@ function Library:CreateWindow(...)
                 Side.CanvasSize = UDim2.fromOffset(0, Side.UIListLayout.AbsoluteContentSize.Y);
             end);
         end;
+
+        Tab.ScrollRevealStates = {
+            Library:BindScrollReveal(LeftSide, { VisibilityRoot = TabFrame; });
+            Library:BindScrollReveal(RightSide, { VisibilityRoot = TabFrame; });
+        };
 
         function Tab:ShowTab()
             if Tab.Active then
@@ -6272,6 +7006,9 @@ function Library:CreateWindow(...)
                 Position = UDim2.new(0, 0, 0, 0);
             }, 0.30, nil, 'Tab');
             Library:TweenUnifiedFade(TabFrame, 1, 0.27, nil, 'Fade');
+            for _, RevealState in ipairs(Tab.ScrollRevealStates) do
+                if RevealState then RevealState:QueueRefresh(); end
+            end
         end;
 
         function Tab:HideTab(Instant)
@@ -6284,8 +7021,8 @@ function Library:CreateWindow(...)
             local CurrentAnimation = Tab.ContentAnimationId;
 
             Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.09);
-            Library:TweenProperty(TabButton, 'BackgroundColor3', Library.TabButtonLowContrast, 0.12);
-            Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'TabButtonLowContrast';
+            Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.12);
+            Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
 
             if Instant then
                 Library:CancelMotion(TabFrame);
@@ -6494,7 +7231,7 @@ function Library:CreateWindow(...)
                 local Tab = {};
 
                 local Button = Library:Create('Frame', {
-                    BackgroundColor3 = Library.TabButtonLowContrast;
+                    BackgroundColor3 = Library.MainColor;
                     BorderColor3 = Color3.new(0, 0, 0);
                     BorderSizePixel = 0;
                     Size = UDim2.new(0.5, 0, 1, 0);
@@ -6505,7 +7242,7 @@ function Library:CreateWindow(...)
                 Library:AddTopCorners(Button, 3);
 
                 Library:AddToRegistry(Button, {
-                    BackgroundColor3 = 'TabButtonLowContrast';
+                    BackgroundColor3 = 'MainColor';
                 });
 
                 local ButtonLabel = Library:CreateLabel({
@@ -6580,9 +7317,9 @@ function Library:CreateWindow(...)
                     Block.Visible = true;
                     TabboxIndicator:MoveTo(Button, not TabboxIndicator.Frame.Visible);
 
-                    Library:TweenProperty(Button, 'BackgroundColor3', Library.Contrast, 0.12);
+                    Library:TweenProperty(Button, 'BackgroundColor3', Library.BackgroundColor, 0.12);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.10);
-                    Library.RegistryMap[Button].Properties.BackgroundColor3 = 'Contrast';
+                    Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
                     Library:Animate(Container, {
                         Position = UDim2.new(0, 4, 0, 20);
                     }, 0.28, nil, 'Tab');
@@ -6600,9 +7337,9 @@ function Library:CreateWindow(...)
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
                     local CurrentAnimation = Tab.ContentAnimationId;
 
-                    Library:TweenProperty(Button, 'BackgroundColor3', Library.TabButtonLowContrast, 0.12);
+                    Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.12);
                     Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.09);
-                    Library.RegistryMap[Button].Properties.BackgroundColor3 = 'TabButtonLowContrast';
+                    Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
 
                     if Instant then
                         Library:CancelMotion(Container);
