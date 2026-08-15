@@ -33,7 +33,7 @@ local MenuManager = {} do
 	-- overshoot. Spatial motion still uses the selected style, so every easing
 	-- option remains visible without making fades plateau at their clamped ends.
 	MenuManager.ContextProfiles = {
-		Fade = { Style = 'Sine'; Direction = 'Out'; Scale = 1.00; Min = 0.11; Max = 0.30; };
+		Fade = { Style = 'Sine'; Direction = 'Out'; Scale = 1.00; Min = 0.14; Max = 0.34; };
 		Color = { Style = 'Sine'; Direction = 'Out'; Scale = 0.72; Min = 0.08; Max = 0.18; };
 		Layout = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.11; Max = 0.30; };
 		Dependency = { Style = 'Quart'; Direction = 'Out'; Scale = 0.90; Min = 0.11; Max = 0.24; };
