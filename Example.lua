@@ -27,7 +27,7 @@ local Players = game:GetService("Players")
 Library.NotifyOnError = true
 
 local Window = Library:CreateWindow({
-    Title = "Example Window",
+    Title = "Forma",
     Center = true,
     AutoShow = true,
     TabPadding = 8,
@@ -35,17 +35,17 @@ local Window = Library:CreateWindow({
 })
 
 local Tabs = {
-    Main = Window:AddTab("Showcase"),
-    Players = Window:AddTab("Player"),
-    Visuals = Window:AddTab("Visual"),
-    Misc = Window:AddTab("Misc"),
+    Main = Window:AddTab("Controls"),
+    Players = Window:AddTab("Players"),
+    Visuals = Window:AddTab("Visuals"),
+    Misc = Window:AddTab("Tools"),
     ["UI Settings"] = Window:AddTab("UI Settings"),
 }
 
-local TargetHUDTestHealth = 100
-local TargetHUDTestMaxHealth = 100
+local TargetHUDManualHealth = 100
+local TargetHUDManualMaxHealth = 100
 local TargetHUDUseManualHealth = false
-local TargetHUDExampleLabel
+local TargetHUDStatusLabel
 
 local TargetHUD = Library:CreateTargetHUD({
     Visible = false,
@@ -54,13 +54,12 @@ local TargetHUD = Library:CreateTargetHUD({
     AutoTargetMode = "Off",
     AutoDistanceMeter = false,
 
-    -- These demonstrate the smoother health/gradient defaults.
     HealthSmoothTime = 0.20,
     HealthGradientSpeed = 1.15,
 
     HealthProvider = function(Target)
         if TargetHUDUseManualHealth then
-            return TargetHUDTestHealth, TargetHUDTestMaxHealth
+            return TargetHUDManualHealth, TargetHUDManualMaxHealth
         end
 
         if typeof(Target) == "Instance" and Target:IsA("Player") then
@@ -77,108 +76,122 @@ local TargetHUD = Library:CreateTargetHUD({
 })
 
 
-local MainLeft = Tabs.Main:AddLeftGroupbox("Control Showcase")
+local MainLeft = Tabs.Main:AddLeftGroupbox("Movement")
 
 MainLeft:AddToggle("Enabled", {
-    Text = "Enable showcase",
+    Text = "Enable movement controls",
     Default = false,
-    Tooltip = "Master toggle used by this showcase.",
+    Tooltip = "Enables the movement settings below.",
     Callback = function(Value)
-        print("[Showcase] Enabled:", Value)
+        print("Movement controls:", Value)
     end,
 })
 
 Toggles.Enabled:OnChanged(function()
-    print("[Showcase] Toggle changed:", Toggles.Enabled.Value)
+    print("Movement controls changed:", Toggles.Enabled.Value)
 end)
 
-local FeatureToggle = MainLeft:AddToggle("FeatureToggle", {
-    Text = "Toggle + keybind showcase",
+local AutoSprintToggle = MainLeft:AddToggle("AutoSprint", {
+    Text = "Auto sprint",
     Default = false,
-    Tooltip = "This toggle has a keybind attached.",
+    Tooltip = "Toggles sprint automatically while moving.",
 })
 
-FeatureToggle:AddKeyPicker("FeatureKeybind", {
+AutoSprintToggle:AddKeyPicker("AutoSprintKey", {
     Default = "F",
     SyncToggleState = true,
     Mode = "Toggle",
-    Text = "Example feature",
+    Text = "Auto sprint",
     NoUI = false,
     Callback = function(Value)
-        print("Feature keybind state:", Value)
+        print("Auto sprint key state:", Value)
     end,
     ChangedCallback = function(NewKey)
-        print("Feature key changed:", NewKey)
+        print("Auto sprint key changed:", NewKey)
     end,
 })
 
-Toggles.FeatureToggle:OnChanged(function()
-    print("Feature toggle:", Toggles.FeatureToggle.Value)
+Toggles.AutoSprint:OnChanged(function()
+    print("Auto sprint:", Toggles.AutoSprint.Value)
 end)
 
 MainLeft:AddDivider()
 
-MainLeft:AddLabel("Label showcase")
+MainLeft:AddLabel("Movement profile")
 
 MainLeft:AddLabel(
-    "This is a wrapped label showcase.\n\nUse wrapped labels when an example needs to display longer information inside a groupbox.",
+    "Adjust speed, smoothing, and hotkeys for the active movement profile.",
     true
 )
 
 MainLeft:AddButton({
-    Text = "Notification showcase",
+    Text = "Save movement profile",
     Func = function()
         Library:Notify({
-            Title = "Forma Showcase",
-            Text = "Example notification with an accent-colored title.",
+            Title = "Movement",
+            Text = "Profile saved.",
             Duration = 4,
         })
     end,
-    Tooltip = "Displays a titled notification.",
+    Tooltip = "Saves the current movement values.",
 })
 
 MainLeft:AddButton({
-    Text = "Warning confirmation",
+    Text = "Reset movement profile",
     Func = function()
-        print("Confirmed dangerous action")
+        Options.WalkSpeed:SetValue(16)
+        Options.DecimalSlider:SetValue(0.5)
+        Options.CompactSlider:SetValue(50)
         Library:Notify({
-            Title = "Confirmed",
-            Text = "The warning action was confirmed.",
+            Title = "Movement",
+            Text = "Profile reset.",
             Duration = 3,
         })
     end,
     Warning = true,
     ConfirmDuration = 3,
-    Tooltip = "Flashes the accent once, then shows a three-second confirmation timer.",
+    Tooltip = "Restores the default movement values.",
 })
 
 local MainButton = MainLeft:AddButton({
-    Text = "Primary button showcase",
+    Text = "Start",
     Func = function()
-        print("Main button clicked")
+        print("Movement started")
     end,
 })
 
 local SecondaryButton = MainButton:AddButton({
-    Text = "Secondary button",
+    Text = "Pause",
     Func = function()
-        print("Sub button clicked")
+        print("Movement paused")
     end,
-    Tooltip = "This is a sub-button.",
 })
 
 SecondaryButton:AddTertiaryButton({
-    Text = "Tertiary button",
+    Text = "Stop",
     Func = function()
-        print("Tertiary button clicked")
+        print("Movement stopped")
     end,
-    Tooltip = "Three-button rows stay proportional while the window resizes.",
+})
+
+local ProfileButtonRow = MainLeft:AddButton({
+    Text = "Save preset",
+    Func = function()
+        Library:Notify({ Title = "Presets", Text = "Preset saved.", Duration = 3 })
+    end,
+})
+
+ProfileButtonRow:AddButton({
+    Text = "Load preset",
+    Func = function()
+        Library:Notify({ Title = "Presets", Text = "Preset loaded.", Duration = 3 })
+    end,
 })
 
 MainLeft:AddDivider()
 
-MainLeft:AddSlider("WalkSpeedExample", {
-    Text = "Slider showcase",
+MainLeft:AddSlider("WalkSpeed", {
+    Text = "Walk speed",
     Default = 16,
     Min = 0,
     Max = 100,
@@ -189,12 +202,12 @@ MainLeft:AddSlider("WalkSpeedExample", {
     end,
 })
 
-Options.WalkSpeedExample:OnChanged(function()
-    print("Example speed changed:", Options.WalkSpeedExample.Value)
+Options.WalkSpeed:OnChanged(function()
+    print("Walk speed changed:", Options.WalkSpeed.Value)
 end)
 
 MainLeft:AddSlider("DecimalSlider", {
-    Text = "Decimal slider",
+    Text = "Movement smoothing",
     Default = 0.5,
     Min = 0,
     Max = 1,
@@ -205,7 +218,7 @@ MainLeft:AddSlider("DecimalSlider", {
 })
 
 MainLeft:AddSlider("CompactSlider", {
-    Text = "Compact slider",
+    Text = "Movement volume",
     Default = 50,
     Min = 0,
     Max = 100,
@@ -213,14 +226,14 @@ MainLeft:AddSlider("CompactSlider", {
     Compact = true,
 })
 
-local MainRight = Tabs.Main:AddRightGroupbox("Input Showcase")
+local MainRight = Tabs.Main:AddRightGroupbox("Profile")
 
 MainRight:AddInput("TextInput", {
-    Text = "Text input",
-    Default = "Hello showcase",
+    Text = "Display name",
+    Default = "Player",
     Numeric = false,
     Finished = false,
-    Placeholder = "Enter something...",
+    Placeholder = "Enter a display name",
     Callback = function(Value)
         print("Text input:", Value)
     end,
@@ -231,48 +244,47 @@ Options.TextInput:OnChanged(function()
 end)
 
 MainRight:AddInput("NumericInput", {
-    Text = "Numeric input",
+    Text = "Retry limit",
     Default = "10",
     Numeric = true,
     Finished = true,
-    Placeholder = "Number...",
+    Placeholder = "Enter a number",
     Callback = function(Value)
         print("Numeric input:", Value)
     end,
 })
 
 MainRight:AddInput("LimitedInput", {
-    Text = "Maximum 16 characters",
+    Text = "Profile tag",
     Default = "",
     Numeric = false,
     Finished = false,
     MaxLength = 16,
-    Placeholder = "Max 16 characters",
+    Placeholder = "Up to 16 characters",
 })
 
 MainRight:AddDivider()
 
-MainRight:AddDropdown("ExampleDropdown", {
-    Text = "Searchable dropdown showcase",
+MainRight:AddDropdown("ServerRegion", {
+    Text = "Server region",
     Values = {
-        "Option A",
-        "Option B",
-        "Option C",
-        "Option D",
-        "Option E",
-        "Option F",
-        "Option G",
-        "Option H",
-        "Option I",
+        "Automatic",
+        "US West",
+        "US Central",
+        "US East",
+        "Europe",
+        "Singapore",
+        "Japan",
+        "Australia",
     },
     Default = 1,
     Multi = false,
     Searchable = true,
     Tooltip = {
-        Title = "Searchable dropdown",
+        Title = "Server region",
         Text = {
-            "This dropdown opts into the search feature.",
-            "Dropdowns without Searchable = true remain standard dropdowns.",
+            "Filters the region list while you type.",
+            "Automatic selects the lowest available latency.",
         },
     },
     Callback = function(Value)
@@ -280,12 +292,12 @@ MainRight:AddDropdown("ExampleDropdown", {
     end,
 })
 
-Options.ExampleDropdown:OnChanged(function()
-    print("Dropdown changed:", Options.ExampleDropdown.Value)
+Options.ServerRegion:OnChanged(function()
+    print("Server region changed:", Options.ServerRegion.Value)
 end)
 
 MainRight:AddDropdown("MultiDropdown", {
-    Text = "Multi-select showcase",
+    Text = "Visible ESP elements",
     Values = {
         "ESP",
         "Names",
@@ -308,32 +320,32 @@ MainRight:AddDropdown("MultiDropdown", {
     end,
 })
 
-local ColorLabel = MainRight:AddLabel("Color picker showcase")
+local ColorLabel = MainRight:AddLabel("Accent preview")
 
-ColorLabel:AddColorPicker("ExampleColor", {
+ColorLabel:AddColorPicker("AccentPreview", {
     Default = Color3.fromRGB(0, 170, 255),
-    Title = "Showcase color",
+    Title = "Accent preview",
     Transparency = 0,
     Callback = function(Value)
         print("Color:", Value)
     end,
 })
 
-Options.ExampleColor:OnChanged(function()
+Options.AccentPreview:OnChanged(function()
     print(
         "Color changed:",
-        Options.ExampleColor.Value,
-        Options.ExampleColor.Transparency
+        Options.AccentPreview.Value,
+        Options.AccentPreview.Transparency
     )
 end)
 
-local KeyLabel = MainRight:AddLabel("Standalone keybind showcase")
+local KeyLabel = MainRight:AddLabel("Quick action key")
 
 KeyLabel:AddKeyPicker("StandaloneKey", {
     Default = "G",
     SyncToggleState = false,
     Mode = "Toggle",
-    Text = "Standalone key",
+    Text = "Quick action",
     NoUI = false,
     Callback = function(Value)
         print("Standalone key state:", Value)
@@ -347,22 +359,22 @@ Options.StandaloneKey:OnClick(function()
     print("Standalone key clicked:", Options.StandaloneKey:GetState())
 end)
 
-local DependencyGroup = Tabs.Main:AddRightGroupbox("Dependency Showcase")
+local DependencyGroup = Tabs.Main:AddRightGroupbox("Advanced movement")
 
 DependencyGroup:AddToggle("DependencyMaster", {
-    Text = "Reveal dependency examples",
+    Text = "Enable advanced movement",
     Default = false,
 })
 
 local DependencyBox = DependencyGroup:AddDependencyBox()
 
 DependencyBox:AddToggle("DependentToggle", {
-    Text = "Dependent toggle showcase",
+    Text = "Use sprint threshold",
     Default = false,
 })
 
 DependencyBox:AddSlider("DependentSlider", {
-    Text = "Dependent slider showcase",
+    Text = "Sprint threshold",
     Default = 50,
     Min = 0,
     Max = 100,
@@ -370,11 +382,11 @@ DependencyBox:AddSlider("DependentSlider", {
 })
 
 DependencyBox:AddDropdown("DependentDropdown", {
-    Text = "Dependent dropdown showcase",
+    Text = "Sprint mode",
     Values = {
-        "One",
-        "Two",
-        "Three",
+        "Hold",
+        "Toggle",
+        "Always",
     },
     Default = 1,
 })
@@ -389,12 +401,12 @@ DependencyBox:SetupDependencies({
 local NestedDependency = DependencyBox:AddDependencyBox()
 
 NestedDependency:AddToggle("NestedToggle", {
-    Text = "Nested option",
+    Text = "Use stamina reserve",
     Default = false,
 })
 
 NestedDependency:AddSlider("NestedSlider", {
-    Text = "Nested amount",
+    Text = "Stamina reserve",
     Default = 10,
     Min = 0,
     Max = 20,
@@ -408,12 +420,12 @@ NestedDependency:SetupDependencies({
     },
 })
 
-local PlayersLeft = Tabs.Players:AddLeftGroupbox("Player Selection Showcase")
+local PlayersLeft = Tabs.Players:AddLeftGroupbox("Players")
 
 PlayersLeft:AddDropdown("PlayerDropdown", {
     SpecialType = "Player",
     Text = "Target player",
-    Tooltip = "Selects the player used by the Target HUD test bench.",
+    Tooltip = "Sets the player shown in the Target HUD.",
     Searchable = true,
     Callback = function(Value)
         print("Selected player:", Value)
@@ -422,7 +434,7 @@ PlayersLeft:AddDropdown("PlayerDropdown", {
         TargetHUD:SetTarget(Player)
 
         if TargetHUDUseManualHealth then
-            TargetHUD:SetHealth(TargetHUDTestHealth, TargetHUDTestMaxHealth, false)
+            TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
         end
 
         if Toggles.TrackPlayer and Toggles.TrackPlayer.Value and Player then
@@ -433,7 +445,7 @@ PlayersLeft:AddDropdown("PlayerDropdown", {
 
 PlayersLeft:AddDropdown("TeamDropdown", {
     SpecialType = "Team",
-    Text = "Team showcase",
+    Text = "Team",
     Callback = function(Value)
         print("Selected team:", Value)
     end,
@@ -453,7 +465,7 @@ PlayersLeft:AddButton({
     end,
 })
 
-local PlayersRight = Tabs.Players:AddRightGroupbox("Target HUD Test Bench")
+local PlayersRight = Tabs.Players:AddRightGroupbox("Target HUD")
 
 PlayersRight:AddToggle("TrackPlayer", {
     Text = "Show Target HUD",
@@ -462,7 +474,7 @@ PlayersRight:AddToggle("TrackPlayer", {
         Title = "Target HUD",
         Text = {
             "Shows the selected target avatar and username.",
-            "Use the controls below to test health smoothing, gradients, meter text, and automatic targeting.",
+            "Updates health, distance, meter text, and automatic targeting.",
         },
     },
 })
@@ -483,17 +495,17 @@ Toggles.TrackPlayer:OnChanged(function()
 end)
 
 PlayersRight:AddButton({
-    Text = "Use local player as test target",
+    Text = "Target local player",
     Func = function()
         TargetHUD:SetTarget(Players.LocalPlayer)
         TargetHUD:SetVisible(true)
         Toggles.TrackPlayer:SetValue(true)
 
         if TargetHUDUseManualHealth then
-            TargetHUD:SetHealth(TargetHUDTestHealth, TargetHUDTestMaxHealth, false)
+            TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
         end
     end,
-    Tooltip = "Useful for testing the Target HUD while you are alone in a server.",
+    Tooltip = "Uses your own player as the current target.",
 })
 
 PlayersRight:AddDropdown("TargetHUDAutoMode", {
@@ -533,7 +545,7 @@ end)
 PlayersRight:AddDivider()
 
 PlayersRight:AddToggle("TargetHUDManualHealth", {
-    Text = "Use manual health test",
+    Text = "Override target health",
     Default = false,
     Tooltip = "Overrides the displayed target health without changing the player's real Humanoid health.",
 })
@@ -546,7 +558,7 @@ Toggles.TargetHUDManualHealth:OnChanged(function()
             TargetHUD:SetTarget(Players.LocalPlayer)
         end
 
-        TargetHUD:SetHealth(TargetHUDTestHealth, TargetHUDTestMaxHealth, false)
+        TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
         TargetHUD:SetVisible(true)
         Toggles.TrackPlayer:SetValue(true)
     else
@@ -555,21 +567,21 @@ Toggles.TargetHUDManualHealth:OnChanged(function()
 end)
 
 PlayersRight:AddSlider("TargetHUDHealth", {
-    Text = "Test health",
+    Text = "Displayed health",
     Default = 100,
     Min = 0,
     Max = 100,
     Rounding = 0,
     Step = 1,
     Suffix = " HP",
-    Tooltip = "Move this slider quickly to test continuous health-bar damping.",
+    Tooltip = "Sets the health value shown while the manual override is active.",
 })
 
 Options.TargetHUDHealth:OnChanged(function()
-    TargetHUDTestHealth = Options.TargetHUDHealth.Value
+    TargetHUDManualHealth = Options.TargetHUDHealth.Value
 
     if TargetHUDUseManualHealth then
-        TargetHUD:SetHealth(TargetHUDTestHealth, TargetHUDTestMaxHealth, false)
+        TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
     end
 end)
 
@@ -596,7 +608,7 @@ PlayersRight:AddInput("TargetHUDMeterOverride", {
     Default = "",
     Numeric = false,
     Finished = false,
-    Placeholder = "Example: 42 meters",
+    Placeholder = "42 meters",
 })
 
 Options.TargetHUDMeterOverride:OnChanged(function()
@@ -609,7 +621,7 @@ PlayersRight:AddInput("TargetHUDCustomLabel", {
     Default = "",
     Numeric = false,
     Finished = false,
-    Placeholder = "Example label value",
+    Placeholder = "Status text",
 })
 
 PlayersRight:AddButton({
@@ -618,29 +630,29 @@ PlayersRight:AddButton({
         local Value = Options.TargetHUDCustomLabel.Value
 
         if Value == "" then
-            if TargetHUDExampleLabel then
-                TargetHUDExampleLabel:Destroy()
-                TargetHUDExampleLabel = nil
+            if TargetHUDStatusLabel then
+                TargetHUDStatusLabel:Destroy()
+                TargetHUDStatusLabel = nil
             end
             return
         end
 
-        if TargetHUDExampleLabel then
-            TargetHUDExampleLabel:SetValue(Value)
+        if TargetHUDStatusLabel then
+            TargetHUDStatusLabel:SetValue(Value)
         else
-            TargetHUDExampleLabel = TargetHUD:AddLabel(
-                "Example",
+            TargetHUDStatusLabel = TargetHUD:AddLabel(
+                "Status",
                 Value,
-                "ExampleTestLabel"
+                "StatusLabel"
             )
         end
     end,
 }):AddButton({
     Text = "Remove custom label",
     Func = function()
-        if TargetHUDExampleLabel then
-            TargetHUDExampleLabel:Destroy()
-            TargetHUDExampleLabel = nil
+        if TargetHUDStatusLabel then
+            TargetHUDStatusLabel:Destroy()
+            TargetHUDStatusLabel = nil
         end
     end,
 })
@@ -664,7 +676,7 @@ PlayersRight:AddButton({
 })
 
 
-local VisualsLeft = Tabs.Visuals:AddLeftGroupbox("ESP Showcase")
+local VisualsLeft = Tabs.Visuals:AddLeftGroupbox("ESP")
 
 local ESPToggle = VisualsLeft:AddToggle("ESPEnabled", {
     Text = "Enable ESP",
@@ -722,7 +734,7 @@ VisualsLeft:AddLabel("Visible color"):AddColorPicker("ESPVisibleColor", {
     Title = "Visible ESP color",
 })
 
-local VisualsRight = Tabs.Visuals:AddRightGroupbox("World Showcase")
+local VisualsRight = Tabs.Visuals:AddRightGroupbox("World")
 
 VisualsRight:AddToggle("CustomAmbient", {
     Text = "Custom ambient",
@@ -777,7 +789,7 @@ VisualDependency:SetupDependencies({
     },
 })
 
-local MiscLeft = Tabs.Misc:AddLeftGroupbox("Notification Showcase")
+local MiscLeft = Tabs.Misc:AddLeftGroupbox("Notifications")
 
 MiscLeft:AddButton({
     Text = "Short notification",
@@ -814,7 +826,7 @@ MiscLeft:AddButton({
     end,
 })
 
-local MiscRight = Tabs.Misc:AddRightGroupbox("Runtime Showcase")
+local MiscRight = Tabs.Misc:AddRightGroupbox("Runtime")
 
 MiscRight:AddToggle("PrintRuntimeValues", {
     Text = "Print values every second",
@@ -822,14 +834,14 @@ MiscRight:AddToggle("PrintRuntimeValues", {
 })
 
 MiscRight:AddButton({
-    Text = "Print all example values",
+    Text = "Print current values",
     Func = function()
         print("Enabled:", Toggles.Enabled.Value)
-        print("FeatureToggle:", Toggles.FeatureToggle.Value)
-        print("WalkSpeedExample:", Options.WalkSpeedExample.Value)
+        print("AutoSprint:", Toggles.AutoSprint.Value)
+        print("WalkSpeed:", Options.WalkSpeed.Value)
         print("DecimalSlider:", Options.DecimalSlider.Value)
         print("TextInput:", Options.TextInput.Value)
-        print("ExampleDropdown:", Options.ExampleDropdown.Value)
+        print("ServerRegion:", Options.ServerRegion.Value)
         print("PlayerDropdown:", Options.PlayerDropdown.Value)
         print("TargetHUDHealth:", Options.TargetHUDHealth.Value)
         print("TargetHUDAutoMode:", Options.TargetHUDAutoMode.Value)
@@ -839,6 +851,53 @@ MiscRight:AddButton({
     end,
 })
 
+local UtilityTabs = Tabs.Misc:AddRightTabbox("Utilities")
+local SessionTools = UtilityTabs:AddTab("Session")
+local NetworkTools = UtilityTabs:AddTab("Network")
+
+SessionTools:AddToggle("AutoReconnect", {
+    Text = "Auto reconnect",
+    Default = true,
+})
+
+SessionTools:AddInput("SessionNote", {
+    Text = "Session note",
+    Default = "",
+    Finished = false,
+    Placeholder = "Add a note",
+})
+
+SessionTools:AddButton({
+    Text = "Reconnect now",
+    Func = function()
+        Library:Notify({
+            Title = "Session",
+            Text = "Reconnect requested.",
+            Duration = 3,
+        })
+    end,
+})
+
+NetworkTools:AddDropdown("PreferredRegion", {
+    Text = "Preferred region",
+    Values = { "Automatic", "US West", "US East", "Europe", "Asia" },
+    Default = 1,
+})
+
+NetworkTools:AddSlider("RetryDelay", {
+    Text = "Retry delay",
+    Default = 3,
+    Min = 1,
+    Max = 10,
+    Rounding = 0,
+    Suffix = " sec",
+})
+
+NetworkTools:AddToggle("LowBandwidthMode", {
+    Text = "Low bandwidth mode",
+    Default = false,
+})
+
 local RuntimeThreadRunning = true
 
 task.spawn(function()
@@ -846,17 +905,16 @@ task.spawn(function()
         task.wait(1)
 
         if Toggles.PrintRuntimeValues.Value then
-            print("Feature:", Toggles.FeatureToggle.Value)
-            print("Speed:", Options.WalkSpeedExample.Value)
-            print("Dropdown:", Options.ExampleDropdown.Value)
+            print("Auto sprint:", Toggles.AutoSprint.Value)
+            print("Speed:", Options.WalkSpeed.Value)
+            print("Region:", Options.ServerRegion.Value)
             print("Standalone key:", Options.StandaloneKey:GetState())
         end
     end
 end)
 
 Library:SetWatermarkVisibility(true)
--- The library automatically resolves the universe/place name for watermark metadata.
-Library:SetWatermark("Example Showcase - Loading...")
+Library:SetWatermark("Forma - Loading...")
 
 Library.KeybindFrame.Visible = true
 
@@ -888,7 +946,7 @@ WatermarkConnection = RunService.RenderStepped:Connect(function()
     end
 
     Library:SetWatermark(
-        ("Example Showcase - %d FPS | %d ms"):format(
+        ("Forma - %d FPS | %d ms"):format(
             FPS,
             Ping
         )
@@ -935,11 +993,11 @@ Toggles.ShowWatermark:OnChanged(function()
 end)
 
 MenuGroup:AddButton({
-    Text = "Test notification",
+    Text = "Send status notification",
     Func = function()
         Library:Notify({
             Title = "Forma",
-            Text = "The example UI is working.",
+            Text = "Interface is working.",
             Duration = 3,
         })
     end,
@@ -963,8 +1021,8 @@ SaveManager:SetIgnoreIndexes({
     "TargetHUDCustomLabel",
 })
 
-ThemeManager:SetFolder("ExampleShowcase")
-SaveManager:SetFolder("ExampleShowcase")
+ThemeManager:SetFolder("FormaSettings")
+SaveManager:SetFolder("FormaSettings")
 
 SaveManager:BuildConfigSection(Tabs["UI Settings"])
 ThemeManager:ApplyToTab(Tabs["UI Settings"])
@@ -977,13 +1035,13 @@ Library:OnUnload(function()
         WatermarkConnection = nil
     end
 
-    print("Example showcase unloaded")
+    print("Forma unloaded")
 end)
 
 SaveManager:LoadAutoloadConfig()
 
 Library:Notify({
-    Title = "Forma Showcase",
-    Text = "Example showcase loaded.",
+    Title = "Forma",
+    Text = "Interface loaded.",
     Duration = 4,
 })
