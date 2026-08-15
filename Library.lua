@@ -2255,7 +2255,7 @@ function Library:AddToolTip(Info, HoverInstance)
         end
 
         Show()
-    end
+    end)
 
     HoverInstance.MouseLeave:Connect(Hide)
 
