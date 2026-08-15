@@ -40,14 +40,15 @@ local MenuManager = {} do
 		Slider = { Style = 'Quart'; Direction = 'Out'; Scale = 0.72; Min = 0.09; Max = 0.18; };
 		Badge = { Style = 'Quart'; Direction = 'Out'; Scale = 0.88; Min = 0.10; Max = 0.22; };
 		Health = { Style = 'Sine'; Direction = 'Out'; Scale = 0.96; Min = 0.11; Max = 0.30; };
-		DragRelease = { Style = 'Sine'; Direction = 'Out'; Scale = 0.70; Min = 0.06; Max = 0.12; };
-		Tab = { Style = 'Quint'; Direction = 'Out'; Scale = 1.00; Min = 0.18; Max = 0.30; };
-		TabExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.92; Min = 0.12; Max = 0.22; };
-		TabIndicator = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.12; Max = 0.26; };
+		DragRelease = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.78; Min = 0.07; Max = 0.14; };
+		Tab = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.04; Min = 0.21; Max = 0.34; };
+		TabExit = { Style = 'Sine'; Direction = 'InOut'; Scale = 0.98; Min = 0.16; Max = 0.25; };
+		TabIndicator = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.98; Min = 0.13; Max = 0.27; };
 		Picker = { Style = 'Quart'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.30; };
-		Dropdown = { Style = 'Quart'; Direction = 'Out'; Scale = 0.92; Min = 0.12; Max = 0.24; };
-		PopupExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.92; Min = 0.12; Max = 0.22; };
-		Tooltip = { Style = 'Quart'; Direction = 'Out'; Scale = 0.94; Min = 0.12; Max = 0.22; };
+		Dropdown = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.00; Min = 0.16; Max = 0.28; };
+		DropdownSearch = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.00; Min = 0.15; Max = 0.25; };
+		PopupExit = { Style = 'Sine'; Direction = 'InOut'; Scale = 0.96; Min = 0.15; Max = 0.24; };
+		Tooltip = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.28; };
 		Notification = { Style = 'Quint'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.30; };
 		NotificationExit = { Style = 'Cubic'; Direction = 'InOut'; Scale = 0.94; Min = 0.13; Max = 0.24; };
 		Menu = { Style = 'Quint'; Direction = 'Out'; Scale = 1.00; Min = 0.19; Max = 0.34; };
@@ -129,9 +130,9 @@ local MenuManager = {} do
 	end
 
 	function MenuManager:GetDragResponse()
-		-- Kept for backwards compatibility. Dragging itself is now direct and only
-		-- the final sub-frame correction is eased.
-		return 1
+		-- Exponential response (per second) used by direct-manipulation surfaces.
+		-- 34 is responsive at high refresh rates while filtering cursor stair-steps.
+		return 34
 	end
 
 	function MenuManager:GetReleaseDuration(Distance)
