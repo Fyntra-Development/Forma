@@ -1,0 +1,56 @@
+name: Agent fix slider callback and validate
+
+on:
+  push:
+    branches:
+      - agent/fix-slider-focuslost-syntax-v2
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rewrite slider FocusLost callback
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Library.lua')
+          text = path.read_text()
+          old = """        ValueEditor.FocusLost:Connect(function()\n            local TypedValue = tonumber(ValueEditor.Text);\n\n            if TypedValue then\n                Slider:SetValue(TypedValue);\n                Library:AttemptSave();\n            end;\n\n            ValueEditor.Visible = false;\n            ValueLabel.Visible = true;\n            ValueEditor.Text = tostring(Slider.Value);\n       end);\n"""
+          new = """        local function CommitValueEdit()\n            local TypedValue = tonumber(ValueEditor.Text);\n\n            if TypedValue then\n                Slider:SetValue(TypedValue);\n                Library:AttemptSave();\n            end\n\n            ValueEditor.Visible = false;\n            ValueLabel.Visible = true;\n            ValueEditor.Text = tostring(Slider.Value);\n        end\n\n        ValueEditor.FocusLost:Connect(CommitValueEdit)\n"""
+          if old not in text:
+              raise SystemExit('target slider FocusLost block not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Build Luau compiler
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/luau-lang/luau.git /tmp/luau
+          cmake -S /tmp/luau -B /tmp/luau/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/luau/build --target Luau.Repl.CLI -j2
+
+      - name: Compile Library.lua
+        shell: bash
+        run: |
+          /tmp/luau/build/luau --compile Library.lua >/dev/null
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Rewrite slider FocusLost callback safely"
+          git push
