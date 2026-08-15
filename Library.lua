@@ -1504,7 +1504,7 @@ function Library:MakeDraggable(Instance, Cutoff)
             Connection:Disconnect();
             State[ConnectionName] = nil;
         end
-    end
+    end;
 
     local function GetPointer(Input)
         if Input and Input.UserInputType == Enum.UserInputType.Touch then
@@ -1814,11 +1814,16 @@ function Library:MakeResizable(Instance, Config)
     return State;
 end;
 
+-- Keep animated input text in one shaped label. Rendering each codepoint in a
+-- separate TextLabel loses the font shaping/side bearings used by the measured
+-- complete string, which can make proportional/custom-font glyphs overlap.
 function Library:EnableTypingAnimation(TextBox)
     if not TextBox or not TextBox:IsA('TextBox') then
         return nil;
     end
-    if TextBox:GetAttribute('FormaTypingAnimation') then return Library.TypingControllers[TextBox]; end
+    if TextBox:GetAttribute('FormaTypingAnimation') then
+        return Library.TypingControllers[TextBox];
+    end
     TextBox:SetAttribute('FormaTypingAnimation', true);
 
     local Parent = TextBox.Parent;
@@ -1826,8 +1831,6 @@ function Library:EnableTypingAnimation(TextBox)
     local BaseSize = Library.BaseTextSizes[TextBox] or 14;
     local OriginalTextTransparency = TextBox.TextTransparency;
     local OriginalStrokeTransparency = TextBox.TextStrokeTransparency;
-    local PreviousCharacters = {};
-    local CharacterLabels = {};
 
     local function GetTextColorKey()
         return TextBox:IsFocused() and 'AccentColor' or 'FontColor';
@@ -1838,6 +1841,7 @@ function Library:EnableTypingAnimation(TextBox)
         TextBox.TextColor3 = Library[ColorKey];
         local RegistryEntry = Library.RegistryMap[TextBox];
         if RegistryEntry then RegistryEntry.Properties.TextColor3 = ColorKey; end;
+        return ColorKey;
     end;
 
     local Layer = Library:Create('Frame', {
@@ -1867,6 +1871,21 @@ function Library:EnableTypingAnimation(TextBox)
     });
     Library.RegistryMap[Placeholder].Properties.TextColor3 = 'DisabledTextColor';
 
+    local RenderedText = Library:CreateLabel({
+        Active = false;
+        BackgroundTransparency = 1;
+        Position = UDim2.fromScale(0, 0);
+        Size = UDim2.fromScale(1, 1);
+        Text = TextBox.Text or '';
+        TextColor3 = Library.FontColor;
+        TextSize = BaseSize;
+        TextXAlignment = TextBox.TextXAlignment;
+        TextYAlignment = TextBox.TextYAlignment;
+        TextWrapped = false;
+        ZIndex = Layer.ZIndex + 2;
+        Parent = Layer;
+    });
+
     local Indicator = Library:Create('Frame', {
         Name = 'FormaTypingIndicator';
         AnchorPoint = Vector2.new(0, 0.5);
@@ -1888,25 +1907,11 @@ function Library:EnableTypingAnimation(TextBox)
     TextBox.TextTransparency = 1;
     TextBox.TextStrokeTransparency = 1;
 
-    local function SplitCharacters(Text)
-        local Result = {};
-        local Success = pcall(function()
-            for _, Codepoint in utf8.codes(Text) do
-                table.insert(Result, utf8.char(Codepoint));
-            end
-        end);
-        if not Success then
-            table.clear(Result);
-            for Index = 1, #Text do table.insert(Result, Text:sub(Index, Index)); end
-        end
-        return Result;
-    end
-
     local function Measure(Text)
         if Text == '' then return 0; end
         local Width = Library:GetTextBounds(Text, Library.Font, BaseSize, Vector2.new(100000, 100000));
         return tonumber(Width) or 0;
-    end
+    end;
 
     local function GetTextOrigin(TextWidth)
         local Available = math.max(TextBox.AbsoluteSize.X, 0);
@@ -1916,36 +1921,12 @@ function Library:EnableTypingAnimation(TextBox)
             return Available - TextWidth;
         end
         return 0;
-    end
-
-    local function ClearCharacters()
-        for _, Label in ipairs(CharacterLabels) do
-            Library:RemoveFromRegistry(Label);
-            Label:Destroy();
-        end
-        table.clear(CharacterLabels);
-    end
-
-    local function GetInsertedRange(Characters)
-        local Prefix = 0;
-        local Limit = math.min(#PreviousCharacters, #Characters);
-        while Prefix < Limit and PreviousCharacters[Prefix + 1] == Characters[Prefix + 1] do
-            Prefix = Prefix + 1;
-        end
-
-        local Suffix = 0;
-        while Suffix < (#PreviousCharacters - Prefix) and Suffix < (#Characters - Prefix)
-            and PreviousCharacters[#PreviousCharacters - Suffix] == Characters[#Characters - Suffix] do
-            Suffix = Suffix + 1;
-        end
-
-        return Prefix + 1, #Characters - Suffix;
-    end
+    end;
 
     local function UpdateIndicator(Instant)
         local Cursor = TextBox.CursorPosition;
-        local BeforeCursor = TextBox.Text;
-        if Cursor and Cursor >= 1 then BeforeCursor = TextBox.Text:sub(1, Cursor - 1); end
+        local BeforeCursor = TextBox.Text or '';
+        if Cursor and Cursor >= 1 then BeforeCursor = BeforeCursor:sub(1, Cursor - 1); end
         local X = GetTextOrigin(Measure(TextBox.Text or '')) + Measure(BeforeCursor);
         local Target = UDim2.new(0, X, 0.5, 0);
         Indicator.Size = UDim2.fromOffset(1, math.max(TextBox.TextSize - 2, 7));
@@ -1955,48 +1936,21 @@ function Library:EnableTypingAnimation(TextBox)
         else
             Library:Animate(Indicator, { Position = Target }, 0.11, nil, 'TypingIndicator');
         end
-    end
+    end;
 
-    local function Rebuild(AnimateInserted)
-        local Characters = SplitCharacters(TextBox.Text or '');
-        local InsertStart, InsertEnd = GetInsertedRange(Characters);
-        local OriginX = GetTextOrigin(Measure(TextBox.Text or ''));
-        local TextColorKey = GetTextColorKey();
-        ClearCharacters();
-
-        local Prefix = '';
-        for Index, Character in ipairs(Characters) do
-            local StartX = OriginX + Measure(Prefix);
-            Prefix = Prefix .. Character;
-            local EndX = OriginX + Measure(Prefix);
-            local IsInserted = AnimateInserted and Index >= InsertStart and Index <= InsertEnd;
-            local Label = Library:CreateLabel({
-                Active = false;
-                BackgroundTransparency = 1;
-                Position = UDim2.fromOffset(StartX, IsInserted and 1 or 0);
-                Size = UDim2.new(0, math.max(EndX - StartX + 1, 1), 1, 0);
-                Text = Character;
-                TextColor3 = Library[TextColorKey];
-                TextSize = BaseSize;
-                TextXAlignment = Enum.TextXAlignment.Left;
-                TextYAlignment = TextBox.TextYAlignment;
-                ZIndex = Layer.ZIndex + 2;
-                Parent = Layer;
-            });
-            Library.RegistryMap[Label].Properties.TextColor3 = TextColorKey;
-            table.insert(CharacterLabels, Label);
-
-            if IsInserted then
-                Library:SetUnifiedFadeProgress(Label, 0);
-                Library:Animate(Label, { Position = UDim2.fromOffset(StartX, 0) }, 0.16, nil, 'Typing');
-                Library:TweenUnifiedFade(Label, 1, 0.17, nil, 'Typing');
-            end
-        end
-
-        PreviousCharacters = Characters;
-        Placeholder.Visible = #Characters == 0;
-        UpdateIndicator(not AnimateInserted);
-    end
+    local function Rebuild()
+        local Text = TextBox.Text or '';
+        local TextColorKey = SyncTextColor();
+        RenderedText.Text = Text;
+        RenderedText.TextColor3 = Library[TextColorKey];
+        RenderedText.TextXAlignment = TextBox.TextXAlignment;
+        RenderedText.TextYAlignment = TextBox.TextYAlignment;
+        RenderedText.TextSize = TextBox.TextSize;
+        local RegistryEntry = Library.RegistryMap[RenderedText];
+        if RegistryEntry then RegistryEntry.Properties.TextColor3 = TextColorKey; end;
+        Placeholder.Visible = Text == '';
+        UpdateIndicator(true);
+    end;
 
     local function SyncLayer()
         Layer.Position = TextBox.Position;
@@ -2004,48 +1958,46 @@ function Library:EnableTypingAnimation(TextBox)
         Layer.Visible = TextBox.Visible;
         Placeholder.Text = TextBox.PlaceholderText;
         Placeholder.TextXAlignment = TextBox.TextXAlignment;
-    end
+        Placeholder.TextYAlignment = TextBox.TextYAlignment;
+        RenderedText.TextXAlignment = TextBox.TextXAlignment;
+        RenderedText.TextYAlignment = TextBox.TextYAlignment;
+    end;
 
-    TextBox:GetPropertyChangedSignal('Text'):Connect(function()
-        Rebuild(TextBox:IsFocused());
-    end);
+    TextBox:GetPropertyChangedSignal('Text'):Connect(Rebuild);
     TextBox:GetPropertyChangedSignal('CursorPosition'):Connect(function()
         UpdateIndicator(false);
     end);
     TextBox:GetPropertyChangedSignal('Position'):Connect(SyncLayer);
     TextBox:GetPropertyChangedSignal('Size'):Connect(function()
         SyncLayer();
-        Rebuild(false);
+        Rebuild();
     end);
     TextBox:GetPropertyChangedSignal('Visible'):Connect(SyncLayer);
     TextBox:GetPropertyChangedSignal('TextXAlignment'):Connect(function()
         SyncLayer();
-        Rebuild(false);
+        Rebuild();
     end);
-    TextBox:GetPropertyChangedSignal('TextSize'):Connect(function()
-        Rebuild(false);
-    end);
+    TextBox:GetPropertyChangedSignal('TextYAlignment'):Connect(SyncLayer);
+    TextBox:GetPropertyChangedSignal('TextSize'):Connect(Rebuild);
     TextBox:GetPropertyChangedSignal('PlaceholderText'):Connect(SyncLayer);
     TextBox.Focused:Connect(function()
-        SyncTextColor();
-        Rebuild(false);
+        Rebuild();
         UpdateIndicator(true);
         Library:TweenUnifiedFade(Indicator, 1, 0.16, nil, 'Fade');
     end);
     TextBox.FocusLost:Connect(function()
-        SyncTextColor();
-        Rebuild(false);
+        Rebuild();
         Library:TweenUnifiedFade(Indicator, 0, 0.18, nil, 'Fade');
     end);
 
-    SyncTextColor();
     SyncLayer();
-    Rebuild(false);
+    Rebuild();
 
     local Controller = {
         Layer = Layer;
+        Text = RenderedText;
         Indicator = Indicator;
-        Refresh = function() Rebuild(false); end;
+        Refresh = Rebuild;
         OriginalTextTransparency = OriginalTextTransparency;
         OriginalStrokeTransparency = OriginalStrokeTransparency;
     };
@@ -2303,7 +2255,7 @@ function Library:AddToolTip(Info, HoverInstance)
         end
 
         Show()
-    end)
+    end
 
     HoverInstance.MouseLeave:Connect(Hide)
 
@@ -4716,7 +4668,7 @@ do
             ValueEditor.Visible = false;
             ValueLabel.Visible = true;
             ValueEditor.Text = tostring(Slider.Value);
-        end);
+        end;
 
         local function Nudge(Direction)
             Slider:SetValue(Slider.Value + (Slider.Step * Direction));
@@ -4984,7 +4936,7 @@ do
         local DropdownGradient = DropdownInner:FindFirstChildOfClass('UIGradient');
         if DropdownGradient then
             DropdownGradient:Clone().Parent = ListOuter;
-        end;
+        end
 
         if Searchable then
             SearchOuter = Library:Create('CanvasGroup', {
