@@ -1076,12 +1076,17 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         local NewY = Button.AbsolutePosition.Y - Layer.AbsolutePosition.Y;
         local TargetPosition = UDim2.fromOffset(NewLeft, NewY);
         local TargetSize = UDim2.fromOffset(Button.AbsoluteSize.X, Height or 21);
+        local WasVisible = Indicator.Visible;
 
         if Instant or not Indicator.Visible or Indicator.AbsoluteSize.X <= 0 then
             Library:CancelMotion(Indicator);
             Indicator.Position = TargetPosition;
             Indicator.Size = TargetSize;
             Indicator.Visible = true;
+            if not WasVisible then
+                Stroke.Transparency = 1;
+                Library:Animate(Stroke, { Transparency = 0; }, 0.18, nil, 'Fade');
+            end;
             return;
         end;
 
@@ -1339,6 +1344,11 @@ function Library:AddToolTip(Info, HoverInstance)
         Parent = Tooltip,
     })
 
+    local ContentScale = Library:Create('UIScale', {
+        Scale = 0.94,
+        Parent = Content,
+    })
+
     Library:AddCorner(Content, 3);
 
     local Stroke = Library:Create('UIStroke', {
@@ -1442,18 +1452,19 @@ function Library:AddToolTip(Info, HoverInstance)
         AnimationId = AnimationId + 1
         local WasVisible = Tooltip.Visible
         Library:CancelMotion(Content)
+        Library:CancelMotion(ContentScale)
         IsHovering = true
         Tooltip.Visible = true
         if not WasVisible then
-            Content.Position = UDim2.fromOffset(0, 4)
+            Content.Position = UDim2.fromOffset(0, 7)
             Content.GroupTransparency = 1
+            ContentScale.Scale = 0.94
         end
 
         StartFollowing()
-        Library:Animate(Content, {
-            Position = UDim2.fromOffset(0, 0),
-            GroupTransparency = 0,
-        }, 0.11, nil, 'Tooltip')
+        Library:Animate(Content, { Position = UDim2.fromOffset(0, 0), }, 0.16, nil, 'Tooltip')
+        Library:Animate(ContentScale, { Scale = 1, }, 0.17, nil, 'Popup')
+        Library:Animate(Content, { GroupTransparency = 0, }, 0.14, nil, 'Fade')
     end
 
     Hide = function(Instant)
@@ -1467,9 +1478,11 @@ function Library:AddToolTip(Info, HoverInstance)
         if Instant then
             AnimationId = AnimationId + 1
             Library:CancelMotion(Content)
+            Library:CancelMotion(ContentScale)
             IsHovering = false
             Tooltip.Visible = false
             Content.GroupTransparency = 1
+            ContentScale.Scale = 0.96
             if FollowConnection then
                 FollowConnection:Disconnect()
                 FollowConnection = nil
@@ -1484,12 +1497,12 @@ function Library:AddToolTip(Info, HoverInstance)
         local CurrentId = AnimationId
 
         Library:CancelMotion(Content)
+        Library:CancelMotion(ContentScale)
         IsHovering = false
 
-        Library:Animate(Content, {
-            Position = UDim2.fromOffset(0, -3),
-            GroupTransparency = 1,
-        }, 0.09, function(State)
+        Library:Animate(Content, { Position = UDim2.fromOffset(0, -5), }, 0.13, nil, 'PopupExit')
+        Library:Animate(ContentScale, { Scale = 0.97, }, 0.13, nil, 'PopupExit')
+        local FadeTween = Library:Animate(Content, { GroupTransparency = 1, }, 0.12, function(State)
             if State == Enum.PlaybackState.Cancelled then return end
             if CurrentId ~= AnimationId or IsHovering then
                 return
@@ -1505,7 +1518,10 @@ function Library:AddToolTip(Info, HoverInstance)
                 FollowConnection = nil
             end
 
-        end, 'Tooltip')
+        end, 'Fade')
+        if not FadeTween and CurrentId == AnimationId and not IsHovering then
+            Tooltip.Visible = false
+        end
     end
 
     HoverInstance.MouseEnter:Connect(function()
@@ -1748,6 +1764,11 @@ do
             Parent = ScreenGui,
         });
 
+        local PickerScale = Library:Create('UIScale', {
+            Scale = 0.94;
+            Parent = PickerFrameOuter;
+        });
+
         DisplayFrame:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()
             PickerFrameOuter.Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18);
         end)
@@ -1952,13 +1973,20 @@ do
         local ContextMenu = {}
         do
             ContextMenu.Options = {}
-            ContextMenu.Container = Library:Create('Frame', {
+            ContextMenu.Container = Library:Create('CanvasGroup', {
                 BorderColor3 = Color3.new(),
+                GroupTransparency = 1,
                 ZIndex = 14,
 
                 Visible = false,
                 Parent = ScreenGui
             })
+
+            ContextMenu.Scale = Library:Create('UIScale', {
+                Scale = 0.95;
+                Parent = ContextMenu.Container;
+            });
+            ContextMenu.AnimationId = 0;
 
             ContextMenu.Inner = Library:Create('Frame', {
                 BackgroundColor3 = Library.BackgroundColor;
@@ -2015,11 +2043,26 @@ do
             });
 
             function ContextMenu:Show()
-                self.Container.Visible = true
+                self.AnimationId = self.AnimationId + 1
+                if not self.Container.Visible then
+                    self.Container.GroupTransparency = 1
+                    self.Scale.Scale = 0.95
+                    self.Container.Visible = true
+                end
+                Library:Animate(self.Scale, { Scale = 1; }, 0.18, nil, 'Popup')
+                Library:TweenUnifiedFade(self.Container, 1, 0.15, nil, 'Fade')
             end
 
             function ContextMenu:Hide()
-                self.Container.Visible = false
+                if not self.Container.Visible then return end
+                self.AnimationId = self.AnimationId + 1
+                local CurrentId = self.AnimationId
+                Library:Animate(self.Scale, { Scale = 0.97; }, 0.13, nil, 'PopupExit')
+                Library:TweenUnifiedFade(self.Container, 0, 0.13, function(State)
+                    if CurrentId == self.AnimationId and State ~= Enum.PlaybackState.Cancelled then
+                        self.Container.Visible = false
+                    end
+                end, 'Fade')
             end
 
             function ContextMenu:AddOption(Str, Callback)
@@ -2159,6 +2202,8 @@ do
                 pcall(function() Tween:Cancel(); end);
             end;
             table.clear(PickerTweens);
+            Library:CancelMotion(PickerFrameOuter);
+            Library:CancelMotion(PickerScale);
         end;
 
         local function PlayPickerTween(Instance, InfoValue, Properties)
@@ -2181,17 +2226,19 @@ do
 
             local TargetPosition = GetPickerTargetPosition();
             if not PickerFrameOuter.Visible then
-                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 5);
-                Library:SetFadeTree(PickerFrameOuter, true);
+                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 10);
+                PickerFrameOuter.GroupTransparency = 1;
+                PickerScale.Scale = 0.94;
             end;
 
             PickerFrameOuter.Visible = true;
             Library.OpenedFrames[PickerFrameOuter] = true;
 
-            PlayPickerTween(PickerFrameOuter, Library:GetMenuTweenInfo(0.15, 'Picker'), {
+            PlayPickerTween(PickerFrameOuter, Library:GetMenuTweenInfo(0.21, 'Picker'), {
                 Position = TargetPosition;
             });
-            Library:TweenFadeTree(PickerFrameOuter, false, 0.12);
+            PlayPickerTween(PickerScale, Library:GetMenuTweenInfo(0.22, 'Popup'), { Scale = 1; });
+            Library:TweenUnifiedFade(PickerFrameOuter, 1, 0.18, nil, 'Fade');
         end;
 
         function ColorPicker:Hide()
@@ -2206,26 +2253,24 @@ do
             Library.OpenedFrames[PickerFrameOuter] = nil;
 
             local TargetPosition = GetPickerTargetPosition();
-            Library:TweenFadeTree(PickerFrameOuter, true, 0.09);
-            local ExitTween = PlayPickerTween(PickerFrameOuter, Library:GetMenuTweenInfo(0.11, 'Picker'), {
-                Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 4);
-            });
-
+            local Finished = false;
             local function FinishHide(State)
-                if CurrentId ~= PickerAnimationId or State == Enum.PlaybackState.Cancelled then
+                if Finished or CurrentId ~= PickerAnimationId or State == Enum.PlaybackState.Cancelled then
                     return;
                 end;
+                Finished = true;
 
                 PickerFrameOuter.Visible = false;
                 PickerFrameOuter.Position = TargetPosition;
-                Library:SetFadeTree(PickerFrameOuter, false);
+                PickerFrameOuter.GroupTransparency = 0;
+                PickerScale.Scale = 1;
                 table.clear(PickerTweens);
             end
-            if ExitTween then
-                ExitTween.Completed:Connect(FinishHide);
-            else
-                FinishHide(Enum.PlaybackState.Completed);
-            end
+            PlayPickerTween(PickerScale, Library:GetMenuTweenInfo(0.15, 'PopupExit'), { Scale = 0.97; });
+            PlayPickerTween(PickerFrameOuter, Library:GetMenuTweenInfo(0.15, 'PopupExit'), {
+                Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 7);
+            });
+            Library:TweenUnifiedFade(PickerFrameOuter, 0, 0.14, FinishHide, 'Fade');
         end;
 
         function ColorPicker:SetValue(HSV, Transparency)
@@ -2416,14 +2461,44 @@ do
         DisplayLabel:GetPropertyChangedSignal('TextBounds'):Connect(ResizeKeyDisplay);
         SetKeyDisplay(Info.Default);
 
-        local ModeSelectOuter = Library:Create('Frame', {
+        local ModeSelectOuter = Library:Create('CanvasGroup', {
             BorderColor3 = Color3.new(0, 0, 0);
+            GroupTransparency = 1;
             Position = UDim2.fromOffset(ToggleLabel.AbsolutePosition.X + ToggleLabel.AbsoluteSize.X + 4, ToggleLabel.AbsolutePosition.Y + 1);
             Size = UDim2.new(0, 60, 0, 45 + 2);
             Visible = false;
             ZIndex = 14;
             Parent = ScreenGui;
         });
+
+        local ModeSelectScale = Library:Create('UIScale', {
+            Scale = 0.95;
+            Parent = ModeSelectOuter;
+        });
+
+        local ModeAnimationId = 0;
+        local function ShowModeSelect()
+            ModeAnimationId = ModeAnimationId + 1;
+            if not ModeSelectOuter.Visible then
+                ModeSelectOuter.GroupTransparency = 1;
+                ModeSelectScale.Scale = 0.95;
+                ModeSelectOuter.Visible = true;
+            end
+            Library:Animate(ModeSelectScale, { Scale = 1; }, 0.18, nil, 'Popup');
+            Library:TweenUnifiedFade(ModeSelectOuter, 1, 0.15, nil, 'Fade');
+        end
+
+        local function HideModeSelect()
+            if not ModeSelectOuter.Visible then return; end
+            ModeAnimationId = ModeAnimationId + 1;
+            local CurrentId = ModeAnimationId;
+            Library:Animate(ModeSelectScale, { Scale = 0.97; }, 0.13, nil, 'PopupExit');
+            Library:TweenUnifiedFade(ModeSelectOuter, 0, 0.13, function(State)
+                if CurrentId == ModeAnimationId and State ~= Enum.PlaybackState.Cancelled then
+                    ModeSelectOuter.Visible = false;
+                end
+            end, 'Fade');
+        end
 
         ToggleLabel:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()
             ModeSelectOuter.Position = UDim2.fromOffset(ToggleLabel.AbsolutePosition.X + ToggleLabel.AbsoluteSize.X + 4, ToggleLabel.AbsolutePosition.Y + 1);
@@ -2483,7 +2558,7 @@ do
                 Label.TextColor3 = Library.AccentColor;
                 Library.RegistryMap[Label].Properties.TextColor3 = 'AccentColor';
 
-                ModeSelectOuter.Visible = false;
+                HideModeSelect();
             end;
 
             function ModeButton:Deselect()
@@ -2639,7 +2714,7 @@ do
                     Event:Disconnect();
                 end);
             elseif Input.UserInputType == Enum.UserInputType.MouseButton2 and not Library:MouseIsOverOpenedFrame() then
-                ModeSelectOuter.Visible = true;
+                ShowModeSelect();
             end;
         end);
 
@@ -2671,7 +2746,7 @@ do
                 if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
                     or Mouse.Y < (AbsPos.Y - 20 - 1) or Mouse.Y > AbsPos.Y + AbsSize.Y then
 
-                    ModeSelectOuter.Visible = false;
+                    HideModeSelect();
                 end;
             end;
         end))
@@ -2842,6 +2917,11 @@ do
         end
 
         local function InitEvents(Button)
+            Button.PressScale = Button.PressScale or Library:Create('UIScale', {
+                Scale = 1;
+                Parent = Button.Inner;
+            });
+
             local function WaitForEvent(event, timeout, validator)
                 local bindable = Instance.new('BindableEvent')
                 local connection = event:Once(function(...)
@@ -2871,9 +2951,24 @@ do
                 return true
             end
 
+            local function ReleasePress()
+                Library:Animate(Button.PressScale, { Scale = 1; }, 0.14, nil, 'Release');
+            end
+
+            Button.Outer.MouseLeave:Connect(ReleasePress)
+
             Button.Outer.InputBegan:Connect(function(Input)
                 if not ValidateClick(Input) then return end
                 if Button.Locked then return end
+
+                Library:Animate(Button.PressScale, { Scale = 0.965; }, 0.07, nil, 'Press');
+                local ReleaseConnection;
+                ReleaseConnection = Input.Changed:Connect(function()
+                    if Input.UserInputState == Enum.UserInputState.End then
+                        ReleaseConnection:Disconnect();
+                        ReleasePress();
+                    end
+                end)
 
                 if Button.DoubleClick then
                     Library:RemoveFromRegistry(Button.Label)
@@ -3209,6 +3304,11 @@ do
             Parent = ToggleOuter;
         });
 
+        local ToggleScale = Library:Create('UIScale', {
+            Scale = 1;
+            Parent = ToggleInner;
+        });
+
         Library:AddCorner(ToggleOuter, 3);
         Library:AddCorner(ToggleInner, 3);
 
@@ -3248,14 +3348,15 @@ do
         );
 
         function Toggle:UpdateColors()
-            Toggle:Display();
+            Toggle:Display(true);
         end;
 
         if type(Info.Tooltip) == 'string' or type(Info.Tooltip) == 'table' then
             Library:AddToolTip(Info.Tooltip, ToggleRegion)
         end
 
-        function Toggle:Display()
+        local ToggleAnimationId = 0;
+        function Toggle:Display(Instant)
             local BackgroundKey = Toggle.Value and 'AccentColor' or 'MainColor';
             local BorderKey = Toggle.Value and 'AccentColorDark' or 'OutlineColor';
 
@@ -3264,6 +3365,20 @@ do
 
             Library.RegistryMap[ToggleInner].Properties.BackgroundColor3 = BackgroundKey;
             Library.RegistryMap[ToggleInner].Properties.BorderColor3 = BorderKey;
+
+            ToggleAnimationId = ToggleAnimationId + 1;
+            local CurrentAnimation = ToggleAnimationId;
+            if Instant then
+                Library:CancelMotion(ToggleScale);
+                ToggleScale.Scale = 1;
+            else
+                local PulseTarget = Toggle.Value and 0.88 or 1.08;
+                Library:Animate(ToggleScale, { Scale = PulseTarget; }, 0.07, function(State)
+                    if State ~= Enum.PlaybackState.Cancelled and CurrentAnimation == ToggleAnimationId then
+                        Library:Animate(ToggleScale, { Scale = 1; }, 0.15, nil, 'Toggle');
+                    end
+                end, 'Press');
+            end;
         end;
 
         function Toggle:OnChanged(Func)
@@ -3274,8 +3389,9 @@ do
         function Toggle:SetValue(Bool)
             Bool = (not not Bool);
 
+            local Changed = Toggle.Value ~= Bool;
             Toggle.Value = Bool;
-            Toggle:Display();
+            Toggle:Display(not Changed);
 
             for _, Addon in next, Toggle.Addons do
                 if Addon.Type == 'KeyPicker' and Addon.SyncToggleState then
@@ -3302,7 +3418,7 @@ do
             Library:AddToRegistry(ToggleLabel, { TextColor3 = 'RiskColor' })
         end
 
-        Toggle:Display();
+        Toggle:Display(true);
         Groupbox:AddBlank(Info.BlankSize or 5 + 2);
         Groupbox:Resize();
 
@@ -3480,6 +3596,11 @@ do
             Size = UDim2.fromOffset(7, 13);
             ZIndex = 10;
             Parent = SliderRow;
+        });
+
+        local ThumbScale = Library:Create('UIScale', {
+            Scale = 1;
+            Parent = Thumb;
         });
 
         Library:AddCorner(Thumb, 3);
@@ -3738,6 +3859,7 @@ do
             IsDragging = false;
             if DragChangedConnection then DragChangedConnection:Disconnect(); DragChangedConnection = nil; end
             if DragEndedConnection then DragEndedConnection:Disconnect(); DragEndedConnection = nil; end
+            Library:Animate(ThumbScale, { Scale = 1; }, 0.14, nil, 'Release');
             Slider:Display(true);
             Library:AttemptSave();
         end;
@@ -3751,6 +3873,7 @@ do
 
             StopSliderDrag();
             IsDragging = true;
+            Library:Animate(ThumbScale, { Scale = 1.22; }, 0.09, nil, 'Press');
 
             local function UpdateFromX(PointerX)
                 local Width = TrackWidth();
@@ -3911,6 +4034,7 @@ do
         local ListTargetPosition = UDim2.fromOffset(0, 0);
         local SearchTargetPosition = UDim2.fromOffset(0, 0);
         local SearchOuter;
+        local SearchScale;
         local SearchBox;
 
         local ListOuter = Library:Create('CanvasGroup', {
@@ -3923,6 +4047,11 @@ do
             ZIndex = 20;
             Visible = false;
             Parent = ScreenGui;
+        });
+
+        local ListScale = Library:Create('UIScale', {
+            Scale = 0.95;
+            Parent = ListOuter;
         });
 
         Library:AddCorner(ListOuter, 3);
@@ -3953,6 +4082,11 @@ do
                 ZIndex = 26;
                 Visible = false;
                 Parent = ScreenGui;
+            });
+
+            SearchScale = Library:Create('UIScale', {
+                Scale = 0.95;
+                Parent = SearchOuter;
             });
 
             local SearchInner = Library:Create('Frame', {
@@ -4306,6 +4440,10 @@ do
                 pcall(function() Tween:Cancel(); end);
             end
             table.clear(DropdownTweens);
+            Library:CancelMotion(ListOuter);
+            Library:CancelMotion(ListScale);
+            if SearchOuter then Library:CancelMotion(SearchOuter); end
+            if SearchScale then Library:CancelMotion(SearchScale); end
         end
 
         local function PlayDropdownTween(Instance, InfoValue, Properties)
@@ -4372,21 +4510,25 @@ do
             RecalculateListPosition();
 
             if SearchOuter then
-                SearchOuter.Position = UDim2.fromOffset(SearchTargetPosition.X.Offset, SearchTargetPosition.Y.Offset - 5);
-                Library:SetFadeTree(SearchOuter, true);
+                SearchOuter.Position = UDim2.fromOffset(SearchTargetPosition.X.Offset, SearchTargetPosition.Y.Offset - 9);
+                SearchOuter.GroupTransparency = 1;
+                SearchScale.Scale = 0.95;
                 SearchOuter.Visible = true;
                 Library.OpenedFrames[SearchOuter] = true;
-                PlayDropdownTween(SearchOuter, Library:GetMenuTweenInfo(0.13, 'Dropdown'), { Position = SearchTargetPosition });
-                Library:TweenMenuFadeTree(SearchOuter, false, 0.10);
+                PlayDropdownTween(SearchOuter, Library:GetMenuTweenInfo(0.19, 'Dropdown'), { Position = SearchTargetPosition });
+                PlayDropdownTween(SearchScale, Library:GetMenuTweenInfo(0.20, 'Popup'), { Scale = 1; });
+                Library:TweenUnifiedFade(SearchOuter, 1, 0.17, nil, 'Fade');
             end
 
-            ListOuter.Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 5);
-            Library:SetFadeTree(ListOuter, true);
+            ListOuter.Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 9);
+            ListOuter.GroupTransparency = 1;
+            ListScale.Scale = 0.95;
             ListOuter.Visible = true;
             Library.OpenedFrames[ListOuter] = true;
-            PlayDropdownTween(ListOuter, Library:GetMenuTweenInfo(0.14, 'Dropdown'), { Position = ListTargetPosition });
-            Library:TweenMenuFadeTree(ListOuter, false, 0.11);
-            PlayDropdownTween(DropdownArrow, Library:GetMenuTweenInfo(0.12, 'Dropdown'), { Rotation = 180 });
+            PlayDropdownTween(ListOuter, Library:GetMenuTweenInfo(0.20, 'Dropdown'), { Position = ListTargetPosition });
+            PlayDropdownTween(ListScale, Library:GetMenuTweenInfo(0.21, 'Popup'), { Scale = 1; });
+            Library:TweenUnifiedFade(ListOuter, 1, 0.18, nil, 'Fade');
+            PlayDropdownTween(DropdownArrow, Library:GetMenuTweenInfo(0.16, 'Dropdown'), { Rotation = 180 });
             StartDropdownAutoScroll();
         end;
 
@@ -4400,36 +4542,38 @@ do
             Library.OpenedFrames[ListOuter] = nil;
             if SearchOuter then Library.OpenedFrames[SearchOuter] = nil; end
 
-            Library:TweenMenuFadeTree(ListOuter, true, 0.09);
-            local ExitTween = PlayDropdownTween(ListOuter, Library:GetMenuTweenInfo(0.11, 'Dropdown'), {
-                Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 4)
-            });
-
-            if SearchOuter and SearchOuter.Visible then
-                Library:TweenMenuFadeTree(SearchOuter, true, 0.08);
-                PlayDropdownTween(SearchOuter, Library:GetMenuTweenInfo(0.10, 'Dropdown'), {
-                    Position = UDim2.fromOffset(SearchTargetPosition.X.Offset, SearchTargetPosition.Y.Offset - 4)
-                });
-            end
-
-            PlayDropdownTween(DropdownArrow, Library:GetMenuTweenInfo(0.10, 'Dropdown'), { Rotation = 0 });
+            local Finished = false;
             local function FinishClose(State)
-                if CurrentId ~= DropdownAnimationId or Dropdown.Opened or State == Enum.PlaybackState.Cancelled then return; end
+                if Finished or CurrentId ~= DropdownAnimationId or Dropdown.Opened or State == Enum.PlaybackState.Cancelled then return; end
+                Finished = true;
                 ListOuter.Visible = false;
                 ListOuter.Position = ListTargetPosition;
-                Library:SetFadeTree(ListOuter, false);
+                ListOuter.GroupTransparency = 0;
+                ListScale.Scale = 1;
                 if SearchOuter then
                     SearchOuter.Visible = false;
                     SearchOuter.Position = SearchTargetPosition;
-                    Library:SetFadeTree(SearchOuter, false);
+                    SearchOuter.GroupTransparency = 0;
+                    SearchScale.Scale = 1;
                 end
                 table.clear(DropdownTweens);
             end
-            if ExitTween then
-                ExitTween.Completed:Connect(FinishClose);
-            else
-                FinishClose(Enum.PlaybackState.Completed);
+
+            PlayDropdownTween(ListOuter, Library:GetMenuTweenInfo(0.15, 'PopupExit'), {
+                Position = UDim2.fromOffset(ListTargetPosition.X.Offset, ListTargetPosition.Y.Offset - 7)
+            });
+            PlayDropdownTween(ListScale, Library:GetMenuTweenInfo(0.15, 'PopupExit'), { Scale = 0.97; });
+            Library:TweenUnifiedFade(ListOuter, 0, 0.14, FinishClose, 'Fade');
+
+            if SearchOuter and SearchOuter.Visible then
+                Library:TweenUnifiedFade(SearchOuter, 0, 0.13, nil, 'Fade');
+                PlayDropdownTween(SearchOuter, Library:GetMenuTweenInfo(0.14, 'PopupExit'), {
+                    Position = UDim2.fromOffset(SearchTargetPosition.X.Offset, SearchTargetPosition.Y.Offset - 7)
+                });
+                PlayDropdownTween(SearchScale, Library:GetMenuTweenInfo(0.14, 'PopupExit'), { Scale = 0.97; });
             end
+
+            PlayDropdownTween(DropdownArrow, Library:GetMenuTweenInfo(0.14, 'PopupExit'), { Rotation = 0 });
         end;
 
         DropdownOuter.InputBegan:Connect(function(Input)
@@ -4677,13 +4821,19 @@ do
         Parent = Library.NotificationArea;
     });
 
-    local WatermarkOuter = Library:Create('Frame', {
+    local WatermarkOuter = Library:Create('CanvasGroup', {
         BorderColor3 = Color3.new(0, 0, 0);
+        GroupTransparency = 1;
         Position = UDim2.new(0, 100, 0, -25);
         Size = UDim2.new(0, 213, 0, 20);
         ZIndex = 200;
         Visible = false;
         Parent = ScreenGui;
+    });
+
+    local WatermarkScale = Library:Create('UIScale', {
+        Scale = 0.95;
+        Parent = WatermarkOuter;
     });
 
     local WatermarkInner = Library:Create('Frame', {
@@ -4763,6 +4913,8 @@ do
 
     Library.Watermark = WatermarkOuter;
     Library.WatermarkText = WatermarkLabel;
+    Library.WatermarkScale = WatermarkScale;
+    Library.WatermarkAnimationId = 0;
     Library:MakeDraggable(Library.Watermark);
 
     local KeybindOuter = Library:Create('Frame', {
@@ -4828,7 +4980,30 @@ do
 end;
 
 function Library:SetWatermarkVisibility(Bool)
-    Library.Watermark.Visible = Bool;
+    Bool = not not Bool;
+    local Watermark = Library.Watermark;
+    local Scale = Library.WatermarkScale;
+    if not Watermark then return; end
+
+    Library.WatermarkAnimationId = (Library.WatermarkAnimationId or 0) + 1;
+    local CurrentId = Library.WatermarkAnimationId;
+
+    if Bool then
+        if not Watermark.Visible then
+            Watermark.GroupTransparency = 1;
+            if Scale then Scale.Scale = 0.95; end
+            Watermark.Visible = true;
+        end
+        if Scale then Library:Animate(Scale, { Scale = 1; }, 0.20, nil, 'Popup'); end
+        Library:TweenUnifiedFade(Watermark, 1, 0.17, nil, 'Fade');
+    elseif Watermark.Visible then
+        if Scale then Library:Animate(Scale, { Scale = 0.97; }, 0.14, nil, 'PopupExit'); end
+        Library:TweenUnifiedFade(Watermark, 0, 0.14, function(State)
+            if CurrentId == Library.WatermarkAnimationId and State ~= Enum.PlaybackState.Cancelled then
+                Watermark.Visible = false;
+            end
+        end, 'Fade');
+    end
 end;
 
 function Library:SetWatermark(Text)
@@ -5584,23 +5759,26 @@ function Library:CreateTargetHUD(Config)
         HUD.Visible = Visible;
         HUD.AnimationId = HUD.AnimationId + 1;
         local CurrentId = HUD.AnimationId;
-        local Duration = tonumber(Config.AnimationTime or Config.TweenTime) or 0.18;
+        local Duration = tonumber(Config.AnimationTime or Config.TweenTime) or 0.22;
 
         if Visible then
             if not Outer.Visible then
                 Library:SetUnifiedFadeProgress(Outer, 0);
-                HUDScale.Scale = 0.985;
+                HUDScale.Scale = 0.96;
+                Inner.Position = UDim2.fromOffset(1, 10);
                 Outer.Visible = true;
             end
+            Library:Animate(Inner, { Position = UDim2.fromOffset(1, 1); }, Duration, nil, 'HUD');
             Library:Animate(HUDScale, { Scale = 1; }, Duration, nil, 'HUD');
-            Library:TweenUnifiedFade(Outer, 1, Duration, nil, 'HUD');
+            Library:TweenUnifiedFade(Outer, 1, math.max(Duration - 0.03, 0.12), nil, 'Fade');
         elseif Outer.Visible then
-            Library:Animate(HUDScale, { Scale = 0.985; }, Duration, nil, 'HUDExit');
-            Library:TweenUnifiedFade(Outer, 0, Duration, function(State)
+            Library:Animate(Inner, { Position = UDim2.fromOffset(1, 7); }, Duration, nil, 'HUDExit');
+            Library:Animate(HUDScale, { Scale = 0.975; }, Duration, nil, 'HUDExit');
+            Library:TweenUnifiedFade(Outer, 0, math.max(Duration - 0.04, 0.12), function(State)
                 if CurrentId == HUD.AnimationId and not HUD.Visible and State ~= Enum.PlaybackState.Cancelled and Outer.Parent then
                     Outer.Visible = false;
                 end
-            end, 'HUDExit');
+            end, 'Fade');
         end
     end
 
@@ -5701,17 +5879,23 @@ function Library:Notify(Text, Time)
     local NotifyOuter = Library:Create('CanvasGroup', {
         BorderColor3 = Color3.new(0, 0, 0);
         Position = UDim2.new(0, 100, 0, 10);
-        Size = UDim2.new(0, 0, 0, YSize);
-        ClipsDescendants = true;
+        Size = UDim2.new(0, XSize + 12, 0, YSize);
+        ClipsDescendants = false;
         GroupTransparency = 1;
         ZIndex = 100;
         Parent = Library.NotificationArea;
+    });
+
+    local NotifyScale = Library:Create('UIScale', {
+        Scale = 0.96;
+        Parent = NotifyOuter;
     });
 
     local NotifyInner = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
+        Position = UDim2.fromOffset(-14, 0);
         Size = UDim2.new(1, 0, 1, 0);
         ZIndex = 101;
         Parent = NotifyOuter;
@@ -5772,19 +5956,17 @@ function Library:Notify(Text, Time)
         BackgroundColor3 = 'AccentColor';
     }, true);
 
-    Library:Animate(NotifyOuter, {
-        Size = UDim2.new(0, XSize + 12, 0, YSize);
-        GroupTransparency = 0;
-    }, 0.16, nil, 'Notification');
+    Library:Animate(NotifyInner, { Position = UDim2.fromOffset(0, 0); }, 0.22, nil, 'Notification');
+    Library:Animate(NotifyScale, { Scale = 1; }, 0.22, nil, 'Notification');
+    Library:Animate(NotifyOuter, { GroupTransparency = 0; }, 0.18, nil, 'Fade');
 
     task.delay(Time or 5, function()
         if not NotifyOuter.Parent then return; end
-        Library:Animate(NotifyOuter, {
-            Size = UDim2.new(0, 0, 0, YSize);
-            GroupTransparency = 1;
-        }, 0.13, function(State)
+        Library:Animate(NotifyInner, { Position = UDim2.fromOffset(-10, 0); }, 0.16, nil, 'NotificationExit');
+        Library:Animate(NotifyScale, { Scale = 0.98; }, 0.16, nil, 'NotificationExit');
+        Library:Animate(NotifyOuter, { GroupTransparency = 1; }, 0.15, function(State)
             if State ~= Enum.PlaybackState.Cancelled and NotifyOuter.Parent then NotifyOuter:Destroy(); end
-        end, 'NotificationExit');
+        end, 'Fade');
     end);
 end;
 
@@ -5801,7 +5983,7 @@ function Library:CreateWindow(...)
 
     if type(Config.Title) ~= 'string' then Config.Title = 'No title' end
     if type(Config.TabPadding) ~= 'number' then Config.TabPadding = 0 end
-    if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.18 end
+    if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.24 end
 
     if typeof(Config.Position) ~= 'UDim2' then Config.Position = UDim2.fromOffset(175, 50) end
     if typeof(Config.Size) ~= 'UDim2' then Config.Size = UDim2.fromOffset(550, 600) end
@@ -5828,7 +6010,7 @@ function Library:CreateWindow(...)
     });
 
     local MenuScale = Library:Create('UIScale', {
-        Scale = 0.985;
+        Scale = 0.96;
         Parent = Outer;
     });
 
@@ -6019,6 +6201,11 @@ function Library:CreateWindow(...)
             Parent = TabContainer;
         });
 
+        local TabScale = Library:Create('UIScale', {
+            Scale = 0.975;
+            Parent = TabFrame;
+        });
+
         local LeftSide = Library:Create('ScrollingFrame', {
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
@@ -6096,16 +6283,19 @@ function Library:CreateWindow(...)
 
             if not TabFrame.Visible then
                 Library:CancelMotion(TabFrame);
-                TabFrame.Position = UDim2.new(0, Direction * 9, 0, 0);
+                Library:CancelMotion(TabScale);
+                TabFrame.Position = UDim2.new(0, Direction * 18, 0, 3);
                 TabFrame.GroupTransparency = 1;
+                TabScale.Scale = 0.975;
             end;
             TabFrame.Visible = true;
             Library:Animate(TabFrame, {
                 Position = UDim2.new(0, 0, 0, 0);
-            }, 0.17, nil, 'Tab');
+            }, 0.23, nil, 'Tab');
+            Library:Animate(TabScale, { Scale = 1; }, 0.22, nil, 'Tab');
             Library:Animate(TabFrame, {
                 GroupTransparency = 0;
-            }, 0.15, nil, 'Fade');
+            }, 0.18, nil, 'Fade');
         end;
 
         function Tab:HideTab(Instant, Direction)
@@ -6123,19 +6313,22 @@ function Library:CreateWindow(...)
 
             if Instant then
                 Library:CancelMotion(TabFrame);
+                Library:CancelMotion(TabScale);
                 TabFrame.GroupTransparency = 1;
                 TabFrame.Visible = false;
                 TabFrame.Position = UDim2.new(0, 0, 0, 0);
+                TabScale.Scale = 1;
                 return;
             end;
 
             local ExitDirection = tonumber(Direction) or 0;
             Library:Animate(TabFrame, {
-                Position = UDim2.new(0, ExitDirection * 6, 0, -2);
-            }, 0.135, nil, 'TabExit');
+                Position = UDim2.new(0, ExitDirection * 12, 0, -2);
+            }, 0.17, nil, 'TabExit');
+            Library:Animate(TabScale, { Scale = 0.985; }, 0.17, nil, 'TabExit');
             local ExitTween = Library:Animate(TabFrame, {
                 GroupTransparency = 1;
-            }, 0.12, function(State)
+            }, 0.15, function(State)
                 if State == Enum.PlaybackState.Cancelled then return; end
                 if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                     TabFrame.Visible = false;
@@ -6381,6 +6574,11 @@ function Library:CreateWindow(...)
                     Parent = BoxInner;
                 });
 
+                local ContainerScale = Library:Create('UIScale', {
+                    Scale = 0.98;
+                    Parent = Container;
+                });
+
                 Library:Create('UIListLayout', {
                     FillDirection = Enum.FillDirection.Vertical;
                     SortOrder = Enum.SortOrder.LayoutOrder;
@@ -6415,8 +6613,10 @@ function Library:CreateWindow(...)
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
                     if not Container.Visible then
                         Library:CancelMotion(Container);
-                        Container.Position = UDim2.new(0, 4 + (Direction * 8), 0, 20);
+                        Library:CancelMotion(ContainerScale);
+                        Container.Position = UDim2.new(0, 4 + (Direction * 13), 0, 22);
                         Container.GroupTransparency = 1;
+                        ContainerScale.Scale = 0.98;
                     end;
                     Container.Visible = true;
                     Block.Visible = true;
@@ -6427,10 +6627,11 @@ function Library:CreateWindow(...)
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
                     Library:Animate(Container, {
                         Position = UDim2.new(0, 4, 0, 20);
-                    }, 0.16, nil, 'Tab');
+                    }, 0.21, nil, 'Tab');
+                    Library:Animate(ContainerScale, { Scale = 1; }, 0.20, nil, 'Tab');
                     Library:Animate(Container, {
                         GroupTransparency = 0;
-                    }, 0.14, nil, 'Fade');
+                    }, 0.17, nil, 'Fade');
 
                     Tab:Resize();
                 end;
@@ -6450,20 +6651,23 @@ function Library:CreateWindow(...)
 
                     if Instant then
                         Library:CancelMotion(Container);
+                        Library:CancelMotion(ContainerScale);
                         Container.GroupTransparency = 1;
                         Container.Visible = false;
                         Container.Position = UDim2.new(0, 4, 0, 20);
+                        ContainerScale.Scale = 1;
                         Block.Visible = false;
                         return;
                     end;
 
                     local ExitDirection = tonumber(Direction) or 0;
                     Library:Animate(Container, {
-                        Position = UDim2.new(0, 4 + (ExitDirection * 5), 0, 18);
-                    }, 0.125, nil, 'TabExit');
+                        Position = UDim2.new(0, 4 + (ExitDirection * 9), 0, 18);
+                    }, 0.16, nil, 'TabExit');
+                    Library:Animate(ContainerScale, { Scale = 0.987; }, 0.16, nil, 'TabExit');
                     local ExitTween = Library:Animate(Container, {
                         GroupTransparency = 1;
-                    }, 0.11, function(State)
+                    }, 0.14, function(State)
                         if State == Enum.PlaybackState.Cancelled then return; end
                         if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                             Container.Visible = false;
@@ -6639,22 +6843,25 @@ function Library:CreateWindow(...)
         if Toggled then
             if not Outer.Visible then
                 Library:SetUnifiedFadeProgress(Outer, 0);
-                MenuScale.Scale = 0.985;
+                MenuScale.Scale = 0.96;
+                Inner.Position = UDim2.fromOffset(1, 11);
                 Outer.Visible = true;
             end
 
+            Library:Animate(Inner, { Position = UDim2.fromOffset(1, 1); }, FadeTime, nil, 'Menu');
             Library:Animate(MenuScale, { Scale = 1; }, FadeTime, nil, 'Menu');
-            Library:TweenUnifiedFade(Outer, 1, FadeTime, nil, 'Menu');
+            Library:TweenUnifiedFade(Outer, 1, math.max(FadeTime - 0.04, 0.14), nil, 'Fade');
             StartFormaCursor();
         else
             CursorAnimationId = CursorAnimationId + 1;
-            Library:Animate(MenuScale, { Scale = 0.985; }, FadeTime, nil, 'MenuExit');
-            Library:TweenUnifiedFade(Outer, 0, FadeTime, function(State)
+            Library:Animate(Inner, { Position = UDim2.fromOffset(1, 8); }, FadeTime, nil, 'MenuExit');
+            Library:Animate(MenuScale, { Scale = 0.975; }, FadeTime, nil, 'MenuExit');
+            Library:TweenUnifiedFade(Outer, 0, math.max(FadeTime - 0.05, 0.13), function(State)
                 if CurrentId ~= ToggleAnimationId or Toggled or State == Enum.PlaybackState.Cancelled then
                     return;
                 end
                 Outer.Visible = false;
-            end, 'MenuExit');
+            end, 'Fade');
         end
     end
 
