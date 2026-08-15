@@ -375,29 +375,49 @@ end;
 
 function Library:TweenMenuFadeTree(Root, Hidden, Duration)
     if not Root then return nil; end
-    if Root:IsA('CanvasGroup') then
-        return Library:TweenUnifiedFade(Root, Hidden and 0 or 1, Duration);
-    end
-
-    Library:PrimeFadeTree(Root);
-    local Instances = { Root };
-    for _, Descendant in ipairs(Root:GetDescendants()) do
-        table.insert(Instances, Descendant);
-    end
-
-    for _, Instance in ipairs(Instances) do
-        local Cache = Library.FadeBaselines[Instance];
-        if Cache then
-            local Properties = {};
-            for Property, Baseline in next, Cache do
-                Properties[Property] = Hidden and 1 or Baseline;
-            end
-            Library:Animate(Instance, Properties, Duration, nil, 'Fade');
-        end
-    end
+    return Library:TweenUnifiedFade(Root, Hidden and 0 or 1, Duration, nil, 'Fade');
 end;
 
 Library.UnifiedFadeControllers = setmetatable({}, { __mode = 'k' });
+Library.FadeContributions = setmetatable({}, { __mode = 'k' });
+
+local function ApplyCompositeFade(Instance, Baseline)
+    local Contributions = Library.FadeContributions[Instance];
+    local Composite = 1;
+    if Contributions then
+        for Controller, Progress in next, Contributions do
+            if Controller.Driver and Controller.Driver.Parent then
+                Composite = Composite * Progress;
+            else
+                Contributions[Controller] = nil;
+            end;
+        end;
+    end;
+
+    for Property, Value in next, Baseline do
+        pcall(function()
+            Instance[Property] = 1 + ((Value - 1) * Composite);
+        end);
+    end;
+end
+
+local function ApplyUnifiedFadeProgress(Controller, Progress)
+    Progress = math.clamp(tonumber(Progress) or 0, 0, 1);
+    Controller.Progress = Progress;
+
+    for _, Entry in ipairs(Controller.Entries) do
+        local Instance = Entry.Instance;
+        if Instance and Instance.Parent then
+            local Contributions = Library.FadeContributions[Instance];
+            if not Contributions then
+                Contributions = setmetatable({}, { __mode = 'k' });
+                Library.FadeContributions[Instance] = Contributions;
+            end;
+            Contributions[Controller] = Progress;
+            ApplyCompositeFade(Instance, Entry.Baseline);
+        end
+    end
+end
 
 local function GetUnifiedFadeController(Root)
     local Controller = Library.UnifiedFadeControllers[Root];
@@ -405,33 +425,25 @@ local function GetUnifiedFadeController(Root)
         return Controller;
     end
 
+    local InitialProgress = Root:IsA('CanvasGroup')
+        and (1 - math.clamp(Root.GroupTransparency, 0, 1))
+        or 1;
     local Driver = Instance.new('NumberValue');
     Driver.Name = 'FormaUnifiedFadeDriver';
-    Driver.Value = 1;
+    Driver.Value = InitialProgress;
     Driver.Parent = Root;
 
     Controller = {
         Driver = Driver;
-        Progress = 1;
+        Progress = InitialProgress;
         Entries = {};
+        EntryMap = {};
         Tween = nil;
     };
     Library.UnifiedFadeControllers[Root] = Controller;
 
     Driver:GetPropertyChangedSignal('Value'):Connect(function()
-        local Progress = math.clamp(Driver.Value, 0, 1);
-        Controller.Progress = Progress;
-
-        for _, Entry in ipairs(Controller.Entries) do
-            local Instance = Entry.Instance;
-            if Instance and Instance.Parent then
-                for Property, Baseline in next, Entry.Baseline do
-                    pcall(function()
-                        Instance[Property] = 1 + ((Baseline - 1) * Progress);
-                    end);
-                end
-            end
-        end
+        ApplyUnifiedFadeProgress(Controller, Driver.Value);
     end);
 
     return Controller;
@@ -439,7 +451,6 @@ end
 
 local function RefreshUnifiedFadeEntries(Root, Controller)
     Library:PrimeFadeTree(Root);
-    table.clear(Controller.Entries);
 
     local Instances = { Root };
     for _, Descendant in ipairs(Root:GetDescendants()) do
@@ -448,15 +459,41 @@ local function RefreshUnifiedFadeEntries(Root, Controller)
         end
     end
 
+    local Entries = {};
+    local EntryMap = {};
     for _, Instance in ipairs(Instances) do
         local Baseline = Library.FadeBaselines[Instance];
         if Baseline then
-            table.insert(Controller.Entries, {
-                Instance = Instance;
-                Baseline = Baseline;
-            });
+            local VisibleBaseline = {};
+            for Property, Value in next, Baseline do
+                if type(Value) == 'number' and Value < 0.9999 then
+                    VisibleBaseline[Property] = Value;
+                end;
+            end;
+
+            if next(VisibleBaseline) then
+                local Entry = {
+                    Instance = Instance;
+                    Baseline = VisibleBaseline;
+                };
+                table.insert(Entries, Entry);
+                EntryMap[Instance] = Entry;
+            end;
         end
     end
+
+    for Instance, Entry in next, Controller.EntryMap do
+        if not EntryMap[Instance] then
+            local Contributions = Library.FadeContributions[Instance];
+            if Contributions then Contributions[Controller] = nil; end
+            if Instance and Instance.Parent then
+                ApplyCompositeFade(Instance, Entry.Baseline);
+            end;
+        end;
+    end;
+
+    Controller.Entries = Entries;
+    Controller.EntryMap = EntryMap;
 end
 
 function Library:SetUnifiedFadeProgress(Root, Progress)
@@ -465,20 +502,20 @@ function Library:SetUnifiedFadeProgress(Root, Progress)
     end
 
     local Value = math.clamp(tonumber(Progress) or 0, 0, 1);
+    local Controller = GetUnifiedFadeController(Root);
     if Root:IsA('CanvasGroup') then
         Library:CancelMotion(Root, 'GroupTransparency');
-        Root.GroupTransparency = 1 - Value;
-        return;
+        Root.GroupTransparency = 0;
     end
 
-    local Controller = GetUnifiedFadeController(Root);
     if Controller.Tween then
-        pcall(function() Controller.Tween:Cancel(); end);
+        local PreviousTween = Controller.Tween;
         Controller.Tween = nil;
+        pcall(function() PreviousTween:Cancel(); end);
     end
 
     RefreshUnifiedFadeEntries(Root, Controller);
-    Controller.Progress = Value;
+    ApplyUnifiedFadeProgress(Controller, Value);
     Controller.Driver.Value = Controller.Progress;
 end
 
@@ -488,23 +525,20 @@ function Library:TweenUnifiedFade(Root, Target, Duration, Completed, Context)
     end
 
     local TargetProgress = math.clamp(tonumber(Target) or 0, 0, 1);
+    local Controller = GetUnifiedFadeController(Root);
     if Root:IsA('CanvasGroup') then
-        return Library:Animate(
-            Root,
-            { GroupTransparency = 1 - TargetProgress },
-            Duration,
-            Completed,
-            Context or 'Fade'
-        );
+        Library:CancelMotion(Root, 'GroupTransparency');
+        Root.GroupTransparency = 0;
     end
 
-    local Controller = GetUnifiedFadeController(Root);
     if Controller.Tween then
-        pcall(function() Controller.Tween:Cancel(); end);
+        local PreviousTween = Controller.Tween;
         Controller.Tween = nil;
+        pcall(function() PreviousTween:Cancel(); end);
     end
 
     RefreshUnifiedFadeEntries(Root, Controller);
+    ApplyUnifiedFadeProgress(Controller, Controller.Progress);
     local Tween = Library:Animate(
         Controller.Driver,
         { Value = TargetProgress },
@@ -747,28 +781,7 @@ function Library:SetFadeTree(Root, Hidden)
         return;
     end;
 
-    if Root:IsA('CanvasGroup') then
-        Library:SetUnifiedFadeProgress(Root, Hidden and 0 or 1);
-        return;
-    end;
-
-    Library:PrimeFadeTree(Root);
-
-    local Instances = { Root };
-    for _, Descendant in ipairs(Root:GetDescendants()) do
-        table.insert(Instances, Descendant);
-    end;
-
-    for _, Instance in ipairs(Instances) do
-        local Cache = Library.FadeBaselines[Instance];
-        if Cache then
-            for Property, Baseline in next, Cache do
-                pcall(function()
-                    Instance[Property] = Hidden and 1 or Baseline;
-                end);
-            end;
-        end;
-    end;
+    Library:SetUnifiedFadeProgress(Root, Hidden and 0 or 1);
 end;
 
 function Library:TweenFadeTree(Root, Hidden, Duration)
@@ -776,28 +789,7 @@ function Library:TweenFadeTree(Root, Hidden, Duration)
         return;
     end;
 
-    if Root:IsA('CanvasGroup') then
-        return Library:TweenUnifiedFade(Root, Hidden and 0 or 1, Duration or 0.14);
-    end;
-
-    Library:PrimeFadeTree(Root);
-    Duration = Duration or 0.14;
-
-    local Instances = { Root };
-    for _, Descendant in ipairs(Root:GetDescendants()) do
-        table.insert(Instances, Descendant);
-    end;
-
-    for _, Instance in ipairs(Instances) do
-        local Cache = Library.FadeBaselines[Instance];
-        if Cache then
-            local Properties = {};
-            for Property, Baseline in next, Cache do
-                Properties[Property] = Hidden and 1 or Baseline;
-            end;
-            Library:Animate(Instance, Properties, Duration, nil, 'Fade');
-        end;
-    end;
+    return Library:TweenUnifiedFade(Root, Hidden and 0 or 1, Duration or 0.14, nil, 'Fade');
 end;
 
 function Library:SafeCallback(f, ...)
@@ -1450,12 +1442,12 @@ function Library:AddToolTip(Info, HoverInstance)
         Tooltip.Visible = true
         if not WasVisible then
             Content.Position = UDim2.fromOffset(0, 7)
-            Content.GroupTransparency = 1
+            Library:SetUnifiedFadeProgress(Content, 0)
         end
 
         StartFollowing()
-        Library:Animate(Content, { Position = UDim2.fromOffset(0, 0), }, 0.18, nil, 'Tooltip')
-        Library:Animate(Content, { GroupTransparency = 0, }, 0.16, nil, 'Fade')
+        Library:Animate(Content, { Position = UDim2.fromOffset(0, 0), }, 0.21, nil, 'Tooltip')
+        Library:TweenUnifiedFade(Content, 1, 0.20, nil, 'Fade')
     end
 
     Hide = function(Instant)
@@ -1471,7 +1463,7 @@ function Library:AddToolTip(Info, HoverInstance)
             Library:CancelMotion(Content)
             IsHovering = false
             Tooltip.Visible = false
-            Content.GroupTransparency = 1
+            Library:SetUnifiedFadeProgress(Content, 0)
             Content.Position = UDim2.fromOffset(0, 7)
             if FollowConnection then
                 FollowConnection:Disconnect()
@@ -1490,7 +1482,7 @@ function Library:AddToolTip(Info, HoverInstance)
         IsHovering = false
 
         Library:Animate(Content, { Position = UDim2.fromOffset(0, -5), }, 0.13, nil, 'PopupExit')
-        local FadeTween = Library:Animate(Content, { GroupTransparency = 1, }, 0.12, function(State)
+        local FadeTween = Library:TweenUnifiedFade(Content, 0, 0.16, function(State)
             if State == Enum.PlaybackState.Cancelled then return end
             if CurrentId ~= AnimationId or IsHovering then
                 return
@@ -2024,17 +2016,17 @@ do
             function ContextMenu:Show()
                 self.AnimationId = self.AnimationId + 1
                 if not self.Container.Visible then
-                    self.Container.GroupTransparency = 1
+                    Library:SetUnifiedFadeProgress(self.Container, 0)
                     self.Container.Visible = true
                 end
-                Library:TweenUnifiedFade(self.Container, 1, 0.15, nil, 'Fade')
+                Library:TweenUnifiedFade(self.Container, 1, 0.19, nil, 'Fade')
             end
 
             function ContextMenu:Hide()
                 if not self.Container.Visible then return end
                 self.AnimationId = self.AnimationId + 1
                 local CurrentId = self.AnimationId
-                Library:TweenUnifiedFade(self.Container, 0, 0.13, function(State)
+                Library:TweenUnifiedFade(self.Container, 0, 0.16, function(State)
                     if CurrentId == self.AnimationId and State ~= Enum.PlaybackState.Cancelled then
                         self.Container.Visible = false
                     end
@@ -2202,7 +2194,7 @@ do
             local TargetPosition = GetPickerTargetPosition();
             if not PickerFrameOuter.Visible then
                 PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 10);
-                PickerFrameOuter.GroupTransparency = 1;
+                Library:SetUnifiedFadeProgress(PickerFrameOuter, 0);
             end;
 
             PickerFrameOuter.Visible = true;
@@ -2211,7 +2203,7 @@ do
             PlayPickerTween(PickerFrameOuter, Library:GetMenuTweenInfo(0.21, 'Picker'), {
                 Position = TargetPosition;
             });
-            Library:TweenUnifiedFade(PickerFrameOuter, 1, 0.20, nil, 'Fade');
+            Library:TweenUnifiedFade(PickerFrameOuter, 1, 0.23, nil, 'Fade');
         end;
 
         function ColorPicker:Hide()
@@ -2235,13 +2227,12 @@ do
 
                 PickerFrameOuter.Visible = false;
                 PickerFrameOuter.Position = TargetPosition;
-                PickerFrameOuter.GroupTransparency = 1;
                 table.clear(PickerTweens);
             end
             PlayPickerTween(PickerFrameOuter, Library:GetMenuTweenInfo(0.16, 'PopupExit'), {
                 Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 7);
             });
-            Library:TweenUnifiedFade(PickerFrameOuter, 0, 0.15, FinishHide, 'Fade');
+            Library:TweenUnifiedFade(PickerFrameOuter, 0, 0.18, FinishHide, 'Fade');
         end;
 
         function ColorPicker:SetValue(HSV, Transparency)
@@ -2446,17 +2437,17 @@ do
         local function ShowModeSelect()
             ModeAnimationId = ModeAnimationId + 1;
             if not ModeSelectOuter.Visible then
-                ModeSelectOuter.GroupTransparency = 1;
+                Library:SetUnifiedFadeProgress(ModeSelectOuter, 0);
                 ModeSelectOuter.Visible = true;
             end
-            Library:TweenUnifiedFade(ModeSelectOuter, 1, 0.15, nil, 'Fade');
+            Library:TweenUnifiedFade(ModeSelectOuter, 1, 0.19, nil, 'Fade');
         end
 
         local function HideModeSelect()
             if not ModeSelectOuter.Visible then return; end
             ModeAnimationId = ModeAnimationId + 1;
             local CurrentId = ModeAnimationId;
-            Library:TweenUnifiedFade(ModeSelectOuter, 0, 0.13, function(State)
+            Library:TweenUnifiedFade(ModeSelectOuter, 0, 0.16, function(State)
                 if CurrentId == ModeAnimationId and State ~= Enum.PlaybackState.Cancelled then
                     ModeSelectOuter.Visible = false;
                 end
@@ -4450,20 +4441,20 @@ do
             if SearchOuter then
                 SearchOuter.Position = SearchTargetPosition;
                 if not SearchOuter.Visible then
-                    SearchOuter.GroupTransparency = 1;
+                    Library:SetUnifiedFadeProgress(SearchOuter, 0);
                 end
                 SearchOuter.Visible = true;
                 Library.OpenedFrames[SearchOuter] = true;
-                Library:TweenUnifiedFade(SearchOuter, 1, 0.16, nil, 'Fade');
+                Library:TweenUnifiedFade(SearchOuter, 1, 0.20, nil, 'Fade');
             end
 
             ListOuter.Position = ListTargetPosition;
             if not ListOuter.Visible then
-                ListOuter.GroupTransparency = 1;
+                Library:SetUnifiedFadeProgress(ListOuter, 0);
             end
             ListOuter.Visible = true;
             Library.OpenedFrames[ListOuter] = true;
-            Library:TweenUnifiedFade(ListOuter, 1, 0.17, nil, 'Fade');
+            Library:TweenUnifiedFade(ListOuter, 1, 0.21, nil, 'Fade');
             PlayDropdownTween(DropdownArrow, Library:GetMenuTweenInfo(0.16, 'Dropdown'), { Rotation = 180 });
             StartDropdownAutoScroll();
         end;
@@ -4484,19 +4475,17 @@ do
                 Finished = true;
                 ListOuter.Visible = false;
                 ListOuter.Position = ListTargetPosition;
-                ListOuter.GroupTransparency = 1;
                 if SearchOuter then
                     SearchOuter.Visible = false;
                     SearchOuter.Position = SearchTargetPosition;
-                    SearchOuter.GroupTransparency = 1;
                 end
                 table.clear(DropdownTweens);
             end
 
-            Library:TweenUnifiedFade(ListOuter, 0, 0.14, FinishClose, 'Fade');
+            Library:TweenUnifiedFade(ListOuter, 0, 0.17, FinishClose, 'Fade');
 
             if SearchOuter and SearchOuter.Visible then
-                Library:TweenUnifiedFade(SearchOuter, 0, 0.13, nil, 'Fade');
+                Library:TweenUnifiedFade(SearchOuter, 0, 0.16, nil, 'Fade');
             end
 
             PlayDropdownTween(DropdownArrow, Library:GetMenuTweenInfo(0.14, 'PopupExit'), { Rotation = 0 });
@@ -4909,12 +4898,12 @@ function Library:SetWatermarkVisibility(Bool)
 
     if Bool then
         if not Watermark.Visible then
-            Watermark.GroupTransparency = 1;
+            Library:SetUnifiedFadeProgress(Watermark, 0);
             Watermark.Visible = true;
         end
-        Library:TweenUnifiedFade(Watermark, 1, 0.17, nil, 'Fade');
+        Library:TweenUnifiedFade(Watermark, 1, 0.20, nil, 'Fade');
     elseif Watermark.Visible then
-        Library:TweenUnifiedFade(Watermark, 0, 0.14, function(State)
+        Library:TweenUnifiedFade(Watermark, 0, 0.17, function(State)
             if CurrentId == Library.WatermarkAnimationId and State ~= Enum.PlaybackState.Cancelled then
                 Watermark.Visible = false;
             end
@@ -5859,13 +5848,14 @@ function Library:Notify(Text, Time)
         BackgroundColor3 = 'AccentColor';
     }, true);
 
-    Library:Animate(NotifyInner, { Position = UDim2.fromOffset(0, 0); }, 0.22, nil, 'Notification');
-    Library:Animate(NotifyOuter, { GroupTransparency = 0; }, 0.18, nil, 'Fade');
+    Library:SetUnifiedFadeProgress(NotifyOuter, 0);
+    Library:Animate(NotifyInner, { Position = UDim2.fromOffset(0, 0); }, 0.24, nil, 'Notification');
+    Library:TweenUnifiedFade(NotifyOuter, 1, 0.21, nil, 'Fade');
 
     task.delay(Time or 5, function()
         if not NotifyOuter.Parent then return; end
-        Library:Animate(NotifyInner, { Position = UDim2.fromOffset(-10, 0); }, 0.16, nil, 'NotificationExit');
-        Library:Animate(NotifyOuter, { GroupTransparency = 1; }, 0.15, function(State)
+        Library:Animate(NotifyInner, { Position = UDim2.fromOffset(-10, 0); }, 0.18, nil, 'NotificationExit');
+        Library:TweenUnifiedFade(NotifyOuter, 0, 0.18, function(State)
             if State ~= Enum.PlaybackState.Cancelled and NotifyOuter.Parent then NotifyOuter:Destroy(); end
         end, 'Fade');
     end);
@@ -6171,15 +6161,13 @@ function Library:CreateWindow(...)
             if not TabFrame.Visible then
                 Library:CancelMotion(TabFrame);
                 TabFrame.Position = UDim2.new(0, 0, 0, 8);
-                TabFrame.GroupTransparency = 1;
+                Library:SetUnifiedFadeProgress(TabFrame, 0);
             end;
             TabFrame.Visible = true;
             Library:Animate(TabFrame, {
                 Position = UDim2.new(0, 0, 0, 0);
-            }, 0.24, nil, 'Tab');
-            Library:Animate(TabFrame, {
-                GroupTransparency = 0;
-            }, 0.20, nil, 'Fade');
+            }, 0.26, nil, 'Tab');
+            Library:TweenUnifiedFade(TabFrame, 1, 0.24, nil, 'Fade');
         end;
 
         function Tab:HideTab(Instant)
@@ -6197,7 +6185,7 @@ function Library:CreateWindow(...)
 
             if Instant then
                 Library:CancelMotion(TabFrame);
-                TabFrame.GroupTransparency = 1;
+                Library:SetUnifiedFadeProgress(TabFrame, 0);
                 TabFrame.Visible = false;
                 TabFrame.Position = UDim2.new(0, 0, 0, 0);
                 return;
@@ -6205,10 +6193,8 @@ function Library:CreateWindow(...)
 
             Library:Animate(TabFrame, {
                 Position = UDim2.new(0, 0, 0, -3);
-            }, 0.16, nil, 'TabExit');
-            local ExitTween = Library:Animate(TabFrame, {
-                GroupTransparency = 1;
-            }, 0.14, function(State)
+            }, 0.18, nil, 'TabExit');
+            local ExitTween = Library:TweenUnifiedFade(TabFrame, 0, 0.18, function(State)
                 if State == Enum.PlaybackState.Cancelled then return; end
                 if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                     TabFrame.Visible = false;
@@ -6484,7 +6470,7 @@ function Library:CreateWindow(...)
                     if not Container.Visible then
                         Library:CancelMotion(Container);
                         Container.Position = UDim2.new(0, 4, 0, 28);
-                        Container.GroupTransparency = 1;
+                        Library:SetUnifiedFadeProgress(Container, 0);
                     end;
                     Container.Visible = true;
                     Block.Visible = true;
@@ -6495,10 +6481,8 @@ function Library:CreateWindow(...)
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
                     Library:Animate(Container, {
                         Position = UDim2.new(0, 4, 0, 20);
-                    }, 0.22, nil, 'Tab');
-                    Library:Animate(Container, {
-                        GroupTransparency = 0;
-                    }, 0.19, nil, 'Fade');
+                    }, 0.24, nil, 'Tab');
+                    Library:TweenUnifiedFade(Container, 1, 0.22, nil, 'Fade');
 
                     Tab:Resize();
                 end;
@@ -6518,7 +6502,7 @@ function Library:CreateWindow(...)
 
                     if Instant then
                         Library:CancelMotion(Container);
-                        Container.GroupTransparency = 1;
+                        Library:SetUnifiedFadeProgress(Container, 0);
                         Container.Visible = false;
                         Container.Position = UDim2.new(0, 4, 0, 20);
                         Block.Visible = false;
@@ -6527,10 +6511,8 @@ function Library:CreateWindow(...)
 
                     Library:Animate(Container, {
                         Position = UDim2.new(0, 4, 0, 17);
-                    }, 0.16, nil, 'TabExit');
-                    local ExitTween = Library:Animate(Container, {
-                        GroupTransparency = 1;
-                    }, 0.14, function(State)
+                    }, 0.18, nil, 'TabExit');
+                    local ExitTween = Library:TweenUnifiedFade(Container, 0, 0.17, function(State)
                         if State == Enum.PlaybackState.Cancelled then return; end
                         if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                             Container.Visible = false;
