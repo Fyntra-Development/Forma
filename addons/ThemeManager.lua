@@ -40,6 +40,8 @@ local ThemeManager = {} do
 	ThemeManager.OverlaySessionId = httpService:GenerateGUID(false)
 	ThemeManager.OverlayAssetCache = {}
 	ThemeManager.OverlayCachePrepared = false
+	ThemeManager.PreferencesFileName = 'forma-ui-preferences.json'
+	ThemeManager.PreferenceSaveId = 0
 	ThemeManager.ThemeFields = {
 		{ Key = 'BackgroundColor'; Label = 'Background color' };
 		{ Key = 'MainColor'; Label = 'Main color' };
@@ -47,19 +49,18 @@ local ThemeManager = {} do
 		{ Key = 'OutlineColor'; Label = 'Outline color' };
 		{ Key = 'FontColor'; Label = 'Font color' };
 		{ Key = 'DisabledTextColor'; Label = 'Disabled Text Color' };
-		{ Key = 'TabButtonLowContrast'; Label = 'Tab Button Low Contrast' };
 		{ Key = 'Contrast'; Label = 'Contrast' };
 		{ Key = 'Inline'; Label = 'Inline' };
 	}
 	ThemeManager.BuiltInThemes = {
-		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232","DisabledTextColor":"8f8f8f","TabButtonLowContrast":"181818","Contrast":"242424","Inline":"0c0c0c"}') },
-		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414","DisabledTextColor":"929292","TabButtonLowContrast":"1a1a1a","Contrast":"2b2b2b","Inline":"111111"}') },
-		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d","DisabledTextColor":"9a91b8","TabButtonLowContrast":"17112f","Contrast":"28214f","Inline":"100c24"}') },
-		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","TabButtonLowContrast":"191919","Contrast":"2d2d2d","Inline":"111111"}') },
-		['Mint'] 			= { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","TabButtonLowContrast":"191919","Contrast":"2d2d2d","Inline":"111111"}') },
-		['Tokyo Night'] 	= { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232","DisabledTextColor":"8b8ba4","TabButtonLowContrast":"13131c","Contrast":"212133","Inline":"0e0e16"}') },
-		['Ubuntu'] 			= { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919","DisabledTextColor":"a0a0a0","TabButtonLowContrast":"2b2b2b","Contrast":"494949","Inline":"222222"}') },
-		['Quartz'] 			= { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f","DisabledTextColor":"9692a6","TabButtonLowContrast":"191720","Contrast":"2b2938","Inline":"121018"}') },
+		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232","DisabledTextColor":"8f8f8f","Contrast":"242424","Inline":"0c0c0c"}') },
+		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414","DisabledTextColor":"929292","Contrast":"2b2b2b","Inline":"111111"}') },
+		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d","DisabledTextColor":"9a91b8","Contrast":"28214f","Inline":"100c24"}') },
+		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","Contrast":"2d2d2d","Inline":"111111"}') },
+		['Mint'] 			= { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","Contrast":"2d2d2d","Inline":"111111"}') },
+		['Tokyo Night'] 	= { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232","DisabledTextColor":"8b8ba4","Contrast":"212133","Inline":"0e0e16"}') },
+		['Ubuntu'] 			= { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919","DisabledTextColor":"a0a0a0","Contrast":"494949","Inline":"222222"}') },
+		['Quartz'] 			= { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f","DisabledTextColor":"9692a6","Contrast":"2b2938","Inline":"121018"}') },
 	}
 
 	function ThemeManager:ApplyTheme(theme)
@@ -118,6 +119,45 @@ local ThemeManager = {} do
 
 	function ThemeManager:SaveDefault(theme)
 		writefile(self.Folder .. '/themes/default.txt', theme)
+	end
+
+	function ThemeManager:GetPreferencesPath()
+		return self.Folder .. '/settings/' .. self.PreferencesFileName
+	end
+
+	function ThemeManager:LoadPreferences()
+		local path = self:GetPreferencesPath()
+		if not isfile or not readfile or not isfile(path) then return {} end
+
+		local success, data = pcall(function()
+			return httpService:JSONDecode(readfile(path))
+		end)
+		if not success or type(data) ~= 'table' then return {} end
+		return data
+	end
+
+	function ThemeManager:SavePreferences()
+		if not writefile then return false end
+		local data = {
+			Font = Options and Options.ThemeManager_Font and Options.ThemeManager_Font.Value or self.Library.FontName;
+			TextSize = Options and Options.ThemeManager_TextSize and Options.ThemeManager_TextSize.Value or self.Library.TextSize;
+			OverlayEnabled = Toggles and Toggles.ThemeManager_OverlayEnabled and Toggles.ThemeManager_OverlayEnabled.Value or self.OverlayEnabled;
+			OverlayImage = Options and Options.ThemeManager_OverlayImage and Options.ThemeManager_OverlayImage.Value or self.OverlaySelection;
+		}
+
+		local success, encoded = pcall(httpService.JSONEncode, httpService, data)
+		if not success then return false end
+		return pcall(writefile, self:GetPreferencesPath(), encoded)
+	end
+
+	function ThemeManager:QueueSavePreferences()
+		self.PreferenceSaveId = self.PreferenceSaveId + 1
+		local SaveId = self.PreferenceSaveId
+		task.delay(0.12, function()
+			if SaveId == self.PreferenceSaveId then
+				self:SavePreferences()
+			end
+		end)
 	end
 
 
@@ -400,20 +440,35 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:CreateThemeManager(groupbox)
+		local SavedPreferences = self:LoadPreferences()
+		local PreferredFont = type(SavedPreferences.Font) == 'string' and SavedPreferences.Font or self.Library.FontName
+		if tonumber(SavedPreferences.TextSize) then
+			self.Library:SetTextSize(SavedPreferences.TextSize)
+		end
+		if type(SavedPreferences.OverlayImage) == 'string' and self.OverlayAssets[SavedPreferences.OverlayImage] then
+			self.OverlaySelection = SavedPreferences.OverlayImage
+		end
+		if type(SavedPreferences.OverlayEnabled) == 'boolean' then
+			self.OverlayEnabled = SavedPreferences.OverlayEnabled
+		end
+
 		for _, entry in ipairs(self.ThemeFields) do
 			groupbox:AddLabel(entry.Label):AddColorPicker(entry.Key, { Default = self.Library[entry.Key] });
 		end
 
 		local FontNames = self.Library:GetFontNames()
-		local DefaultFontIndex = table.find(FontNames, self.Library.FontName) or 1
+		if not table.find(FontNames, PreferredFont) then PreferredFont = self.Library.FontName end
+		self.Library:SetFont(PreferredFont)
+		local DefaultFontIndex = table.find(FontNames, PreferredFont) or 1
 		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex, Searchable = true })
 		Options.ThemeManager_Font:OnChanged(function()
 			self.Library:SetFont(Options.ThemeManager_Font.Value)
+			self:QueueSavePreferences()
 		end)
 
 		groupbox:AddSlider('ThemeManager_TextSize', {
 			Text = 'Text size';
-			Default = 14;
+			Default = self.Library.TextSize;
 			Min = 9;
 			Max = 24;
 			Rounding = 0;
@@ -421,17 +476,24 @@ local ThemeManager = {} do
 		})
 		Options.ThemeManager_TextSize:OnChanged(function()
 			self.Library:SetTextSize(Options.ThemeManager_TextSize.Value)
+			self:QueueSavePreferences()
 		end)
 
-		groupbox:AddToggle('ThemeManager_OverlayEnabled', { Text = 'UI overlay', Default = false })
-		groupbox:AddDropdown('ThemeManager_OverlayImage', { Text = 'Overlay image', Values = self.OverlayOrder, Default = 2 })
+		groupbox:AddToggle('ThemeManager_OverlayEnabled', { Text = 'UI overlay', Default = self.OverlayEnabled })
+		groupbox:AddDropdown('ThemeManager_OverlayImage', {
+			Text = 'Overlay image';
+			Values = self.OverlayOrder;
+			Default = table.find(self.OverlayOrder, self.OverlaySelection) or 2;
+		})
 
 		Options.ThemeManager_OverlayImage:OnChanged(function()
 			self:SetOverlayImage(Options.ThemeManager_OverlayImage.Value)
+			self:QueueSavePreferences()
 		end)
 
 		Toggles.ThemeManager_OverlayEnabled:OnChanged(function()
 			self:SetOverlayEnabled(Toggles.ThemeManager_OverlayEnabled.Value)
+			self:QueueSavePreferences()
 		end)
 
 		local ThemesArray = {}
