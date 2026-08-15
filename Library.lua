@@ -1171,7 +1171,12 @@ function Library:AddTabAccentCap(Instance)
 end;
 
 function Library:CreateSlidingTabIndicator(Layer, Height)
-    local Controller = {};
+    local Controller = {
+        ActiveButton = nil;
+        TargetPosition = nil;
+        TargetSize = nil;
+        FollowConnection = nil;
+    };
 
     local Indicator = Library:Create('Frame', {
         BackgroundTransparency = 1;
@@ -1205,16 +1210,54 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
 
     Library:AddToRegistry(Stroke, { Color = 'AccentColor'; });
 
-    function Controller:MoveTo(Button, Instant)
+    local function ResolveTarget(Button)
         if not Button or not Button.Parent or Button.AbsoluteSize.X <= 0 then
+            return nil, nil;
+        end;
+
+        return UDim2.fromOffset(
+            Button.AbsolutePosition.X - Layer.AbsolutePosition.X,
+            Button.AbsolutePosition.Y - Layer.AbsolutePosition.Y
+        ), UDim2.fromOffset(Button.AbsoluteSize.X, Height or 21);
+    end;
+
+    local function GeometryChanged(Current, Target)
+        return not Current
+            or math.abs(Current.X.Offset - Target.X.Offset) > 0.01
+            or math.abs(Current.Y.Offset - Target.Y.Offset) > 0.01;
+    end;
+
+    Controller.FollowConnection = RenderStepped:Connect(function()
+        if not Layer.Parent then
+            Controller.FollowConnection:Disconnect();
+            Controller.FollowConnection = nil;
             return;
         end;
 
-        local NewLeft = Button.AbsolutePosition.X - Layer.AbsolutePosition.X;
-        local NewY = Button.AbsolutePosition.Y - Layer.AbsolutePosition.Y;
-        local TargetPosition = UDim2.fromOffset(NewLeft, NewY);
-        local TargetSize = UDim2.fromOffset(Button.AbsoluteSize.X, Height or 21);
+        local Button = Controller.ActiveButton;
+        local TargetPosition, TargetSize = ResolveTarget(Button);
+        if not TargetPosition then return; end;
+
+        if GeometryChanged(Controller.TargetPosition, TargetPosition)
+            or GeometryChanged(Controller.TargetSize, TargetSize) then
+            Controller.TargetPosition = TargetPosition;
+            Controller.TargetSize = TargetSize;
+            Library:CancelMotion(Indicator);
+            Indicator.Position = TargetPosition;
+            Indicator.Size = TargetSize;
+        end;
+    end);
+    Library:GiveSignal(Controller.FollowConnection);
+
+    function Controller:MoveTo(Button, Instant)
+        local TargetPosition, TargetSize = ResolveTarget(Button);
+        if not TargetPosition then return; end;
+
+        local NewLeft = TargetPosition.X.Offset;
         local WasVisible = Indicator.Visible;
+        self.ActiveButton = Button;
+        self.TargetPosition = TargetPosition;
+        self.TargetSize = TargetSize;
 
         if Instant or not Indicator.Visible or Indicator.AbsoluteSize.X <= 0 then
             Library:CancelMotion(Indicator);
@@ -1230,7 +1273,7 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
 
         Indicator.Visible = true;
         local Travel = math.abs(NewLeft - Indicator.Position.X.Offset)
-            + (math.abs(Button.AbsoluteSize.X - Indicator.Size.X.Offset) * 0.35);
+            + (math.abs(TargetSize.X.Offset - Indicator.Size.X.Offset) * 0.35);
         local Duration = 0.13 + math.clamp(Travel / 1800, 0, 0.055);
         Library:Animate(Indicator, {
             Position = TargetPosition;
@@ -1303,7 +1346,6 @@ function Library:MakeDraggable(Instance, Cutoff)
     local State = {
         InitialPosition = Instance.Position;
         Dragging = false;
-        TargetPosition = Instance.Position;
         DragConnection = nil;
         InputConnection = nil;
         Input = nil;
@@ -1330,15 +1372,17 @@ function Library:MakeDraggable(Instance, Cutoff)
     local function FinishDrag()
         if not State.Dragging then return; end
 
-        -- Capture the pointer once more at release. Input may end between render
-        -- steps, and using the previous frame's target is the source of the
-        -- visible release snap.
+        -- Resolve the exact final pointer location before disconnecting so the
+        -- surface never trails the cursor or performs a delayed release tween.
         if State.Input and State.ObjectOffset and State.Anchor then
             local Pointer = GetPointer(State.Input);
             State.TargetAnchor = Vector2.new(
                 Pointer.X - State.ObjectOffset.X + (Instance.AbsoluteSize.X * State.Anchor.X),
                 Pointer.Y - State.ObjectOffset.Y + (Instance.AbsoluteSize.Y * State.Anchor.Y)
             );
+            if Instance.Parent then
+                Instance.Position = UDim2.fromOffset(State.TargetAnchor.X, State.TargetAnchor.Y);
+            end;
         end
 
         State.Dragging = false;
@@ -1348,29 +1392,6 @@ function Library:MakeDraggable(Instance, Cutoff)
         State.ObjectOffset = nil;
         State.Anchor = nil;
 
-        if not Instance.Parent then return; end
-        local Target = State.TargetAnchor;
-        if not Target then return; end
-
-        State.TargetPosition = UDim2.fromOffset(Target.X, Target.Y);
-        local Anchor = Instance.AnchorPoint;
-        local Current = Vector2.new(
-            Instance.AbsolutePosition.X + (Instance.AbsoluteSize.X * Anchor.X),
-            Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
-        );
-        local Distance = (Target - Current).Magnitude;
-        if Distance <= 0.35 then
-            Instance.Position = State.TargetPosition;
-            return;
-        end
-
-        local Manager = Library.MenuManager;
-        local Duration = 0.055 + math.clamp(Distance / 1600, 0, 0.03);
-        if Manager and Manager.GetReleaseDuration then
-            local Success, Value = pcall(Manager.GetReleaseDuration, Manager, Distance);
-            if Success and type(Value) == 'number' then Duration = Value; end
-        end
-        Library:Animate(Instance, { Position = State.TargetPosition }, Duration, nil, 'DragRelease');
     end
 
     Instance.InputBegan:Connect(function(Input)
@@ -1398,21 +1419,12 @@ function Library:MakeDraggable(Instance, Cutoff)
         State.Input = Input;
         State.ObjectOffset = ObjPos;
         State.Anchor = Anchor;
-        State.VisualAnchor = Vector2.new(
+        State.TargetAnchor = Vector2.new(
             Instance.AbsolutePosition.X + (Instance.AbsoluteSize.X * Anchor.X),
             Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
         );
-        State.TargetAnchor = State.VisualAnchor;
-        State.DragResponse = 34;
-        local Manager = Library.MenuManager;
-        if Manager and Manager.GetDragResponse then
-            local Success, Response = pcall(Manager.GetDragResponse, Manager);
-            if Success and type(Response) == 'number' then
-                State.DragResponse = math.clamp(Response, 18, 60);
-            end
-        end
 
-        State.DragConnection = RenderStepped:Connect(function(Delta)
+        State.DragConnection = RenderStepped:Connect(function()
             if not State.Dragging or not Instance.Parent then
                 FinishDrag();
                 return;
@@ -1423,15 +1435,7 @@ function Library:MakeDraggable(Instance, Cutoff)
                 CurrentPointer.X - ObjPos.X + (Instance.AbsoluteSize.X * Anchor.X),
                 CurrentPointer.Y - ObjPos.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
             );
-
-            -- A frame-rate-independent follow filter removes mouse sampling
-            -- stair-steps without the delayed, floaty feel of a long tween.
-            -- The high response keeps the visual within a few pixels of the
-            -- cursor and FinishDrag resolves the final sub-frame difference.
-            local SafeDelta = math.min(tonumber(Delta) or (1 / 60), 1 / 20);
-            local FollowAlpha = 1 - math.exp(-(State.DragResponse or 34) * SafeDelta);
-            State.VisualAnchor = State.VisualAnchor:Lerp(State.TargetAnchor, FollowAlpha);
-            Instance.Position = UDim2.fromOffset(State.VisualAnchor.X, State.VisualAnchor.Y);
+            Instance.Position = UDim2.fromOffset(State.TargetAnchor.X, State.TargetAnchor.Y);
         end);
 
         State.InputConnection = Input.Changed:Connect(function()
@@ -5427,7 +5431,7 @@ do
         BorderColor3 = Color3.new(0, 0, 0);
         GroupTransparency = 1;
         Position = UDim2.new(0, 100, 0, -25);
-        Size = UDim2.new(0, 213, 0, 22);
+        Size = UDim2.new(0, 230, 0, 26);
         ZIndex = 200;
         Visible = false;
         Parent = ScreenGui;
@@ -5510,54 +5514,12 @@ do
         { Offset = Vector2.new(1, 0); }
     ):Play();
 
-    local Logo = Library:Create('Frame', {
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Position = UDim2.fromOffset(5, 4);
-        Size = UDim2.fromOffset(13, 13);
-        ZIndex = 207;
-        Parent = InnerFrame;
-    });
-    local LogoWingTop = Library:Create('Frame', {
-        AnchorPoint = Vector2.new(0.5, 0.5);
-        BackgroundColor3 = Library.AccentColor;
-        BorderSizePixel = 0;
-        Position = UDim2.fromOffset(5, 4);
-        Rotation = 28;
-        Size = UDim2.fromOffset(9, 3);
-        ZIndex = 208;
-        Parent = Logo;
-    });
-    local LogoWingBottom = Library:Create('Frame', {
-        AnchorPoint = Vector2.new(0.5, 0.5);
-        BackgroundColor3 = Library.AccentColorDark;
-        BorderSizePixel = 0;
-        Position = UDim2.fromOffset(6, 8);
-        Rotation = -24;
-        Size = UDim2.fromOffset(8, 3);
-        ZIndex = 208;
-        Parent = Logo;
-    });
-    local LogoTip = Library:Create('Frame', {
-        AnchorPoint = Vector2.new(0.5, 0.5);
-        BackgroundColor3 = Library.AccentColor;
-        BorderSizePixel = 0;
-        Position = UDim2.fromOffset(10, 6);
-        Rotation = -45;
-        Size = UDim2.fromOffset(4, 4);
-        ZIndex = 209;
-        Parent = Logo;
-    });
-    Library:AddToRegistry(LogoWingTop, { BackgroundColor3 = 'AccentColor'; });
-    Library:AddToRegistry(LogoWingBottom, { BackgroundColor3 = 'AccentColorDark'; });
-    Library:AddToRegistry(LogoTip, { BackgroundColor3 = 'AccentColor'; });
-
     local WatermarkTitle = Library:CreateLabel({
-        Position = UDim2.fromOffset(22, 1);
-        Size = UDim2.new(0, 0, 1, -1);
+        Position = UDim2.fromOffset(8, 1);
+        Size = UDim2.new(0, 0, 1, -2);
         Text = '';
         TextColor3 = Library.AccentColor;
-        TextSize = 14;
+        TextSize = 15;
         TextXAlignment = Enum.TextXAlignment.Left;
         ZIndex = 207;
         Parent = InnerFrame;
@@ -5565,11 +5527,11 @@ do
     Library.RegistryMap[WatermarkTitle].Properties.TextColor3 = 'AccentColor';
 
     local WatermarkStats = Library:CreateLabel({
-        Position = UDim2.fromOffset(22, 1);
-        Size = UDim2.new(0, 0, 1, -1);
+        Position = UDim2.fromOffset(8, 1);
+        Size = UDim2.new(0, 0, 1, -2);
         Text = '';
         TextColor3 = Library.FontColor;
-        TextSize = 14;
+        TextSize = 15;
         TextXAlignment = Enum.TextXAlignment.Left;
         ZIndex = 207;
         Parent = InnerFrame;
@@ -5587,15 +5549,18 @@ do
         local Title, Stats = Text:match('^(.-)(%s+%-%s+.+)$');
         if not Title then Title, Stats = Text, ''; end
 
-        local TitleWidth = Library:GetTextBounds(Title, Library.Font, 14);
-        local StatsWidth = Library:GetTextBounds(Stats, Library.Font, 14);
-        local StatsX = 22 + TitleWidth;
+        local TitleWidth, TitleHeight = Library:GetTextBounds(Title, Library.Font, 15);
+        local StatsWidth, StatsHeight = Library:GetTextBounds(Stats, Library.Font, 15);
+        local ContentHeight = math.max(TitleHeight, StatsHeight, 16);
+        local OuterHeight = math.max(ContentHeight + 8, 26);
+        local StatsX = 8 + TitleWidth;
         WatermarkTitle.Text = Title;
-        WatermarkTitle.Size = UDim2.fromOffset(TitleWidth, 19);
+        WatermarkTitle.Position = UDim2.fromOffset(8, 1);
+        WatermarkTitle.Size = UDim2.new(0, TitleWidth, 1, -2);
         WatermarkStats.Text = Stats;
         WatermarkStats.Position = UDim2.fromOffset(StatsX, 1);
-        WatermarkStats.Size = UDim2.fromOffset(StatsWidth, 19);
-        WatermarkOuter.Size = UDim2.fromOffset(math.max(StatsX + StatsWidth + 7, 72), 22);
+        WatermarkStats.Size = UDim2.new(0, StatsWidth, 1, -2);
+        WatermarkOuter.Size = UDim2.fromOffset(math.max(StatsX + StatsWidth + 9, 96), OuterHeight);
     end
     LegacyWatermarkText:GetPropertyChangedSignal('Text'):Connect(function()
         UpdateWatermarkText(LegacyWatermarkText.Text);
