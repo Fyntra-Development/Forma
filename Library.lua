@@ -106,6 +106,7 @@ local Library = {
     MainColor = Color3.fromRGB(28, 28, 28);
     BackgroundColor = Color3.fromRGB(20, 20, 20);
     AccentColor = Color3.fromRGB(0, 85, 255);
+    BlendShade = Color3.fromRGB(7, 21, 47);
     OutlineColor = Color3.fromRGB(50, 50, 50);
     DisabledTextColor = Color3.fromRGB(143, 143, 143);
     Contrast = Color3.fromRGB(36, 36, 36);
@@ -1018,6 +1019,16 @@ function Library:GetMovingAccentGradientColor()
     });
 end;
 
+function Library:GetBlendColorSequence(Color)
+    local Base = Color or Library.AccentColor;
+    local Shade = Library.BlendShade or Library:GetDarkerColor(Base);
+    return ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Shade);
+        ColorSequenceKeypoint.new(0.58, Base:Lerp(Shade, 0.18));
+        ColorSequenceKeypoint.new(1, Base);
+    });
+end;
+
 function Library:AddMovingAccentGradient(Parent, Duration)
     if not Parent then return nil; end;
 
@@ -1728,6 +1739,17 @@ function Library:EnableTypingAnimation(TextBox)
     local PreviousCharacters = {};
     local CharacterLabels = {};
 
+    local function GetTextColorKey()
+        return TextBox:IsFocused() and 'AccentColor' or 'FontColor';
+    end;
+
+    local function SyncTextColor()
+        local ColorKey = GetTextColorKey();
+        TextBox.TextColor3 = Library[ColorKey];
+        local RegistryEntry = Library.RegistryMap[TextBox];
+        if RegistryEntry then RegistryEntry.Properties.TextColor3 = ColorKey; end;
+    end;
+
     local Layer = Library:Create('Frame', {
         Name = 'FormaTypingLayer';
         Active = false;
@@ -1849,6 +1871,7 @@ function Library:EnableTypingAnimation(TextBox)
         local Characters = SplitCharacters(TextBox.Text or '');
         local InsertStart, InsertEnd = GetInsertedRange(Characters);
         local OriginX = GetTextOrigin(Measure(TextBox.Text or ''));
+        local TextColorKey = GetTextColorKey();
         ClearCharacters();
 
         local Prefix = '';
@@ -1863,13 +1886,14 @@ function Library:EnableTypingAnimation(TextBox)
                 Position = UDim2.fromOffset(StartX, IsInserted and 1 or 0);
                 Size = UDim2.new(0, math.max(EndX - StartX + 1, 1), 1, 0);
                 Text = Character;
-                TextColor3 = Library.FontColor;
+                TextColor3 = Library[TextColorKey];
                 TextSize = BaseSize;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 TextYAlignment = TextBox.TextYAlignment;
                 ZIndex = Layer.ZIndex + 2;
                 Parent = Layer;
             });
+            Library.RegistryMap[Label].Properties.TextColor3 = TextColorKey;
             table.insert(CharacterLabels, Label);
 
             if IsInserted then
@@ -1913,13 +1937,18 @@ function Library:EnableTypingAnimation(TextBox)
     end);
     TextBox:GetPropertyChangedSignal('PlaceholderText'):Connect(SyncLayer);
     TextBox.Focused:Connect(function()
+        SyncTextColor();
+        Rebuild(false);
         UpdateIndicator(true);
         Library:TweenUnifiedFade(Indicator, 1, 0.16, nil, 'Fade');
     end);
     TextBox.FocusLost:Connect(function()
+        SyncTextColor();
+        Rebuild(false);
         Library:TweenUnifiedFade(Indicator, 0, 0.18, nil, 'Fade');
     end);
 
+    SyncTextColor();
     SyncLayer();
     Rebuild(false);
 
@@ -2389,12 +2418,24 @@ do
         ColorPicker:SetHSVFromRGB(ColorPicker.Value);
 
         local DisplayFrame = Library:Create('Frame', {
-            BackgroundColor3 = ColorPicker.Value;
-            BorderColor3 = Library:GetDarkerColor(ColorPicker.Value);
+            BackgroundColor3 = Color3.new(1, 1, 1);
+            BorderColor3 = Library.BlendShade;
             BorderMode = Enum.BorderMode.Inset;
             Size = UDim2.new(0, 28, 0, 14);
             ZIndex = 6;
             Parent = ToggleLabel;
+        });
+        Library:AddToRegistry(DisplayFrame, { BorderColor3 = 'BlendShade'; });
+
+        local DisplayGradient = Library:Create('UIGradient', {
+            Color = Library:GetBlendColorSequence(ColorPicker.Value);
+            Rotation = 90;
+            Parent = DisplayFrame;
+        });
+        Library:AddToRegistry(DisplayGradient, {
+            Color = function()
+                return Library:GetBlendColorSequence(ColorPicker.Value);
+            end;
         });
 
         local CheckerFrame = Library:Create('ImageLabel', {
@@ -2817,10 +2858,11 @@ do
             SatVibMap.BackgroundColor3 = Color3.fromHSV(ColorPicker.Hue, 1, 1);
 
             Library:Create(DisplayFrame, {
-                BackgroundColor3 = ColorPicker.Value;
+                BackgroundColor3 = Color3.new(1, 1, 1);
                 BackgroundTransparency = ColorPicker.Transparency;
-                BorderColor3 = Library:GetDarkerColor(ColorPicker.Value);
+                BorderColor3 = Library.BlendShade;
             });
+            DisplayGradient.Color = Library:GetBlendColorSequence(ColorPicker.Value);
 
             if TransparencyBoxInner then
                 TransparencyBoxInner.BackgroundColor3 = ColorPicker.Value;
@@ -3485,11 +3527,15 @@ do
             if type(Props) == 'table' then
                 Obj.Text = Props.Text
                 Obj.Func = Props.Func
-                Obj.DoubleClick = Props.DoubleClick
+                Obj.DoubleClick = Props.DoubleClick or Props.Warning or Props.Confirm
+                Obj.ConfirmDuration = math.clamp(tonumber(
+                    Props.ConfirmDuration or Props.WarningDuration or Props.Timer
+                ) or 3, 0.5, 10)
                 Obj.Tooltip = Props.Tooltip
             else
                 Obj.Text = select(1, ...)
                 Obj.Func = select(2, ...)
+                Obj.ConfirmDuration = 3
             end
 
             assert(type(Obj.Func) == 'function', 'AddButton: `Func` callback is missing.');
@@ -3555,23 +3601,6 @@ do
         end
 
         local function InitEvents(Button)
-            local function WaitForEvent(event, timeout, validator)
-                local bindable = Instance.new('BindableEvent')
-                local connection = event:Once(function(...)
-
-                    if type(validator) == 'function' and validator(...) then
-                        bindable:Fire(true)
-                    else
-                        bindable:Fire(false)
-                    end
-                end)
-                task.delay(timeout, function()
-                    connection:disconnect()
-                    bindable:Fire(false)
-                end)
-                return bindable.Event:Wait()
-            end
-
             local function ValidateClick(Input)
                 if Library:MouseIsOverOpenedFrame() then
                     return false
@@ -3584,11 +3613,79 @@ do
                 return true
             end
 
+            local function SetLabelColor(ColorKey)
+                Library:RemoveFromRegistry(Button.Label)
+                Library:AddToRegistry(Button.Label, { TextColor3 = ColorKey })
+                Button.Label.TextColor3 = Library[ColorKey]
+            end
+
             local function ReleasePress()
+                if Button.Locked then return; end
                 Library:Animate(Button.Inner, {
                     BackgroundColor3 = Library.MainColor;
                 }, 0.12, nil, 'Color');
             end
+
+            local function BeginWarningConfirmation()
+                Button.ConfirmSequence = (Button.ConfirmSequence or 0) + 1;
+                local Sequence = Button.ConfirmSequence;
+                local Duration = Button.ConfirmDuration or 3;
+                local StartedAt = os.clock();
+                local Deadline = StartedAt + Duration;
+                local Confirmed = false;
+                local FlashOn = false;
+                local NextFlash = StartedAt;
+
+                Button.Locked = true;
+                SetLabelColor('RiskColor');
+
+                if Button.ConfirmConnection then Button.ConfirmConnection:Disconnect(); end;
+                Button.ConfirmConnection = Button.Outer.InputBegan:Connect(function(Input)
+                    if os.clock() - StartedAt > 0.08 and ValidateClick(Input) then
+                        Confirmed = true;
+                    end;
+                end);
+
+                task.spawn(function()
+                    while Button.ConfirmSequence == Sequence and Button.Outer.Parent and not Confirmed do
+                        local Now = os.clock();
+                        local Remaining = Deadline - Now;
+                        if Remaining <= 0 then break; end;
+
+                        Button.Label.Text = string.format('Are you sure? (%.1fs)', Remaining);
+                        if Now >= NextFlash then
+                            FlashOn = not FlashOn;
+                            NextFlash = Now + 0.18;
+                            Library:Animate(Button.Inner, {
+                                BackgroundColor3 = FlashOn
+                                    and Library.RiskColor:Lerp(Library.MainColor, 0.56)
+                                    or Library.MainColor;
+                            }, 0.14, nil, 'Color');
+                        end;
+                        task.wait(0.05);
+                    end;
+
+                    if Button.ConfirmSequence ~= Sequence then return; end;
+                    if Button.ConfirmConnection then
+                        Button.ConfirmConnection:Disconnect();
+                        Button.ConfirmConnection = nil;
+                    end;
+
+                    if Button.Inner.Parent then
+                        Library:CancelMotion(Button.Inner, 'BackgroundColor3');
+                        Library:Animate(Button.Inner, {
+                            BackgroundColor3 = Library.MainColor;
+                        }, 0.12, nil, 'Color');
+                    end;
+                    if Button.Label.Parent then
+                        SetLabelColor('FontColor');
+                        Button.Label.Text = Button.Text;
+                    end;
+                    Button.Locked = false;
+
+                    if Confirmed then Library:SafeCallback(Button.Func); end;
+                end);
+            end;
 
             Button.Outer.MouseLeave:Connect(ReleasePress)
 
@@ -3609,27 +3706,8 @@ do
                 end)
 
                 if Button.DoubleClick then
-                    Library:RemoveFromRegistry(Button.Label)
-                    Library:AddToRegistry(Button.Label, { TextColor3 = 'AccentColor' })
-
-                    Button.Label.TextColor3 = Library.AccentColor
-                    Button.Label.Text = 'Are you sure?'
-                    Button.Locked = true
-
-                    local clicked = WaitForEvent(Button.Outer.InputBegan, 0.5, ValidateClick)
-
-                    Library:RemoveFromRegistry(Button.Label)
-                    Library:AddToRegistry(Button.Label, { TextColor3 = 'FontColor' })
-
-                    Button.Label.TextColor3 = Library.FontColor
-                    Button.Label.Text = Button.Text
-                    task.defer(rawset, Button, 'Locked', false)
-
-                    if clicked then
-                        Library:SafeCallback(Button.Func)
-                    end
-
-                    return
+                    BeginWarningConfirmation();
+                    return;
                 end
 
                 Library:SafeCallback(Button.Func);
@@ -3641,40 +3719,63 @@ do
 
         InitEvents(Button)
 
-        function Button:AddTooltip(tooltip)
-            if type(tooltip) == 'string' or type(tooltip) == 'table' then
-                Library:AddToolTip(tooltip, self.Outer)
-            end
-            return self
-        end
+        Button.RowRoot = Button;
+        Button.RowButtons = { Button };
 
-        function Button:AddButton(...)
-            local SubButton = {}
+        local function LayoutButtonRow(Root)
+            local Buttons = Root.RowButtons;
+            local Count = #Buttons;
+            local Gap = 3;
+            local WidthOffset = -(4 + (Gap * (Count - 1))) / Count;
+            Root.Outer.Size = UDim2.new(1 / Count, WidthOffset, 0, 20);
 
-            ProcessButtonParams('SubButton', SubButton, ...)
+            for Index = 2, Count do
+                local Entry = Buttons[Index];
+                Entry.Outer.Position = UDim2.new(Index - 1, Gap * (Index - 1), 0, 0);
+                Entry.Outer.Size = UDim2.new(1, 0, 1, 0);
+            end;
+        end;
 
-            self.Outer.Size = UDim2.new(0.5, -2, 0, 20)
-
-            SubButton.Outer, SubButton.Inner, SubButton.Label = CreateBaseButton(SubButton)
-
-            SubButton.Outer.Position = UDim2.new(1, 3, 0, 0)
-            SubButton.Outer.Size = UDim2.fromOffset(self.Outer.AbsoluteSize.X - 2, self.Outer.AbsoluteSize.Y)
-            SubButton.Outer.Parent = self.Outer
-
-            function SubButton:AddTooltip(tooltip)
+        local AttachButtonMethods;
+        AttachButtonMethods = function(Control)
+            function Control:AddTooltip(tooltip)
                 if type(tooltip) == 'string' or type(tooltip) == 'table' then
                     Library:AddToolTip(tooltip, self.Outer)
                 end
-                return SubButton
+                return self
             end
 
-            if type(SubButton.Tooltip) == 'string' or type(SubButton.Tooltip) == 'table' then
-                SubButton:AddTooltip(SubButton.Tooltip)
-            end
+            function Control:AddButton(...)
+                local Root = self.RowRoot or self;
+                assert(#Root.RowButtons < 3, 'AddButton: a button row supports at most three buttons.');
 
-            InitEvents(SubButton)
-            return SubButton
-        end
+                local Sibling = {};
+                local Class = #Root.RowButtons == 1 and 'SubButton' or 'TertiaryButton';
+                ProcessButtonParams(Class, Sibling, ...);
+                Sibling.RowRoot = Root;
+                Sibling.Outer, Sibling.Inner, Sibling.Label = CreateBaseButton(Sibling);
+                Sibling.Outer.Parent = Root.Outer;
+                table.insert(Root.RowButtons, Sibling);
+
+                InitEvents(Sibling);
+                AttachButtonMethods(Sibling);
+                LayoutButtonRow(Root);
+
+                if type(Sibling.Tooltip) == 'string' or type(Sibling.Tooltip) == 'table' then
+                    Sibling:AddTooltip(Sibling.Tooltip);
+                end;
+                return Sibling;
+            end;
+
+            function Control:AddTertiaryButton(...)
+                local Root = self.RowRoot or self;
+                assert(#Root.RowButtons == 2, 'AddTertiaryButton: add a secondary button first.');
+                return self:AddButton(...);
+            end;
+        end;
+
+        AttachButtonMethods(Button);
+        LayoutButtonRow(Button);
 
         if type(Button.Tooltip) == 'string' or type(Button.Tooltip) == 'table' then
             Button:AddTooltip(Button.Tooltip)
@@ -3969,6 +4070,25 @@ do
             BorderColor3 = 'OutlineColor';
         });
 
+        local ToggleFill = Library:Create('Frame', {
+            BackgroundColor3 = Color3.new(1, 1, 1);
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 7;
+            Parent = ToggleInner;
+        });
+        local ToggleGradient = Library:Create('UIGradient', {
+            Color = Library:GetBlendColorSequence(Library.AccentColor);
+            Rotation = 90;
+            Parent = ToggleFill;
+        });
+        Library:AddToRegistry(ToggleGradient, {
+            Color = function()
+                return Library:GetBlendColorSequence(Library.AccentColor);
+            end;
+        });
+
         local ToggleLabel = Library:CreateLabel({
             Size = UDim2.new(0, 216, 1, 0);
             Position = UDim2.new(1, 6, 0, 0);
@@ -4008,13 +4128,14 @@ do
         end
 
         function Toggle:Display()
-            local BackgroundKey = Toggle.Value and 'AccentColor' or 'MainColor';
-            local BorderKey = Toggle.Value and 'AccentColorDark' or 'OutlineColor';
+            local BorderKey = Toggle.Value and 'BlendShade' or 'OutlineColor';
 
-            Library:TweenProperty(ToggleInner, 'BackgroundColor3', Library[BackgroundKey], 0.11);
+            Library:TweenProperty(ToggleInner, 'BackgroundColor3', Library.MainColor, 0.11);
             Library:TweenProperty(ToggleInner, 'BorderColor3', Library[BorderKey], 0.11);
+            Library:TweenProperty(ToggleFill, 'BackgroundTransparency', Toggle.Value and 0 or 1, 0.11);
+            ToggleGradient.Color = Library:GetBlendColorSequence(Library.AccentColor);
 
-            Library.RegistryMap[ToggleInner].Properties.BackgroundColor3 = BackgroundKey;
+            Library.RegistryMap[ToggleInner].Properties.BackgroundColor3 = 'MainColor';
             Library.RegistryMap[ToggleInner].Properties.BorderColor3 = BorderKey;
 
         end;
@@ -4199,8 +4320,8 @@ do
         });
 
         local Fill = Library:Create('Frame', {
-            BackgroundColor3 = Library.AccentColor;
-            BorderColor3 = Library.AccentColorDark;
+            BackgroundColor3 = Color3.new(1, 1, 1);
+            BorderColor3 = Library.BlendShade;
             Size = UDim2.new(0, 0, 1, 0);
             ZIndex = 7;
             Parent = SliderInner;
@@ -4208,8 +4329,16 @@ do
 
         Library:AddCorner(Fill, 3);
         Library:AddToRegistry(Fill, {
-            BackgroundColor3 = 'AccentColor';
-            BorderColor3 = 'AccentColorDark';
+            BorderColor3 = 'BlendShade';
+        });
+        local FillGradient = Library:Create('UIGradient', {
+            Color = Library:GetBlendColorSequence(Library.AccentColor);
+            Parent = Fill;
+        });
+        Library:AddToRegistry(FillGradient, {
+            Color = function()
+                return Library:GetBlendColorSequence(Library.AccentColor);
+            end;
         });
 
         if Info.Compact then
@@ -4227,8 +4356,8 @@ do
 
         local Thumb = Library:Create('Frame', {
             AnchorPoint = Vector2.new(0.5, 0.5);
-            BackgroundColor3 = Library.AccentColor;
-            BorderColor3 = Library.AccentColorDark;
+            BackgroundColor3 = Color3.new(1, 1, 1);
+            BorderColor3 = Library.BlendShade;
             Position = UDim2.new(0, 20, 0.5, 0);
             Size = UDim2.fromOffset(7, 13);
             ZIndex = 10;
@@ -4237,8 +4366,17 @@ do
 
         Library:AddCorner(Thumb, 3);
         Library:AddToRegistry(Thumb, {
-            BackgroundColor3 = 'AccentColor';
-            BorderColor3 = 'AccentColorDark';
+            BorderColor3 = 'BlendShade';
+        });
+        local ThumbGradient = Library:Create('UIGradient', {
+            Color = Library:GetBlendColorSequence(Library.AccentColor);
+            Rotation = 90;
+            Parent = Thumb;
+        });
+        Library:AddToRegistry(ThumbGradient, {
+            Color = function()
+                return Library:GetBlendColorSequence(Library.AccentColor);
+            end;
         });
 
         local ValueBadge = Library:Create('Frame', {
@@ -4309,10 +4447,12 @@ do
         end
 
         function Slider:UpdateColors()
-            Fill.BackgroundColor3 = Library.AccentColor;
-            Fill.BorderColor3 = Library.AccentColorDark;
-            Thumb.BackgroundColor3 = Library.AccentColor;
-            Thumb.BorderColor3 = Library.AccentColorDark;
+            Fill.BackgroundColor3 = Color3.new(1, 1, 1);
+            Fill.BorderColor3 = Library.BlendShade;
+            FillGradient.Color = Library:GetBlendColorSequence(Library.AccentColor);
+            Thumb.BackgroundColor3 = Color3.new(1, 1, 1);
+            Thumb.BorderColor3 = Library.BlendShade;
+            ThumbGradient.Color = Library:GetBlendColorSequence(Library.AccentColor);
         end;
 
         local IsDragging = false;
