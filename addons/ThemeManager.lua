@@ -40,15 +40,26 @@ local ThemeManager = {} do
 	ThemeManager.OverlaySessionId = httpService:GenerateGUID(false)
 	ThemeManager.OverlayAssetCache = {}
 	ThemeManager.OverlayCachePrepared = false
+	ThemeManager.ThemeFields = {
+		{ Key = 'BackgroundColor'; Label = 'Background color' };
+		{ Key = 'MainColor'; Label = 'Main color' };
+		{ Key = 'AccentColor'; Label = 'Accent color' };
+		{ Key = 'OutlineColor'; Label = 'Outline color' };
+		{ Key = 'FontColor'; Label = 'Font color' };
+		{ Key = 'DisabledTextColor'; Label = 'Disabled Text Color' };
+		{ Key = 'TabButtonLowContrast'; Label = 'Tab Button Low Contrast' };
+		{ Key = 'Contrast'; Label = 'Contrast' };
+		{ Key = 'Inline'; Label = 'Inline' };
+	}
 	ThemeManager.BuiltInThemes = {
-		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}') },
-		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414"}') },
-		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d"}') },
-		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
-		['Mint'] 			= { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
-		['Tokyo Night'] 	= { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232"}') },
-		['Ubuntu'] 			= { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919"}') },
-		['Quartz'] 			= { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f"}') },
+		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232","DisabledTextColor":"8f8f8f","TabButtonLowContrast":"181818","Contrast":"242424","Inline":"0c0c0c"}') },
+		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414","DisabledTextColor":"929292","TabButtonLowContrast":"1a1a1a","Contrast":"2b2b2b","Inline":"111111"}') },
+		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d","DisabledTextColor":"9a91b8","TabButtonLowContrast":"17112f","Contrast":"28214f","Inline":"100c24"}') },
+		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","TabButtonLowContrast":"191919","Contrast":"2d2d2d","Inline":"111111"}') },
+		['Mint'] 			= { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737","DisabledTextColor":"989898","TabButtonLowContrast":"191919","Contrast":"2d2d2d","Inline":"111111"}') },
+		['Tokyo Night'] 	= { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232","DisabledTextColor":"8b8ba4","TabButtonLowContrast":"13131c","Contrast":"212133","Inline":"0e0e16"}') },
+		['Ubuntu'] 			= { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919","DisabledTextColor":"a0a0a0","TabButtonLowContrast":"2b2b2b","Contrast":"494949","Inline":"222222"}') },
+		['Quartz'] 			= { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f","DisabledTextColor":"9692a6","TabButtonLowContrast":"191720","Contrast":"2b2938","Inline":"121018"}') },
 	}
 
 	function ThemeManager:ApplyTheme(theme)
@@ -60,7 +71,7 @@ local ThemeManager = {} do
 		local scheme = data[2]
 		for idx, col in next, customThemeData or scheme do
 			self.Library[idx] = Color3.fromHex(col)
-			
+
 			if Options[idx] then
 				Options[idx]:SetValueRGB(Color3.fromHex(col))
 			end
@@ -70,18 +81,19 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:ThemeUpdate()
-		local options = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor" }
-		for i, field in next, options do
+		for _, entry in ipairs(self.ThemeFields) do
+			local field = entry.Key
 			if Options and Options[field] then
 				self.Library[field] = Options[field].Value
 			end
 		end
 
+		self.Library.Black = self.Library.Inline
 		self.Library.AccentColorDark = self.Library:GetDarkerColor(self.Library.AccentColor);
 		self.Library:UpdateColorsUsingRegistry()
 	end
 
-	function ThemeManager:LoadDefault()		
+	function ThemeManager:LoadDefault()
 		local theme = 'Default'
 		local content = isfile(self.Folder .. '/themes/default.txt') and readfile(self.Folder .. '/themes/default.txt')
 
@@ -94,7 +106,7 @@ local ThemeManager = {} do
 				isDefault = false;
 			end
 		elseif self.BuiltInThemes[self.DefaultTheme] then
-		 	theme = self.DefaultTheme
+			theme = self.DefaultTheme
 		end
 
 		if isDefault then
@@ -388,12 +400,9 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:CreateThemeManager(groupbox)
-		groupbox:AddLabel('Background color'):AddColorPicker('BackgroundColor', { Default = self.Library.BackgroundColor });
-		groupbox:AddLabel('Main color')	:AddColorPicker('MainColor', { Default = self.Library.MainColor });
-		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor });
-		groupbox:AddLabel('Outline color'):AddColorPicker('OutlineColor', { Default = self.Library.OutlineColor });
-		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor });
-
+		for _, entry in ipairs(self.ThemeFields) do
+			groupbox:AddLabel(entry.Label):AddColorPicker(entry.Key, { Default = self.Library[entry.Key] });
+		end
 
 		local FontNames = self.Library:GetFontNames()
 		local DefaultFontIndex = table.find(FontNames, self.Library.FontName) or 1
@@ -448,14 +457,14 @@ local ThemeManager = {} do
 		groupbox:AddInput('ThemeManager_CustomThemeName', { Text = 'Custom theme name' })
 		groupbox:AddDropdown('ThemeManager_CustomThemeList', { Text = 'Custom themes', Values = self:ReloadCustomThemes(), AllowNull = true, Default = 1, Searchable = true })
 		groupbox:AddDivider()
-		
-		groupbox:AddButton('Save theme', function() 
+
+		groupbox:AddButton('Save theme', function()
 			self:SaveCustomTheme(Options.ThemeManager_CustomThemeName.Value)
 
 			Options.ThemeManager_CustomThemeList:SetValues(self:ReloadCustomThemes())
 			Options.ThemeManager_CustomThemeList:SetValue(nil)
-		end):AddButton('Load theme', function() 
-			self:ApplyTheme(Options.ThemeManager_CustomThemeList.Value) 
+		end):AddButton('Load theme', function()
+			self:ApplyTheme(Options.ThemeManager_CustomThemeList.Value)
 		end)
 
 		groupbox:AddButton('Refresh list', function()
@@ -476,11 +485,9 @@ local ThemeManager = {} do
 			self:ThemeUpdate()
 		end
 
-		Options.BackgroundColor:OnChanged(UpdateTheme)
-		Options.MainColor:OnChanged(UpdateTheme)
-		Options.AccentColor:OnChanged(UpdateTheme)
-		Options.OutlineColor:OnChanged(UpdateTheme)
-		Options.FontColor:OnChanged(UpdateTheme)
+		for _, entry in ipairs(self.ThemeFields) do
+			Options[entry.Key]:OnChanged(UpdateTheme)
+		end
 	end
 
 	function ThemeManager:GetCustomTheme(file)
@@ -491,7 +498,7 @@ local ThemeManager = {} do
 
 		local data = readfile(path)
 		local success, decoded = pcall(httpService.JSONDecode, httpService, data)
-		
+
 		if not success then
 			return nil
 		end
@@ -505,9 +512,9 @@ local ThemeManager = {} do
 		end
 
 		local theme = {}
-		local fields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor" }
 
-		for _, field in next, fields do
+		for _, entry in ipairs(self.ThemeFields) do
+			local field = entry.Key
 			theme[field] = Options[field].Value:ToHex()
 		end
 
