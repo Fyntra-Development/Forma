@@ -4243,6 +4243,7 @@ do
             local TextColorKey = Toggle.Risky and 'RiskColor'
                 or (Toggle.Value and 'FontColor' or 'DisabledTextColor');
 
+            ToggleShade.Visible = Toggle.Value;
             Library:TweenProperty(ToggleInner, 'BackgroundColor3', Library.MainColor, 0.11);
             Library:TweenProperty(ToggleInner, 'BorderColor3', Library[BorderKey], 0.11);
             Library:TweenProperty(ToggleFill, 'GroupTransparency', Toggle.Value and 0 or 1, 0.11);
