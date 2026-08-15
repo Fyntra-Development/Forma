@@ -3184,21 +3184,27 @@ do
 
         assert(Info.Default, 'AddKeyPicker: Missing default value.');
 
+        local Modes = Info.Modes;
+        if type(Modes) ~= 'table' or #Modes == 0 then
+            Modes = { 'Always', 'Toggle', 'Hold' };
+        end
+
+        local InitialMode = Info.Mode or 'Toggle';
+        if not table.find(Modes, InitialMode) then
+            InitialMode = Modes[1];
+        end
+
         local KeyPicker = {
             Value = Info.Default;
             Toggled = false;
-            Mode = Info.Mode or 'Toggle';
+            Held = false;
+            Mode = InitialMode;
             Type = 'KeyPicker';
             Callback = Info.Callback or function(Value) end;
             ChangedCallback = Info.ChangedCallback or function(New) end;
 
             SyncToggleState = Info.SyncToggleState or false;
         };
-
-        if KeyPicker.SyncToggleState then
-            Info.Modes = { 'Toggle' }
-            Info.Mode = 'Toggle'
-        end
 
         local PickOuter = Library:Create('Frame', {
             BackgroundColor3 = Color3.new(0, 0, 0);
@@ -3252,7 +3258,7 @@ do
             BorderColor3 = Color3.new(0, 0, 0);
             GroupTransparency = 1;
             Position = UDim2.fromOffset(ToggleLabel.AbsolutePosition.X + ToggleLabel.AbsoluteSize.X + 4, ToggleLabel.AbsolutePosition.Y + 1);
-            Size = UDim2.new(0, 60, 0, 45 + 2);
+            Size = UDim2.new(0, 60, 0, (#Modes * 15) + 2);
             Visible = false;
             ZIndex = 14;
             Parent = ScreenGui;
@@ -3312,7 +3318,6 @@ do
             Parent = Library.KeybindContainer;
         },  true);
 
-        local Modes = Info.Modes or { 'Always', 'Toggle', 'Hold' };
         local ModeButtons = {};
 
         for Idx, Mode in next, Modes do
@@ -3333,6 +3338,7 @@ do
                 end;
 
                 KeyPicker.Mode = Mode;
+                KeyPicker.Held = false;
 
                 Label.TextColor3 = Library.AccentColor;
                 Library.RegistryMap[Label].Properties.TextColor3 = 'AccentColor';
@@ -3341,8 +3347,6 @@ do
             end;
 
             function ModeButton:Deselect()
-                KeyPicker.Mode = nil;
-
                 Label.TextColor3 = Library.FontColor;
                 Library.RegistryMap[Label].Properties.TextColor3 = 'FontColor';
             end;
@@ -3350,6 +3354,8 @@ do
             Label.InputBegan:Connect(function(Input)
                 if Input.UserInputType == Enum.UserInputType.MouseButton1 then
                     ModeButton:Select();
+                    if KeyPicker.DoClick then KeyPicker:DoClick(); end
+                    if KeyPicker.Update then KeyPicker:Update(); end
                     Library:AttemptSave();
                 end;
             end);
@@ -3394,18 +3400,7 @@ do
             if KeyPicker.Mode == 'Always' then
                 return true;
             elseif KeyPicker.Mode == 'Hold' then
-                if KeyPicker.Value == 'None' then
-                    return false;
-                end
-
-                local Key = KeyPicker.Value;
-
-                if Key == 'MB1' or Key == 'MB2' then
-                    return Key == 'MB1' and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-                        or Key == 'MB2' and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2);
-                else
-                    return InputService:IsKeyDown(Enum.KeyCode[KeyPicker.Value]);
-                end;
+                return KeyPicker.Held;
             else
                 return KeyPicker.Toggled;
             end;
@@ -3415,7 +3410,8 @@ do
             local Key, Mode = Data[1], Data[2];
             SetKeyDisplay(Key);
             KeyPicker.Value = Key;
-            ModeButtons[Mode]:Select();
+            local Button = ModeButtons[Mode] or ModeButtons[KeyPicker.Mode] or ModeButtons[Modes[1]];
+            if Button then Button:Select(); end
             KeyPicker:Update();
         end;
 
@@ -3434,11 +3430,20 @@ do
 
         function KeyPicker:DoClick()
             if ParentObj.Type == 'Toggle' and KeyPicker.SyncToggleState then
-                ParentObj:SetValue(not ParentObj.Value)
+                ParentObj:SetValue(KeyPicker:GetState())
             end
 
-            Library:SafeCallback(KeyPicker.Callback, KeyPicker.Toggled)
-            Library:SafeCallback(KeyPicker.Clicked, KeyPicker.Toggled)
+            local State = KeyPicker:GetState();
+            Library:SafeCallback(KeyPicker.Callback, State)
+            Library:SafeCallback(KeyPicker.Clicked, State)
+        end
+
+        local function MatchesInput(Input)
+            local Key = KeyPicker.Value;
+            if not Key or Key == 'None' then return false; end
+            if Key == 'MB1' then return Input.UserInputType == Enum.UserInputType.MouseButton1; end
+            if Key == 'MB2' then return Input.UserInputType == Enum.UserInputType.MouseButton2; end
+            return Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Key;
         end
 
         local Picking = false;
@@ -3499,21 +3504,12 @@ do
 
         Library:GiveSignal(InputService.InputBegan:Connect(function(Input)
             if (not Picking) then
-                if KeyPicker.Mode == 'Toggle' then
-                    local Key = KeyPicker.Value;
-
-                    if Key == 'MB1' or Key == 'MB2' then
-                        if Key == 'MB1' and Input.UserInputType == Enum.UserInputType.MouseButton1
-                        or Key == 'MB2' and Input.UserInputType == Enum.UserInputType.MouseButton2 then
-                            KeyPicker.Toggled = not KeyPicker.Toggled
-                            KeyPicker:DoClick()
-                        end;
-                    elseif Input.UserInputType == Enum.UserInputType.Keyboard then
-                        if Input.KeyCode.Name == Key then
-                            KeyPicker.Toggled = not KeyPicker.Toggled;
-                            KeyPicker:DoClick()
-                        end;
-                    end;
+                if KeyPicker.Mode == 'Toggle' and MatchesInput(Input) then
+                    KeyPicker.Toggled = not KeyPicker.Toggled;
+                    KeyPicker:DoClick();
+                elseif KeyPicker.Mode == 'Hold' and MatchesInput(Input) then
+                    KeyPicker.Held = true;
+                    KeyPicker:DoClick();
                 end;
 
                 KeyPicker:Update();
@@ -3532,6 +3528,10 @@ do
 
         Library:GiveSignal(InputService.InputEnded:Connect(function(Input)
             if (not Picking) then
+                if KeyPicker.Mode == 'Hold' and MatchesInput(Input) then
+                    KeyPicker.Held = false;
+                    KeyPicker:DoClick();
+                end;
                 KeyPicker:Update();
             end;
         end))
