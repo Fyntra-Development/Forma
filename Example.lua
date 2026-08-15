@@ -296,6 +296,20 @@ Options.ServerRegion:OnChanged(function()
     print("Server region changed:", Options.ServerRegion.Value)
 end)
 
+local RegionDependency = MainRight:AddDependencyBox()
+
+RegionDependency:AddToggle("RegionalRouting", {
+    Text = "Use regional routing",
+    Default = false,
+})
+
+RegionDependency:SetupDependencies({
+    {
+        Options.ServerRegion,
+        { "US West", "US East" },
+    },
+})
+
 MainRight:AddDropdown("MultiDropdown", {
     Text = "Visible ESP elements",
     Values = {
