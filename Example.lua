@@ -390,6 +390,12 @@ ColorLabel:AddColorPicker("AccentPreview", {
     Default = Color3.fromRGB(0, 170, 255),
     Title = "Accent preview",
     Transparency = 0,
+    Settings = {
+        Mode = "Solid",
+        Speed = 1,
+        Color1 = Color3.fromRGB(0, 170, 255),
+        Color2 = Color3.fromRGB(170, 70, 255),
+    },
     Callback = function(Value)
         print("Color:", Value)
     end,
