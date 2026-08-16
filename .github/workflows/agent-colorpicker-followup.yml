@@ -1,0 +1,58 @@
+name: Agent colorpicker settings follow-up
+
+on:
+  push:
+    branches:
+      - agent/colorpicker-mode-settings
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply compatibility and example patch
+        run: python3 .github/agent_colorpicker_followup.py
+
+      - name: Validate colorpicker feature surface
+        shell: bash
+        run: |
+          grep -q "Text = 'Color'" Library.lua
+          grep -q "Text = 'Settings'" Library.lua
+          grep -q "ColorPicker.Mode == 'Fade'" Library.lua
+          grep -q "ColorPicker.Mode == 'Rainbow'" Library.lua
+          grep -q "ColorPicker.EditingTarget == 'Live'" Library.lua
+          grep -q "Color 1" Library.lua
+          grep -q "Color 2" Library.lua
+          grep -q "SetSpeed" Library.lua
+          grep -q "HasAnimationData" addons/SaveManager.lua
+          grep -q "Settings = {" Example.lua
+
+      - name: Build Luau compiler
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/luau-lang/luau.git /tmp/luau
+          cmake -S /tmp/luau -B /tmp/luau/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/luau/build --target Luau.Compile.CLI -j2
+
+      - name: Compile Luau sources
+        shell: bash
+        run: |
+          /tmp/luau/build/luau-compile Library.lua >/dev/null
+          /tmp/luau/build/luau-compile addons/SaveManager.lua >/dev/null
+          /tmp/luau/build/luau-compile Example.lua >/dev/null
+
+      - name: Commit validated follow-up
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add addons/SaveManager.lua Example.lua
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Document and preserve colorpicker animation settings"
+          git push
