@@ -1,0 +1,103 @@
+name: Agent smooth feedback motion
+
+on:
+  push:
+    branches:
+      - agent/smooth-feedback-motion
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply notification, slider, and health smoothing
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Library.lua')
+          text = path.read_text()
+
+          replacements = []
+
+          replacements.append((
+          """    local XSize = math.max(TextWidth, TitleWidth) + 14;\n    local YSize = HasTitle and (TitleHeight + TextHeight + 10) or (TextHeight + 7);\n""",
+          """    local XSize = math.max(TextWidth, TitleWidth) + 14;\n    local YSize = HasTitle and (TitleHeight + TextHeight + 10) or (TextHeight + 7);\n    local Duration = math.max(tonumber(Time) or 5, 0.1);\n"""))
+
+          replacements.append((
+          """        Position = UDim2.fromOffset(-14, 0);\n""",
+          """        Position = UDim2.fromOffset(-28, 0);\n"""))
+
+          replacements.append((
+          """    Library:AddToRegistry(LeftColor, {\n        BackgroundColor3 = 'AccentColor';\n    }, true);\n\n    Library:SetUnifiedFadeProgress(NotifyOuter, 0);\n    Library:Animate(NotifyInner, { Position = UDim2.fromOffset(0, 0); }, 0.24, nil, 'Notification');\n    Library:TweenUnifiedFade(NotifyOuter, 1, 0.21, nil, 'Fade');\n\n    task.delay(math.max(tonumber(Time) or 5, 0.1), function()\n        if not NotifyOuter.Parent then return; end\n        Library:Animate(NotifyInner, { Position = UDim2.fromOffset(-10, 0); }, 0.18, nil, 'NotificationExit');\n        Library:TweenUnifiedFade(NotifyOuter, 0, 0.18, function(State)\n            if State ~= Enum.PlaybackState.Cancelled and NotifyOuter.Parent then NotifyOuter:Destroy(); end\n        end, 'Fade');\n    end);\n""",
+          """    Library:AddToRegistry(LeftColor, {\n        BackgroundColor3 = 'AccentColor';\n    }, true);\n\n    local TimeTrack = Library:Create('Frame', {\n        BackgroundColor3 = Library.OutlineColor;\n        BorderSizePixel = 0;\n        Position = UDim2.new(0, 3, 1, -3);\n        Size = UDim2.new(1, -6, 0, 2);\n        ZIndex = 105;\n        Parent = NotifyInner;\n    });\n    Library:AddToRegistry(TimeTrack, {\n        BackgroundColor3 = 'OutlineColor';\n    }, true);\n\n    local TimeBar = Library:Create('Frame', {\n        BackgroundColor3 = Library.AccentColor;\n        BorderSizePixel = 0;\n        Size = UDim2.new(0, 0, 1, 0);\n        ZIndex = 106;\n        Parent = TimeTrack;\n    });\n    Library:AddToRegistry(TimeBar, {\n        BackgroundColor3 = 'AccentColor';\n    }, true);\n\n    Library:SetUnifiedFadeProgress(NotifyOuter, 0);\n    Library:Animate(NotifyInner, { Position = UDim2.fromOffset(0, 0); }, 0.30, nil, 'Notification');\n    Library:TweenUnifiedFade(NotifyOuter, 1, 0.24, nil, 'Fade');\n\n    local TimeBarTween = TweenService:Create(\n        TimeBar,\n        TweenInfo.new(Duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),\n        { Size = UDim2.new(1, 0, 1, 0) }\n    );\n    TimeBarTween:Play();\n\n    task.delay(Duration, function()\n        if not NotifyOuter.Parent then return; end\n        Library:Animate(NotifyInner, { Position = UDim2.fromOffset(-28, 0); }, 0.22, nil, 'NotificationExit');\n        Library:TweenUnifiedFade(NotifyOuter, 0, 0.20, function(State)\n            if State ~= Enum.PlaybackState.Cancelled and NotifyOuter.Parent then NotifyOuter:Destroy(); end\n        end, 'Fade');\n    end);\n"""))
+
+          replacements.append((
+          """        local IsDragging = false;\n        local BadgeTargetPosition;\n""",
+          """        local IsDragging = false;\n        local FillTargetSize;\n        local ThumbTargetPosition;\n        local BadgeTargetPosition;\n"""))
+
+          replacements.append((
+          """            if Instant then\n                StopVisualAnimation();\n                Fill.Size = FillSize;\n                Thumb.Position = ThumbPosition;\n                ValueBadge.Position = BadgePosition;\n                BadgeTargetPosition = BadgePosition;\n            elseif IsDragging then\n                Library:CancelMotion(Fill, 'Size');\n                Library:CancelMotion(Thumb, 'Position');\n                Fill.Size = FillSize;\n                Thumb.Position = ThumbPosition;\n                BadgeTargetPosition = BadgePosition;\n            else\n                BadgeTargetPosition = BadgePosition;\n                Library:Animate(Fill, { Size = FillSize }, 0.15, nil, 'Slider');\n                Library:Animate(Thumb, { Position = ThumbPosition }, 0.15, nil, 'Slider');\n                Library:Animate(ValueBadge, { Position = BadgePosition }, 0.16, nil, 'Badge');\n            end;\n""",
+          """            FillTargetSize = FillSize;\n            ThumbTargetPosition = ThumbPosition;\n            BadgeTargetPosition = BadgePosition;\n\n            if Instant then\n                StopVisualAnimation();\n                Fill.Size = FillSize;\n                Thumb.Position = ThumbPosition;\n                ValueBadge.Position = BadgePosition;\n            elseif IsDragging then\n                -- Dragging updates the logical value immediately while the visuals\n                -- follow the pointer through a frame-rate-independent micro-filter.\n            else\n                Library:Animate(Fill, { Size = FillSize }, 0.17, nil, 'Slider');\n                Library:Animate(Thumb, { Position = ThumbPosition }, 0.17, nil, 'Slider');\n                Library:Animate(ValueBadge, { Position = BadgePosition }, 0.18, nil, 'Badge');\n            end;\n"""))
+
+          replacements.append((
+          """            IsDragging = true;\n            Library:CancelMotion(ValueBadge, 'Position');\n\n            local function UpdateFromX(PointerX)\n                local Width = TrackWidth();\n                local nX = math.clamp(PointerX - SliderInner.AbsolutePosition.X, 0, Width);\n                local nValue = Slider:GetValueFromXOffset(nX);\n\n                if nValue ~= Slider.Value then\n                    Slider:SetValue(nValue);\n                end;\n            end;\n""",
+          """            IsDragging = true;\n            StopVisualAnimation();\n\n            local function UpdateFromX(PointerX)\n                local Width = TrackWidth();\n                local nX = math.clamp(PointerX - SliderInner.AbsolutePosition.X, 0, Width);\n                local nValue = Slider:GetValueFromXOffset(nX);\n\n                if nValue ~= Slider.Value then\n                    Slider:SetValue(nValue);\n                end;\n\n                -- Keep pointer tracking continuous even when the slider value is rounded.\n                local FillSize, ThumbPosition, BadgePosition = GetSliderVisuals(nX);\n                FillTargetSize = FillSize;\n                ThumbTargetPosition = ThumbPosition;\n                BadgeTargetPosition = BadgePosition;\n            end;\n"""))
+
+          replacements.append((
+          """                if BadgeTargetPosition then\n                    local FollowAlpha = 1 - math.exp(-24 * math.min(Delta, 1 / 20));\n                    ValueBadge.Position = ValueBadge.Position:Lerp(BadgeTargetPosition, FollowAlpha);\n                end\n""",
+          """                local Dt = math.min(math.max(Delta, 0), 1 / 20);\n                local TrackAlpha = 1 - math.exp(-34 * Dt);\n                local BadgeAlpha = 1 - math.exp(-26 * Dt);\n                if FillTargetSize then\n                    Fill.Size = Fill.Size:Lerp(FillTargetSize, TrackAlpha);\n                end\n                if ThumbTargetPosition then\n                    Thumb.Position = Thumb.Position:Lerp(ThumbTargetPosition, TrackAlpha);\n                end\n                if BadgeTargetPosition then\n                    ValueBadge.Position = ValueBadge.Position:Lerp(BadgeTargetPosition, BadgeAlpha);\n                end\n"""))
+
+          replacements.append((
+          """    local HealthDriver = Instance.new('NumberValue');\n    HealthDriver.Name = 'FormaTargetHealthDriver';\n    HealthDriver.Value = 0;\n    HealthDriver.Parent = HealthOuter;\n    local HealthSmoothTime = math.clamp(tonumber(Config.HealthSmoothTime or Config.HealthTweenTime) or 0.12, 0.05, 0.5);\n""",
+          """    local HealthDriver = Instance.new('NumberValue');\n    HealthDriver.Name = 'FormaTargetHealthDriver';\n    HealthDriver.Value = 0;\n    HealthDriver.Parent = HealthOuter;\n    local HealthVelocity = 0;\n    local HealthSmoothTime = math.clamp(tonumber(Config.HealthSmoothTime or Config.HealthTweenTime) or 0.18, 0.06, 0.6);\n"""))
+
+          replacements.append((
+          """    HealthDriver:GetPropertyChangedSignal('Value'):Connect(UpdateHealthVisual);\n\n    local function CountVisibleLabels()\n""",
+          """    local function StepHealthVisual(Delta)\n        if not HUD.HealthAvailable then return; end\n        local Target = math.clamp(HUD.HealthTargetRatio or 0, 0, 1);\n        local Current = math.clamp(HealthDriver.Value, 0, 1);\n        local Dt = math.min(math.max(Delta, 0), 0.05);\n        local Omega = 2 / math.max(HealthSmoothTime, 0.001);\n        local X = Omega * Dt;\n        local Exp = 1 / (1 + X + (0.48 * X * X) + (0.235 * X * X * X));\n        local Change = Current - Target;\n        local Temp = (HealthVelocity + (Omega * Change)) * Dt;\n        HealthVelocity = (HealthVelocity - (Omega * Temp)) * Exp;\n        local Next = Target + ((Change + Temp) * Exp);\n\n        if math.abs(Target - Next) < 0.00005 and math.abs(HealthVelocity) < 0.00005 then\n            Next = Target;\n            HealthVelocity = 0;\n        end\n\n        HealthDriver.Value = math.clamp(Next, 0, 1);\n    end\n\n    HealthDriver:GetPropertyChangedSignal('Value'):Connect(UpdateHealthVisual);\n\n    local function CountVisibleLabels()\n"""))
+
+          replacements.append((
+          """        if not Current or not Maximum or Maximum <= 0 then\n            HUD.HealthAvailable = false;\n            HUD.HealthMax = 100;\n            HUD.HealthTargetRatio = 0;\n            Library:CancelMotion(HealthDriver, 'Value');\n            HealthDriver.Value = 0;\n            UpdateHealthVisual();\n            return;\n        end\n        HUD.HealthAvailable = true;\n        HUD.HealthMax = math.max(1, Maximum);\n        local NewRatio = math.clamp(Current / HUD.HealthMax, 0, 1);\n        local TargetChanged = math.abs(NewRatio - (HUD.HealthTargetRatio or -1)) > 0.0001;\n        HUD.HealthTargetRatio = NewRatio;\n        if Instant then\n            Library:CancelMotion(HealthDriver, 'Value');\n            HealthDriver.Value = NewRatio;\n        elseif TargetChanged then\n            Library:Animate(HealthDriver, { Value = NewRatio }, HealthSmoothTime, nil, 'Health');\n        end\n""",
+          """        if not Current or not Maximum or Maximum <= 0 then\n            HUD.HealthAvailable = false;\n            HUD.HealthMax = 100;\n            HUD.HealthTargetRatio = 0;\n            HealthVelocity = 0;\n            HealthDriver.Value = 0;\n            UpdateHealthVisual();\n            return;\n        end\n        HUD.HealthAvailable = true;\n        HUD.HealthMax = math.max(1, Maximum);\n        local NewRatio = math.clamp(Current / HUD.HealthMax, 0, 1);\n        HUD.HealthTargetRatio = NewRatio;\n        if Instant then\n            HealthVelocity = 0;\n            HealthDriver.Value = NewRatio;\n        end\n"""))
+
+          replacements.append((
+          """    Library:GiveSignal(RenderStepped:Connect(function(Delta)\n        if not Outer.Parent then return; end\n\n        if HUD.Target and Outer.Visible then\n""",
+          """    Library:GiveSignal(RenderStepped:Connect(function(Delta)\n        if not Outer.Parent then return; end\n\n        StepHealthVisual(Delta);\n\n        if HUD.Target and Outer.Visible then\n"""))
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, found {count}: {old[:100]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Build Luau compiler
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/luau-lang/luau.git /tmp/luau
+          cmake -S /tmp/luau -B /tmp/luau/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/luau/build --target Luau.Compile.CLI -j2
+
+      - name: Compile Library.lua
+        shell: bash
+        run: /tmp/luau/build/luau-compile Library.lua >/dev/null
+
+      - name: Commit validated patch
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Smooth notifications, sliders, and Target HUD health"
+          git push
