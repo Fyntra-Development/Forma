@@ -1,0 +1,53 @@
+name: Agent colorpicker modes
+
+on:
+  push:
+    branches:
+      - agent/colorpicker-mode-settings
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply colorpicker modes patch
+        run: python3 .github/agent_colorpicker_modes_patch.py
+
+      - name: Validate source markers
+        shell: bash
+        run: |
+          grep -q "SettingsEnabled = SettingsEnabled" Library.lua
+          grep -q "Text = 'Settings'" Library.lua
+          grep -q "Mode == 'Rainbow'" Library.lua
+          grep -q "Color 1" Library.lua
+          grep -q "Speed  %.2fx" Library.lua
+          grep -q "data.color1" addons/SaveManager.lua
+
+      - name: Build Luau compiler
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/luau-lang/luau.git /tmp/luau
+          cmake -S /tmp/luau -B /tmp/luau/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/luau/build --target Luau.Compile.CLI -j2
+
+      - name: Compile Luau
+        shell: bash
+        run: |
+          /tmp/luau/build/luau-compile Library.lua >/dev/null
+          /tmp/luau/build/luau-compile addons/SaveManager.lua >/dev/null
+
+      - name: Commit validated patch
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua addons/SaveManager.lua
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Add animated colorpicker modes"
+          git push
