@@ -5795,9 +5795,12 @@ do
             TargetY = 0;
             VisualY = 0;
             StackVelocity = 0;
-            SlideX = -62;
+            SlideX = -48;
             SlideTarget = 0;
             SlideVelocity = 0;
+            RevealScale = 0.68;
+            RevealTarget = 1;
+            RevealVelocity = 0;
             Exiting = false;
         };
 
@@ -5806,13 +5809,15 @@ do
         Entry.VisualY = Entry.TargetY + 10;
         Outer.Position = UDim2.fromOffset(8, Entry.VisualY);
         Inner.Position = UDim2.fromOffset(Entry.SlideX, 0);
+        Inner.Size = UDim2.new(Entry.RevealScale, 0, 1, 0);
         return Entry;
     end
 
     function Library:BeginNotificationExit(Entry)
         if not Entry or Entry.Exiting then return; end
         Entry.Exiting = true;
-        Entry.SlideTarget = -62;
+        Entry.SlideTarget = -48;
+        Entry.RevealTarget = 0.82;
         if Entry.ProgressBar and Entry.ProgressBar.Parent then
             Entry.ProgressBar.Size = UDim2.new(1, 0, 1, 0);
         end
@@ -5845,12 +5850,20 @@ do
                     Entry.SlideX,
                     Entry.SlideVelocity,
                     Entry.SlideTarget,
-                    Entry.Exiting and 0.09 or 0.13,
+                    Entry.Exiting and 0.14 or 0.19,
+                    Delta
+                );
+                Entry.RevealScale, Entry.RevealVelocity = StepNotificationSpring(
+                    Entry.RevealScale,
+                    Entry.RevealVelocity,
+                    Entry.RevealTarget,
+                    Entry.Exiting and 0.16 or 0.22,
                     Delta
                 );
 
                 Entry.Outer.Position = UDim2.fromOffset(8, Entry.VisualY);
                 Entry.Inner.Position = UDim2.fromOffset(Entry.SlideX, 0);
+                Entry.Inner.Size = UDim2.new(math.clamp(Entry.RevealScale, 0.05, 1), 0, 1, 0);
 
                 if Entry.ProgressBar and Entry.ProgressBar.Parent and not Entry.Exiting then
                     local Progress = math.clamp((os.clock() - Entry.Started) / Entry.Duration, 0, 1);
@@ -7041,7 +7054,8 @@ function Library:Notify(Text, Time, Title)
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
-        Position = UDim2.fromOffset(-62, 0);
+        ClipsDescendants = true;
+        Position = UDim2.fromOffset(-48, 0);
         Size = UDim2.new(1, 0, 1, 0);
         ZIndex = 101;
         Parent = NotifyOuter;
@@ -7106,25 +7120,27 @@ function Library:Notify(Text, Time, Title)
     local LeftColor = Library:Create('Frame', {
         BackgroundColor3 = Library.AccentColor;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, -1, 0, -1);
-        Size = UDim2.new(0, 3, 1, 2);
-        ZIndex = 104;
-        Parent = NotifyOuter;
+        Position = UDim2.fromOffset(0, 0);
+        Size = UDim2.new(0, 3, 1, 0);
+        ZIndex = 105;
+        Parent = NotifyInner;
     });
 
     Library:AddToRegistry(LeftColor, {
         BackgroundColor3 = 'AccentColor';
     }, true);
+    local LeftGradient = Library:AddMovingAccentGradient(LeftColor, 1.6);
+    if LeftGradient then LeftGradient.Rotation = 90; end
 
     local ProgressClip = Library:Create('Frame', {
         AnchorPoint = Vector2.new(0, 1);
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
         ClipsDescendants = true;
-        Position = UDim2.new(0, 7, 1, -4);
-        Size = UDim2.new(1, -14, 0, 2);
+        Position = UDim2.new(0, 3, 1, -1);
+        Size = UDim2.new(1, -4, 0, 2);
         ZIndex = 105;
-        Parent = InnerFrame;
+        Parent = NotifyInner;
     });
 
     local TimeBar = Library:Create('Frame', {
