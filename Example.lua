@@ -1,36 +1,11 @@
---[[
-    Forma example script
-
-    This file intentionally reads like a reference implementation rather than a
-    minimal demo. It follows the documented/example-first layout used by Linoria,
-    while covering the features that are specific to this fork.
-
-    Forma-specific examples in this file include:
-      * smooth sliders with nudge buttons and value editing
-      * animated text input / caret behavior
-      * searchable dropdowns with edge fades
-      * dropdown and multi-dropdown dependency boxes
-      * animated colorpicker Settings tabs (Solid / Fade / Rainbow)
-      * warning confirmation buttons and responsive 2/3-button rows
-      * smooth notifications with animated accent/progress bars and stacking
-      * the Target HUD, automatic targeting, and smoothed health updates
-      * watermark metadata, moving accent gradients, fonts, overlays, themes,
-        save configs, and configurable menu motion/easing
-]]
+-- Forma example script
+-- Structured after LinoriaLib's Example.lua, but adapted to Forma's API and additions.
 
 local repo = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/'
 
-local function LoadFormaModule(path)
-    local source = game:HttpGet(repo .. path)
-    local chunk, compileError = loadstring(source)
-
-    assert(chunk, ('Forma failed to compile %s:\n%s'):format(path, tostring(compileError)))
-    return chunk()
-end
-
-local Library = LoadFormaModule('Library.lua')
-local ThemeManager = LoadFormaModule('addons/ThemeManager.lua')
-local SaveManager = LoadFormaModule('addons/SaveManager.lua')
+local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
 local Toggles = getgenv().Toggles
 local Options = getgenv().Options
@@ -41,38 +16,525 @@ local Stats = game:GetService('Stats')
 
 Library.NotifyOnError = true
 
--- Library:CreateWindow
---
--- Forma keeps Linoria's normal window API while adding coordinated menu motion,
--- resize handles, moving accent outlines, smooth dragging, and game-name metadata.
 local Window = Library:CreateWindow({
-    Title = 'Forma Example',
+    -- Center controls whether the menu starts centered.
+    -- AutoShow controls whether it appears immediately after creation.
+    -- Position and Size can also be supplied when you want a fixed starting layout.
+
+    Title = 'Forma example',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
-    MenuFadeTime = 0.2,
+    MenuFadeTime = 0.2
 })
 
 -- CALLBACK NOTE:
--- You can pass Callback functions directly into controls, but it is usually cleaner
--- to build the interface first and bind behavior with :OnChanged afterwards.
--- This example uses both forms so the API is easy to reference.
+-- Callbacks can be passed directly inside an element's options table.
+-- For larger projects it is usually cleaner to create the UI first, then bind
+-- behavior with Toggles/Options.INDEX:OnChanged(function(Value) ... end).
 
+-- Tabs do not have to be stored in a table, this is only a convenient pattern.
 local Tabs = {
-    Main = Window:AddTab('Controls'),
-    Players = Window:AddTab('Players'),
-    Visuals = Window:AddTab('Visuals'),
-    Tools = Window:AddTab('Tools'),
+    Main = Window:AddTab('Main'),
+    ['Forma'] = Window:AddTab('Forma'),
+    ['Target HUD'] = Window:AddTab('Target HUD'),
     ['UI Settings'] = Window:AddTab('UI Settings'),
 }
 
---[[
-    TARGET HUD SETUP
+-- Groupboxes and Tabbox tabs expose the same control methods.
+local LeftGroupBox = Tabs.Main:AddLeftGroupbox('Groupbox')
 
-    Forma adds a standalone draggable Target HUD. It can use a Player directly,
-    automatically acquire targets from the camera/mouse, accept custom health
-    providers, display custom meter text, and host additional labels.
+-- We can also access the tab through Window.Tabs:
+-- local LeftGroupBox = Window.Tabs.Main:AddLeftGroupbox('Groupbox')
+
+-- Groupbox:AddToggle
+-- Arguments: Index, Options
+LeftGroupBox:AddToggle('MyToggle', {
+    Text = 'This is a toggle',
+    Default = true,
+    Tooltip = 'This is a tooltip',
+
+    Callback = function(Value)
+        print('[cb] MyToggle changed to:', Value)
+    end
+})
+
+-- Toggles is placed in getgenv() by the library.
+-- The index passed to AddToggle is the key used here.
+Toggles.MyToggle:OnChanged(function()
+    print('MyToggle changed to:', Toggles.MyToggle.Value)
+end)
+
+Toggles.MyToggle:SetValue(false)
+
+-- Toggle:AddKeyPicker
+-- Forma supports Always, Toggle, and Hold modes on toggle-attached keybinds.
+local FeatureToggle = LeftGroupBox:AddToggle('FeatureToggle', {
+    Text = 'Feature with keybind',
+    Default = false,
+})
+
+FeatureToggle:AddKeyPicker('FeatureKeybind', {
+    Default = 'F',
+    SyncToggleState = true,
+    Mode = 'Toggle',
+    Modes = { 'Always', 'Toggle', 'Hold' },
+    Text = 'Feature keybind',
+    NoUI = false,
+
+    Callback = function(Value)
+        print('[cb] Feature key state:', Value)
+    end,
+
+    ChangedCallback = function(New)
+        print('[cb] Feature key changed:', New)
+    end
+})
+
+--[[
+    Groupbox:AddButton
+    Arguments: {
+        Text = string,
+        Func = function,
+        DoubleClick = boolean,
+        Tooltip = string,
+        Warning = boolean,
+        ConfirmDuration = number,
+    }
+
+    Buttons can add a second button with :AddButton().
+    Forma also supports :AddTertiaryButton() for a responsive three-button row.
+    Warning buttons show a confirmation countdown before running their action.
 ]]
+
+local MyButton = LeftGroupBox:AddButton({
+    Text = 'Button',
+    Func = function()
+        print('You clicked a button!')
+    end,
+    DoubleClick = false,
+    Tooltip = 'This is the main button'
+})
+
+local MyButton2 = MyButton:AddButton({
+    Text = 'Sub button',
+    Func = function()
+        print('You clicked the sub button!')
+    end,
+    DoubleClick = false,
+    Tooltip = 'Second button in the responsive row'
+})
+
+MyButton2:AddTertiaryButton({
+    Text = 'Third',
+    Func = function()
+        print('You clicked the tertiary button!')
+    end,
+    Tooltip = 'Third button in the responsive row'
+})
+
+LeftGroupBox:AddButton({
+    Text = 'Warning action',
+    Warning = true,
+    ConfirmDuration = 3,
+    Tooltip = 'Click again before the countdown ends to confirm.',
+    Func = function()
+        Library:Notify({
+            Title = 'Warning action',
+            Text = 'Confirmed.',
+            Duration = 3,
+        })
+    end,
+})
+
+-- Groupbox:AddLabel
+-- Arguments: Text, DoesWrap
+LeftGroupBox:AddLabel('This is a label')
+LeftGroupBox:AddLabel('This is a label\n\nwhich wraps its text!', true)
+
+-- Groupbox:AddDivider
+-- Arguments: None
+LeftGroupBox:AddDivider()
+
+--[[
+    Groupbox:AddSlider
+    Arguments: Idx, SliderOptions
+
+    SliderOptions: {
+        Text = string,
+        Default = number,
+        Min = number,
+        Max = number,
+        Rounding = number,
+        Step = number,
+        Suffix = string,
+        Compact = boolean,
+        Tooltip = string,
+    }
+
+    Forma sliders smoothly filter the fill, thumb, and value badge while dragging.
+    The logical value still updates immediately. The +/- nudge controls and the
+    editable value badge are part of the normal slider implementation.
+]]
+LeftGroupBox:AddSlider('MySlider', {
+    Text = 'This is my slider!',
+    Default = 16,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Step = 1,
+    Suffix = ' studs',
+    Compact = false,
+
+    Callback = function(Value)
+        print('[cb] MySlider changed to:', Value)
+    end
+})
+
+-- Options is also placed in getgenv().
+local Number = Options.MySlider.Value
+print('Initial slider value:', Number)
+
+Options.MySlider:OnChanged(function()
+    print('MySlider changed to:', Options.MySlider.Value)
+end)
+
+Options.MySlider:SetValue(25)
+
+LeftGroupBox:AddSlider('SmoothSlider', {
+    Text = 'Decimal slider',
+    Default = 0.5,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+    Step = 0.05,
+})
+
+LeftGroupBox:AddSlider('CompactSlider', {
+    Text = 'Compact slider',
+    Default = 50,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Compact = true,
+})
+
+-- Groupbox:AddInput
+-- Arguments: Idx, Info
+--
+-- Forma textboxes use the animated input renderer/caret and smooth horizontal
+-- scrolling while keeping the same normal input API.
+LeftGroupBox:AddInput('MyTextbox', {
+    Default = 'My textbox!',
+    Numeric = false,
+    Finished = false,
+
+    Text = 'This is a textbox',
+    Tooltip = 'Typing uses Forma\'s animated text/caret renderer.',
+    Placeholder = 'Placeholder text',
+    MaxLength = 32,
+
+    Callback = function(Value)
+        print('[cb] Text updated:', Value)
+    end
+})
+
+Options.MyTextbox:OnChanged(function()
+    print('Textbox changed:', Options.MyTextbox.Value)
+end)
+
+-- Groupbox:AddDropdown
+-- Arguments: Idx, Info
+LeftGroupBox:AddDropdown('MyDropdown', {
+    Values = { 'This', 'is', 'a', 'dropdown' },
+    Default = 1,
+    Multi = false,
+    Searchable = true,
+
+    Text = 'A searchable dropdown',
+    Tooltip = {
+        Title = 'Searchable dropdown',
+        Text = {
+            'Forma can filter rows while you type.',
+            'Rows also fade at the top and bottom of the scrolling viewport.',
+        },
+    },
+
+    Callback = function(Value)
+        print('[cb] Dropdown changed:', Value)
+    end
+})
+
+Options.MyDropdown:OnChanged(function()
+    print('Dropdown changed:', Options.MyDropdown.Value)
+end)
+
+Options.MyDropdown:SetValue('This')
+
+-- Multi dropdowns return a table of selected entries.
+LeftGroupBox:AddDropdown('MyMultiDropdown', {
+    Values = { 'ESP', 'Names', 'Boxes', 'Health', 'Distance' },
+    Default = { 'ESP', 'Names' },
+    Multi = true,
+    Searchable = false,
+
+    Text = 'A multi dropdown',
+    Tooltip = 'Multi-select values can also be used by dependency boxes.',
+})
+
+Options.MyMultiDropdown:OnChanged(function()
+    print('Multi dropdown changed:')
+    for Key, Value in next, Options.MyMultiDropdown.Value do
+        print(Key, Value)
+    end
+end)
+
+-- SpecialType can populate players and teams automatically.
+LeftGroupBox:AddDropdown('MyPlayerDropdown', {
+    SpecialType = 'Player',
+    Text = 'A player dropdown',
+    Searchable = true,
+})
+
+LeftGroupBox:AddDropdown('MyTeamDropdown', {
+    SpecialType = 'Team',
+    Text = 'A team dropdown',
+})
+
+-- Label:AddColorPicker
+-- Arguments: Idx, Info
+--
+-- Settings is a Forma extension. It adds Color / Settings tabs and exposes
+-- Solid, Fade, and Rainbow modes. Fade reveals Color 1 / Color 2 previews.
+-- Fade and Rainbow use the normal Forma slider for speed, and the hue/SV cursors
+-- visibly follow the animated output rather than remaining static.
+LeftGroupBox:AddLabel('Color'):AddColorPicker('ColorPicker', {
+    Default = Color3.fromRGB(0, 170, 255),
+    Title = 'Animated color',
+    Transparency = 0,
+
+    Settings = {
+        Mode = 'Fade',
+        Speed = 1.25,
+        Color1 = Color3.fromRGB(0, 170, 255),
+        Color2 = Color3.fromRGB(190, 70, 255),
+    },
+
+    Callback = function(Value)
+        print('[cb] Color changed:', Value)
+    end
+})
+
+Options.ColorPicker:OnChanged(function()
+    print('Color changed:', Options.ColorPicker.Value)
+    print('Transparency:', Options.ColorPicker.Transparency)
+end)
+
+Options.ColorPicker:OnModeChanged(function(Mode)
+    print('Color mode changed:', Mode)
+end)
+
+Options.ColorPicker:OnSpeedChanged(function(Speed)
+    print('Color speed changed:', Speed)
+end)
+
+-- A normal colorpicker still works exactly as before when Settings is omitted.
+LeftGroupBox:AddLabel('Solid color'):AddColorPicker('SolidColorPicker', {
+    Default = Color3.fromRGB(0, 255, 140),
+    Title = 'Solid color',
+})
+
+-- Label:AddKeyPicker
+-- Arguments: Idx, Info
+LeftGroupBox:AddLabel('Keybind'):AddKeyPicker('KeyPicker', {
+    Default = 'MB2',
+    SyncToggleState = false,
+    Mode = 'Toggle',
+    Modes = { 'Always', 'Toggle', 'Hold' },
+    Text = 'Standalone keybind',
+    NoUI = false,
+
+    Callback = function(Value)
+        print('[cb] Keybind state:', Value)
+    end,
+
+    ChangedCallback = function(New)
+        print('[cb] Keybind changed:', New)
+    end
+})
+
+Options.KeyPicker:OnClick(function()
+    print('Keybind clicked:', Options.KeyPicker:GetState())
+end)
+
+Options.KeyPicker:OnChanged(function()
+    print('Keybind changed:', Options.KeyPicker.Value)
+end)
+
+-- Long text demonstrates the scroll reveal behavior used by overflowing groups.
+local LeftGroupBox2 = Tabs.Main:AddLeftGroupbox('Groupbox #2')
+LeftGroupBox2:AddLabel('Long text can push a group past the visible area.\n\nScroll the page to see Forma\'s edge-fade/reveal behavior.\n\nThe same treatment is used for scrolling dropdown rows.', true)
+
+-- Tabboxes are used the same way as in Linoria: create the box, then add tabs.
+local TabBox = Tabs.Main:AddRightTabbox()
+
+local Tab1 = TabBox:AddTab('Tab 1')
+Tab1:AddToggle('Tab1Toggle', { Text = 'Tab 1 Toggle' })
+Tab1:AddSlider('Tab1Slider', { Text = 'Tab 1 Slider', Default = 50, Min = 0, Max = 100, Rounding = 0 })
+
+local Tab2 = TabBox:AddTab('Tab 2')
+Tab2:AddToggle('Tab2Toggle', { Text = 'Tab 2 Toggle' })
+Tab2:AddDropdown('Tab2Dropdown', { Text = 'Tab 2 Dropdown', Default = 1, Values = { 'One', 'Two', 'Three' } })
+
+-- Dependency boxes can depend on toggles, single dropdowns, or multi-dropdowns.
+local RightGroupbox = Tabs.Main:AddRightGroupbox('Dependency boxes')
+RightGroupbox:AddToggle('ControlToggle', { Text = 'Dependency box toggle' })
+
+local Depbox = RightGroupbox:AddDependencyBox()
+Depbox:AddToggle('DepboxToggle', { Text = 'Sub-dependency box toggle' })
+Depbox:AddSlider('DepboxSlider', { Text = 'Slider', Default = 50, Min = 0, Max = 100, Rounding = 0 })
+
+Depbox:SetupDependencies({
+    { Toggles.ControlToggle, true }
+})
+
+-- Forma dependency boxes animate their size/fade when visibility changes.
+-- They can also be nested.
+local SubDepbox = Depbox:AddDependencyBox()
+SubDepbox:AddSlider('NestedSlider', { Text = 'Nested slider', Default = 10, Min = 0, Max = 20, Rounding = 0 })
+SubDepbox:AddDropdown('NestedDropdown', { Text = 'Nested dropdown', Default = 1, Values = { 'a', 'b', 'c' } })
+
+SubDepbox:SetupDependencies({
+    { Toggles.DepboxToggle, true }
+})
+
+-- Dropdown dependency example.
+RightGroupbox:AddDropdown('DependencyMode', {
+    Text = 'Dependency mode',
+    Values = { 'Automatic', 'Manual', 'Priority' },
+    Default = 1,
+})
+
+local DropdownDepbox = RightGroupbox:AddDependencyBox()
+DropdownDepbox:AddToggle('ManualOption', { Text = 'Manual / Priority option' })
+DropdownDepbox:SetupDependencies({
+    { Options.DependencyMode, { 'Manual', 'Priority' } }
+})
+
+-- Multi-dropdown dependency example.
+local MultiDepbox = RightGroupbox:AddDependencyBox()
+MultiDepbox:AddToggle('DistanceOption', { Text = 'Distance is selected' })
+MultiDepbox:SetupDependencies({
+    { Options.MyMultiDropdown, 'Distance' }
+})
+
+-- ============================================================================
+-- Forma-specific examples
+-- ============================================================================
+
+local FormaLeft = Tabs.Forma:AddLeftGroupbox('Notifications')
+
+-- Library:Notify
+-- The old string form is still supported.
+FormaLeft:AddButton({
+    Text = 'Legacy notification',
+    Func = function()
+        Library:Notify('Legacy notification form', 3)
+    end,
+})
+
+-- Titled notifications use a connected moving accent line, smooth width/slide
+-- motion, a bottom lifetime bar, and smooth vertical stack reflow.
+FormaLeft:AddButton({
+    Text = 'Titled notification',
+    Func = function()
+        Library:Notify({
+            Title = 'Forma Notification',
+            Text = 'Smooth slide, animated accent gradient, and lifetime progress.',
+            Duration = 6,
+        })
+    end,
+})
+
+FormaLeft:AddButton({
+    Text = 'Notification stack',
+    Func = function()
+        for Index = 1, 4 do
+            task.delay((Index - 1) * 0.12, function()
+                Library:Notify({
+                    Title = ('Notification %d'):format(Index),
+                    Text = 'Watch the existing notifications move smoothly.',
+                    Duration = 3.5 + Index * 0.35,
+                })
+            end)
+        end
+    end,
+})
+
+FormaLeft:AddInput('NotificationText', {
+    Text = 'Notification text',
+    Default = 'Custom notification',
+    Finished = false,
+})
+
+FormaLeft:AddButton({
+    Text = 'Send custom notification',
+    Func = function()
+        Library:Notify({
+            Title = 'Custom Notification',
+            Text = Options.NotificationText.Value,
+            Duration = 4,
+        })
+    end,
+})
+
+local FormaRight = Tabs.Forma:AddRightGroupbox('Animated colorpicker')
+
+FormaRight:AddLabel('Rainbow'):AddColorPicker('RainbowColorPicker', {
+    Default = Color3.fromRGB(255, 80, 150),
+    Title = 'Rainbow picker',
+    Settings = {
+        Mode = 'Rainbow',
+        Speed = 1,
+        Color1 = Color3.fromRGB(255, 80, 150),
+        Color2 = Color3.fromRGB(80, 170, 255),
+    },
+})
+
+FormaRight:AddLabel('Fade'):AddColorPicker('FadeColorPicker', {
+    Default = Color3.fromRGB(80, 170, 255),
+    Title = 'Fade picker',
+    Settings = {
+        Mode = 'Fade',
+        Speed = 1,
+        Color1 = Color3.fromRGB(80, 170, 255),
+        Color2 = Color3.fromRGB(190, 70, 255),
+    },
+})
+
+FormaRight:AddButton({
+    Text = 'Set Fade mode',
+    Func = function()
+        Options.ColorPicker:SetMode('Fade')
+    end,
+}):AddButton({
+    Text = 'Set Rainbow mode',
+    Func = function()
+        Options.ColorPicker:SetMode('Rainbow')
+    end,
+})
+
+FormaRight:AddButton({
+    Text = 'Set Solid mode',
+    Func = function()
+        Options.ColorPicker:SetMode('Solid')
+    end,
+})
+
+-- ============================================================================
+-- Target HUD
+-- ============================================================================
+
 local TargetHUDManualHealth = 100
 local TargetHUDManualMaxHealth = 100
 local TargetHUDUseManualHealth = false
@@ -81,11 +543,8 @@ local TargetHUDStatusLabel
 local TargetHUD = Library:CreateTargetHUD({
     Visible = false,
     Position = UDim2.new(0.5, 285, 0.5, 120),
-
     AutoTargetMode = 'Off',
     AutoDistanceMeter = false,
-
-    -- Rapid health changes follow this value smoothly instead of restarting a tween.
     HealthSmoothTime = 0.20,
     HealthGradientSpeed = 1.15,
 
@@ -107,405 +566,31 @@ local TargetHUD = Library:CreateTargetHUD({
     end,
 })
 
--- ============================================================================
--- Controls tab
--- ============================================================================
+local HUDLeft = Tabs['Target HUD']:AddLeftGroupbox('Target')
 
-local ControlsLeft = Tabs.Main:AddLeftGroupbox('Basic controls')
-
--- Groupbox:AddToggle
--- Arguments: Index, Info
---
--- Info fields demonstrated here: Text, Default, Tooltip, Callback.
-ControlsLeft:AddToggle('Enabled', {
-    Text = 'Enable example feature',
-    Default = false,
-    Tooltip = 'Master toggle used by several examples below.',
-    Callback = function(Value)
-        print('[callback] Enabled:', Value)
-    end,
-})
-
-Toggles.Enabled:OnChanged(function()
-    print('Enabled changed:', Toggles.Enabled.Value)
-end)
-
--- Toggle:AddKeyPicker
---
--- Forma supports Always, Toggle, and Hold modes on toggle-attached keybinds.
--- SyncToggleState keeps the parent toggle and the keybind state synchronized.
-local AutoSprintToggle = ControlsLeft:AddToggle('AutoSprint', {
-    Text = 'Auto sprint',
-    Default = false,
-    Tooltip = 'Example toggle with a synced keybind.',
-})
-
-AutoSprintToggle:AddKeyPicker('AutoSprintKey', {
-    Default = 'F',
-    SyncToggleState = true,
-    Mode = 'Toggle',
-    Modes = { 'Always', 'Toggle', 'Hold' },
-    Text = 'Auto sprint',
-    NoUI = false,
-
-    Callback = function(Value)
-        print('[callback] Auto sprint key state:', Value)
-    end,
-
-    ChangedCallback = function(NewKey)
-        print('[callback] Auto sprint key changed:', NewKey)
-    end,
-})
-
-ControlsLeft:AddDivider()
-
--- Groupbox:AddButton
---
--- Forma supports responsive secondary/tertiary button rows. Warning buttons can
--- require confirmation and display a countdown before the action is accepted.
-local ActionButton = ControlsLeft:AddButton({
-    Text = 'Start',
-    Func = function()
-        Library:Notify({ Title = 'Controls', Text = 'Started.', Duration = 2.5 })
-    end,
-    Tooltip = 'Primary button in a three-button row.',
-})
-
-local PauseButton = ActionButton:AddButton({
-    Text = 'Pause',
-    Func = function()
-        Library:Notify({ Title = 'Controls', Text = 'Paused.', Duration = 2.5 })
-    end,
-})
-
-PauseButton:AddTertiaryButton({
-    Text = 'Stop',
-    Func = function()
-        Library:Notify({ Title = 'Controls', Text = 'Stopped.', Duration = 2.5 })
-    end,
-})
-
-ControlsLeft:AddButton({
-    Text = 'Reset values',
-    Warning = true,
-    ConfirmDuration = 3,
-    Tooltip = 'Click again before the countdown ends to confirm.',
-    Func = function()
-        Options.WalkSpeed:SetValue(16)
-        Options.Smoothing:SetValue(0.5)
-        Options.CompactVolume:SetValue(50)
-        Library:Notify({ Title = 'Controls', Text = 'Values reset.', Duration = 3 })
-    end,
-})
-
-ControlsLeft:AddDivider()
-
--- Groupbox:AddSlider
--- Arguments: Index, Info
---
--- Required: Text, Default, Min, Max, Rounding
--- Common extras: Step, Suffix, Compact, Tooltip
---
--- Forma's slider fill, thumb, and value badge smoothly follow pointer input while
--- the logical value/callback remains immediate. +/- nudge controls and numeric
--- value editing use the same slider implementation.
-ControlsLeft:AddSlider('WalkSpeed', {
-    Text = 'Walk speed',
-    Default = 16,
-    Min = 0,
-    Max = 100,
-    Rounding = 0,
-    Step = 1,
-    Suffix = ' studs',
-    Callback = function(Value)
-        print('[callback] Walk speed:', Value)
-    end,
-})
-
-ControlsLeft:AddSlider('Smoothing', {
-    Text = 'Movement smoothing',
-    Default = 0.5,
-    Min = 0,
-    Max = 1,
-    Rounding = 2,
-    Step = 0.05,
-})
-
-ControlsLeft:AddSlider('CompactVolume', {
-    Text = 'Volume',
-    Default = 50,
-    Min = 0,
-    Max = 100,
-    Rounding = 0,
-    Compact = true,
-})
-
-Options.WalkSpeed:OnChanged(function()
-    print('WalkSpeed changed:', Options.WalkSpeed.Value)
-end)
-
--- Groupbox:AddInput
---
--- Forma adds animated text rendering/caret motion and smooth horizontal scrolling
--- for long input. Numeric, Finished, MaxLength, and Placeholder remain supported.
-local ControlsRight = Tabs.Main:AddRightGroupbox('Inputs & selection')
-
-ControlsRight:AddInput('DisplayName', {
-    Text = 'Display name',
-    Default = 'Player',
-    Numeric = false,
-    Finished = false,
-    Placeholder = 'Enter a display name',
-})
-
-ControlsRight:AddInput('RetryLimit', {
-    Text = 'Retry limit',
-    Default = '10',
-    Numeric = true,
-    Finished = true,
-    Placeholder = 'Enter a number',
-})
-
-ControlsRight:AddInput('ProfileTag', {
-    Text = 'Profile tag',
-    Default = '',
-    Numeric = false,
-    Finished = false,
-    MaxLength = 16,
-    Placeholder = 'Up to 16 characters',
-})
-
-ControlsRight:AddDivider()
-
--- Groupbox:AddDropdown
---
--- Searchable = true creates a live search box. Forma also fades rows at the top
--- and bottom of the popup viewport while scrolling.
-ControlsRight:AddDropdown('ServerRegion', {
-    Text = 'Server region',
-    Values = {
-        'Automatic',
-        'US West',
-        'US Central',
-        'US East',
-        'Europe',
-        'Singapore',
-        'Japan',
-        'Australia',
-    },
-    Default = 1,
-    Multi = false,
-    Searchable = true,
-    Tooltip = {
-        Title = 'Searchable dropdown',
-        Text = {
-            'Start typing after opening the dropdown to filter its rows.',
-            'Scroll-edge text fades are handled automatically.',
-        },
-    },
-})
-
--- Multi dropdowns return a map of selected values.
-ControlsRight:AddDropdown('ESPElements', {
-    Text = 'Visible ESP elements',
-    Values = { 'ESP', 'Names', 'Boxes', 'Health', 'Distance' },
-    Default = { 'ESP', 'Names' },
-    Multi = true,
-    Searchable = false,
-})
-
-Options.ESPElements:OnChanged(function()
-    print('Selected ESP elements:')
-    for Name, Enabled in pairs(Options.ESPElements.Value) do
-        print('  ', Name, Enabled)
-    end
-end)
-
-ControlsRight:AddDivider()
-
--- Label:AddColorPicker
---
--- Settings is a Forma extension. When enabled, the colorpicker contains a Color
--- tab and a Settings tab with Solid, Fade, and Rainbow modes.
---
--- Fade exposes Color 1 / Color 2 only when needed. Fade and Rainbow reuse the
--- library's normal slider for speed, animate the real picker cursor/hue rail, and
--- update the actual Value/callback continuously.
-ControlsRight:AddLabel('Animated accent'):AddColorPicker('AnimatedAccent', {
-    Default = Color3.fromRGB(0, 170, 255),
-    Title = 'Animated accent',
-    Transparency = 0,
-
-    Settings = {
-        Mode = 'Fade',
-        Speed = 1.25,
-        Color1 = Color3.fromRGB(0, 170, 255),
-        Color2 = Color3.fromRGB(190, 70, 255),
-    },
-})
-
-Options.AnimatedAccent:OnChanged(function(Value)
-    print('Animated accent:', Value, 'transparency:', Options.AnimatedAccent.Transparency)
-end)
-
-Options.AnimatedAccent:OnModeChanged(function(Mode)
-    print('Colorpicker mode:', Mode)
-end)
-
-Options.AnimatedAccent:OnSpeedChanged(function(Speed)
-    print('Colorpicker speed:', Speed)
-end)
-
-ControlsRight:AddLabel('Static color'):AddColorPicker('StaticColor', {
-    Default = Color3.fromRGB(255, 255, 255),
-    Title = 'Normal colorpicker',
-})
-
--- Label:AddKeyPicker can also create a standalone keybind.
-ControlsRight:AddLabel('Quick action key'):AddKeyPicker('StandaloneKey', {
-    Default = 'G',
-    SyncToggleState = false,
-    Mode = 'Toggle',
-    Modes = { 'Always', 'Toggle', 'Hold' },
-    Text = 'Quick action',
-    NoUI = false,
-})
-
-Options.StandaloneKey:OnClick(function()
-    print('Standalone key clicked:', Options.StandaloneKey:GetState())
-end)
-
--- Tabboxes inherit the same control methods as normal groupboxes.
-local ControlTabbox = Tabs.Main:AddLeftTabbox('Tabbox example')
-local RoutingTab = ControlTabbox:AddTab('Routing')
-local DisplayTab = ControlTabbox:AddTab('Display')
-
-RoutingTab:AddDropdown('RoutingMode', {
-    Text = 'Routing mode',
-    Values = { 'Automatic', 'Manual', 'Priority' },
-    Default = 1,
-})
-
--- Groupbox:AddDependencyBox
---
--- Forma dependencies can match dropdown values in addition to toggles. A table of
--- dropdown values means "show for any of these" unless All is explicitly requested.
-local RoutingDependency = RoutingTab:AddDependencyBox()
-RoutingDependency:AddToggle('CustomRoute', { Text = 'Use custom route', Default = false })
-RoutingDependency:AddDropdown('RouteEndpoint', {
-    Text = 'Route endpoint',
-    Values = { 'Nearest', 'Spawn', 'Objective' },
-    Default = 1,
-})
-RoutingDependency:SetupDependencies({
-    { Options.RoutingMode, { 'Manual', 'Priority' } },
-})
-
-DisplayTab:AddDropdown('StatusDisplay', {
-    Text = 'Status display',
-    Values = { 'Compact', 'Detailed', 'Minimal' },
-    Default = 1,
-})
-
--- Multi-dropdown dependencies are also supported.
-local DistanceDependency = ControlsRight:AddDependencyBox()
-DistanceDependency:AddToggle('DistanceReadout', {
-    Text = 'Show distance readout',
-    Default = false,
-})
-DistanceDependency:SetupDependencies({
-    { Options.ESPElements, 'Distance' },
-})
-
--- Nested dependency boxes animate their height/fade instead of popping in/out.
-local AdvancedGroup = Tabs.Main:AddRightGroupbox('Nested dependencies')
-AdvancedGroup:AddToggle('AdvancedEnabled', {
-    Text = 'Enable advanced controls',
-    Default = false,
-})
-
-local AdvancedDependency = AdvancedGroup:AddDependencyBox()
-AdvancedDependency:AddToggle('ReserveEnabled', {
-    Text = 'Use stamina reserve',
-    Default = false,
-})
-AdvancedDependency:AddSlider('SprintThreshold', {
-    Text = 'Sprint threshold',
-    Default = 50,
-    Min = 0,
-    Max = 100,
-    Rounding = 0,
-})
-AdvancedDependency:SetupDependencies({
-    { Toggles.AdvancedEnabled, true },
-})
-
-local NestedDependency = AdvancedDependency:AddDependencyBox()
-NestedDependency:AddSlider('StaminaReserve', {
-    Text = 'Stamina reserve',
-    Default = 10,
-    Min = 0,
-    Max = 20,
-    Rounding = 0,
-})
-NestedDependency:SetupDependencies({
-    { Toggles.ReserveEnabled, true },
-})
-
--- ============================================================================
--- Players / Target HUD tab
--- ============================================================================
-
-local PlayersLeft = Tabs.Players:AddLeftGroupbox('Target selection')
-
--- SpecialType = 'Player' and 'Team' automatically source live game values.
-PlayersLeft:AddDropdown('PlayerDropdown', {
+HUDLeft:AddDropdown('TargetPlayer', {
     SpecialType = 'Player',
     Text = 'Target player',
     Searchable = true,
-    Tooltip = 'Sets the player displayed by the Target HUD.',
 })
 
-PlayersLeft:AddDropdown('TeamDropdown', {
-    SpecialType = 'Team',
-    Text = 'Team',
-})
-
-Options.PlayerDropdown:OnChanged(function(Value)
-    local Player = Value and Players:FindFirstChild(Value)
+Options.TargetPlayer:OnChanged(function()
+    local Name = Options.TargetPlayer.Value
+    local Player = Name and Players:FindFirstChild(Name)
     TargetHUD:SetTarget(Player)
-
-    if TargetHUDUseManualHealth then
-        TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
-    end
 
     if Toggles.ShowTargetHUD and Toggles.ShowTargetHUD.Value and Player then
         TargetHUD:SetVisible(true)
     end
 end)
 
-PlayersLeft:AddButton({
-    Text = 'Target local player',
-    Func = function()
-        TargetHUD:SetTarget(Players.LocalPlayer)
-        TargetHUD:SetVisible(true)
-        Toggles.ShowTargetHUD:SetValue(true)
-
-        if TargetHUDUseManualHealth then
-            TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
-        end
-    end,
-})
-
-local PlayersRight = Tabs.Players:AddRightGroupbox('Target HUD')
-
-PlayersRight:AddToggle('ShowTargetHUD', {
+HUDLeft:AddToggle('ShowTargetHUD', {
     Text = 'Show Target HUD',
     Default = false,
 })
 
 Toggles.ShowTargetHUD:OnChanged(function()
-    local Name = Options.PlayerDropdown.Value
+    local Name = Options.TargetPlayer.Value
     local Player = Name and Players:FindFirstChild(Name)
 
     if not Player and TargetHUDUseManualHealth then
@@ -516,8 +601,16 @@ Toggles.ShowTargetHUD:OnChanged(function()
     TargetHUD:SetVisible(Toggles.ShowTargetHUD.Value and Player ~= nil)
 end)
 
--- Automatic target modes are Off, Look, Hover, and LookOrHover.
-PlayersRight:AddDropdown('TargetHUDAutoMode', {
+HUDLeft:AddButton({
+    Text = 'Target local player',
+    Func = function()
+        TargetHUD:SetTarget(Players.LocalPlayer)
+        TargetHUD:SetVisible(true)
+        Toggles.ShowTargetHUD:SetValue(true)
+    end,
+})
+
+HUDLeft:AddDropdown('TargetMode', {
     Text = 'Automatic target mode',
     Values = { 'Off', 'Look', 'Hover', 'LookOrHover' },
     Default = 1,
@@ -526,35 +619,35 @@ PlayersRight:AddDropdown('TargetHUDAutoMode', {
         Text = {
             'Look uses the center camera ray.',
             'Hover uses the player under the mouse.',
-            'LookOrHover accepts either source.',
+            'LookOrHover accepts either.',
         },
     },
 })
 
-Options.TargetHUDAutoMode:OnChanged(function(Value)
-    TargetHUD:SetAutoTargetMode(Value)
+Options.TargetMode:OnChanged(function()
+    TargetHUD:SetAutoTargetMode(Options.TargetMode.Value)
 end)
 
-PlayersRight:AddToggle('TargetHUDAutoDistance', {
+HUDLeft:AddToggle('AutoDistance', {
     Text = 'Automatic distance meter',
     Default = false,
 })
 
-Toggles.TargetHUDAutoDistance:OnChanged(function()
-    TargetHUD:SetAutoDistanceMeter(Toggles.TargetHUDAutoDistance.Value)
+Toggles.AutoDistance:OnChanged(function()
+    TargetHUD:SetAutoDistanceMeter(Toggles.AutoDistance.Value)
 end)
 
-PlayersRight:AddDivider()
+local HUDRight = Tabs['Target HUD']:AddRightGroupbox('Health / labels')
 
--- Manual health is useful for seeing the damped health follower without damaging
--- a real Humanoid. Rapidly press Damage/Heal to see that the bar does not restart.
-PlayersRight:AddToggle('TargetHUDManualHealth', {
+-- The health bar uses a continuously damped follower instead of restarting a
+-- tween whenever health changes. Rapidly press Damage/Heal to test it.
+HUDRight:AddToggle('ManualHealth', {
     Text = 'Override target health',
     Default = false,
 })
 
-Toggles.TargetHUDManualHealth:OnChanged(function()
-    TargetHUDUseManualHealth = Toggles.TargetHUDManualHealth.Value
+Toggles.ManualHealth:OnChanged(function()
+    TargetHUDUseManualHealth = Toggles.ManualHealth.Value
 
     if TargetHUDUseManualHealth then
         if not TargetHUD.Target then TargetHUD:SetTarget(Players.LocalPlayer) end
@@ -566,7 +659,7 @@ Toggles.TargetHUDManualHealth:OnChanged(function()
     end
 end)
 
-PlayersRight:AddSlider('TargetHUDHealth', {
+HUDRight:AddSlider('TargetHealth', {
     Text = 'Displayed health',
     Default = 100,
     Min = 0,
@@ -576,47 +669,49 @@ PlayersRight:AddSlider('TargetHUDHealth', {
     Suffix = ' HP',
 })
 
-Options.TargetHUDHealth:OnChanged(function(Value)
-    TargetHUDManualHealth = Value
+Options.TargetHealth:OnChanged(function()
+    TargetHUDManualHealth = Options.TargetHealth.Value
+
     if TargetHUDUseManualHealth then
         TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
     end
 end)
 
-PlayersRight:AddButton({
+HUDRight:AddButton({
     Text = 'Damage -25 HP',
     Func = function()
-        Options.TargetHUDHealth:SetValue(math.max(0, Options.TargetHUDHealth.Value - 25))
+        Options.TargetHealth:SetValue(math.max(0, Options.TargetHealth.Value - 25))
     end,
 }):AddButton({
     Text = 'Heal +25 HP',
     Func = function()
-        Options.TargetHUDHealth:SetValue(math.min(100, Options.TargetHUDHealth.Value + 25))
+        Options.TargetHealth:SetValue(math.min(100, Options.TargetHealth.Value + 25))
     end,
 })
 
-PlayersRight:AddInput('TargetHUDMeter', {
+HUDRight:AddInput('TargetMeter', {
     Text = 'Custom meter text',
     Default = '',
     Finished = false,
     Placeholder = '42 meters',
 })
 
-Options.TargetHUDMeter:OnChanged(function(Value)
+Options.TargetMeter:OnChanged(function()
+    local Value = Options.TargetMeter.Value
     TargetHUD:SetMeter(Value ~= '' and Value or nil)
 end)
 
-PlayersRight:AddInput('TargetHUDStatus', {
+HUDRight:AddInput('TargetLabel', {
     Text = 'Custom HUD label',
     Default = '',
     Finished = false,
     Placeholder = 'Status text',
 })
 
-PlayersRight:AddButton({
+HUDRight:AddButton({
     Text = 'Apply custom label',
     Func = function()
-        local Value = Options.TargetHUDStatus.Value
+        local Value = Options.TargetLabel.Value
 
         if Value == '' then
             if TargetHUDStatusLabel then
@@ -642,223 +737,11 @@ PlayersRight:AddButton({
     end,
 })
 
-PlayersRight:AddButton({
-    Text = 'Refresh HUD',
-    Func = function()
-        TargetHUD:Refresh()
-    end,
-}):AddButton({
-    Text = 'Clear HUD',
-    Func = function()
-        TargetHUD:SetAutoTargetMode('Off')
-        Options.TargetHUDAutoMode:SetValue('Off')
-        TargetHUD:SetTarget(nil)
-        TargetHUD:SetVisible(false)
-        Toggles.ShowTargetHUD:SetValue(false)
-    end,
-})
+-- Library functions
+-- Sets the watermark visibility.
+Library:SetWatermarkVisibility(true)
 
--- ============================================================================
--- Visuals tab
--- ============================================================================
-
-local VisualsLeft = Tabs.Visuals:AddLeftGroupbox('ESP example')
-
-local ESPToggle = VisualsLeft:AddToggle('ESPEnabled', {
-    Text = 'Enable ESP',
-    Default = false,
-})
-
-ESPToggle:AddKeyPicker('ESPKey', {
-    Default = 'V',
-    SyncToggleState = true,
-    Mode = 'Toggle',
-    Modes = { 'Always', 'Toggle', 'Hold' },
-    Text = 'ESP',
-})
-
-VisualsLeft:AddToggle('ESPBoxes', { Text = 'Boxes', Default = true })
-VisualsLeft:AddToggle('ESPNames', { Text = 'Names', Default = true })
-VisualsLeft:AddToggle('ESPHealth', { Text = 'Health', Default = true })
-VisualsLeft:AddToggle('ESPDistance', { Text = 'Distance', Default = false })
-
-VisualsLeft:AddSlider('ESPMaxDistance', {
-    Text = 'Maximum distance',
-    Default = 1000,
-    Min = 50,
-    Max = 5000,
-    Rounding = 0,
-    Suffix = ' studs',
-})
-
-VisualsLeft:AddLabel('ESP color'):AddColorPicker('ESPColor', {
-    Default = Color3.fromRGB(255, 255, 255),
-    Title = 'ESP color',
-})
-
-local VisualsRight = Tabs.Visuals:AddRightGroupbox('Color animation')
-
--- A second animated picker makes the new color modes easy to test without touching
--- the UI theme itself. Its top accent and tab indicator use the same moving gradient
--- as Forma notifications.
-VisualsRight:AddLabel('World tint'):AddColorPicker('WorldTint', {
-    Default = Color3.fromRGB(95, 135, 255),
-    Title = 'World tint',
-    Settings = {
-        Mode = 'Rainbow',
-        Speed = 0.8,
-        Color1 = Color3.fromRGB(95, 135, 255),
-        Color2 = Color3.fromRGB(255, 80, 155),
-    },
-})
-
-VisualsRight:AddToggle('CustomFOV', {
-    Text = 'Custom FOV',
-    Default = false,
-})
-
-VisualsRight:AddSlider('FOVValue', {
-    Text = 'Field of view',
-    Default = 70,
-    Min = 40,
-    Max = 120,
-    Rounding = 0,
-})
-
-local FOVDependency = VisualsRight:AddDependencyBox()
-FOVDependency:AddSlider('FOVResponse', {
-    Text = 'FOV response',
-    Default = 0.2,
-    Min = 0.05,
-    Max = 1,
-    Rounding = 2,
-    Step = 0.05,
-    Suffix = 's',
-})
-FOVDependency:SetupDependencies({
-    { Toggles.CustomFOV, true },
-})
-
--- ============================================================================
--- Tools tab
--- ============================================================================
-
-local ToolsLeft = Tabs.Tools:AddLeftGroupbox('Notifications')
-
--- Library:Notify
---
--- Legacy string form is still supported.
-ToolsLeft:AddButton({
-    Text = 'Legacy notification',
-    Func = function()
-        Library:Notify('Legacy notification form', 3)
-    end,
-})
-
--- Titled notifications have a moving accent line and a bottom progress/time bar.
--- Entry/exit motion, width reveal, progress, and vertical stack reflow are all smooth.
-ToolsLeft:AddButton({
-    Text = 'Titled notification',
-    Func = function()
-        Library:Notify({
-            Title = 'Forma Notification',
-            Text = 'Accent gradient, lifetime bar, smooth slide, and stack motion.',
-            Duration = 6,
-        })
-    end,
-})
-
-ToolsLeft:AddButton({
-    Text = 'Notification stack',
-    Func = function()
-        for Index = 1, 4 do
-            task.delay((Index - 1) * 0.12, function()
-                Library:Notify({
-                    Title = ('Notification %d'):format(Index),
-                    Text = 'Watch existing notifications move smoothly in the stack.',
-                    Duration = 3.5 + (Index * 0.35),
-                })
-            end)
-        end
-    end,
-})
-
-ToolsLeft:AddInput('CustomNotification', {
-    Text = 'Notification text',
-    Default = 'Custom notification',
-    Finished = false,
-})
-
-ToolsLeft:AddButton({
-    Text = 'Send custom notification',
-    Func = function()
-        Library:Notify({
-            Title = 'Custom Notification',
-            Text = Options.CustomNotification.Value,
-            Duration = 4,
-        })
-    end,
-})
-
-local ToolsRight = Tabs.Tools:AddRightGroupbox('Runtime')
-
-ToolsRight:AddToggle('PrintRuntimeValues', {
-    Text = 'Print values every second',
-    Default = false,
-})
-
-ToolsRight:AddButton({
-    Text = 'Print current values',
-    Func = function()
-        print('Enabled:', Toggles.Enabled.Value)
-        print('WalkSpeed:', Options.WalkSpeed.Value)
-        print('ServerRegion:', Options.ServerRegion.Value)
-        print('Color mode:', Options.AnimatedAccent.Mode)
-        print('Color speed:', Options.AnimatedAccent.Speed)
-        print('Player:', Options.PlayerDropdown.Value)
-        print('Target HUD health:', Options.TargetHUDHealth.Value)
-        print('ESP:', Toggles.ESPEnabled.Value)
-    end,
-})
-
-local UtilityTabbox = Tabs.Tools:AddRightTabbox('Utility tabbox')
-local SessionTab = UtilityTabbox:AddTab('Session')
-local NetworkTab = UtilityTabbox:AddTab('Network')
-
-SessionTab:AddToggle('AutoReconnect', {
-    Text = 'Auto reconnect',
-    Default = true,
-})
-
-SessionTab:AddInput('SessionNote', {
-    Text = 'Session note',
-    Default = '',
-    Finished = false,
-    Placeholder = 'Add a note',
-})
-
-NetworkTab:AddDropdown('PreferredRegion', {
-    Text = 'Preferred region',
-    Values = { 'Automatic', 'US West', 'US East', 'Europe', 'Asia' },
-    Default = 1,
-    Searchable = true,
-})
-
-NetworkTab:AddSlider('RetryDelay', {
-    Text = 'Retry delay',
-    Default = 3,
-    Min = 1,
-    Max = 10,
-    Rounding = 0,
-    Suffix = ' sec',
-})
-
--- ============================================================================
--- Watermark / keybind HUD
--- ============================================================================
-
--- Forma's watermark separates the accent title from normal-color stats and adds a
--- metadata row for game name, username, user id, and date.
+-- Forma's watermark can show a metadata row in addition to its title/stats line.
 Library:SetWatermarkInfo({
     ShowGameName = true,
     ShowUsername = true,
@@ -866,13 +749,7 @@ Library:SetWatermarkInfo({
     ShowDate = true,
 })
 
-Library:SetWatermarkVisibility(true)
-Library:SetWatermark('Forma - Loading...')
-
--- The keybind list and watermark are draggable and use the same moving accent
--- treatment as the main window / Target HUD.
-Library.KeybindFrame.Visible = true
-
+-- Example of dynamically updating the watermark with FPS and ping.
 local FrameTimer = tick()
 local FrameCounter = 0
 local FPS = 60
@@ -883,53 +760,37 @@ local WatermarkConnection = RunService.RenderStepped:Connect(function()
 
     if tick() - FrameTimer >= 1 then
         FPS = FrameCounter
-        FrameCounter = 0
         FrameTimer = tick()
+        FrameCounter = 0
 
         local Success, Result = pcall(function()
             return Stats.Network.ServerStatsItem['Data Ping']:GetValue()
         end)
 
-        if Success then Ping = math.floor(Result) end
-    end
-
-    Library:SetWatermark(('Forma - %d FPS | %d ms'):format(FPS, Ping))
-end)
-
-local RuntimeThreadRunning = true
-
-task.spawn(function()
-    while RuntimeThreadRunning do
-        task.wait(1)
-
-        if Toggles.PrintRuntimeValues.Value then
-            print('WalkSpeed:', Options.WalkSpeed.Value)
-            print('Region:', Options.ServerRegion.Value)
-            print('Standalone key:', Options.StandaloneKey:GetState())
-            print('Animated color mode:', Options.AnimatedAccent.Mode)
+        if Success then
+            Ping = math.floor(Result)
         end
     end
+
+    Library:SetWatermark(('Forma demo | %d fps | %d ms'):format(FPS, Ping))
 end)
 
--- ============================================================================
--- UI Settings / addons
--- ============================================================================
+-- The keybind list, watermark, main window, and Target HUD use Forma's draggable
+-- motion path. Their accent outlines use the shared moving accent treatment.
+Library.KeybindFrame.Visible = true
 
+-- UI Settings
 local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
 
-MenuGroup:AddButton({
-    Text = 'Unload',
-    Warning = true,
-    ConfirmDuration = 3,
-    Func = function()
-        Library:Unload()
-    end,
-})
+MenuGroup:AddButton('Unload', function()
+    Library:Unload()
+end)
 
-MenuGroup:AddLabel('Menu key'):AddKeyPicker('MenuKeybind', {
+-- NoUI hides this bind from the keybind list itself.
+MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
     Default = 'End',
     NoUI = true,
-    Text = 'Menu key',
+    Text = 'Menu keybind'
 })
 
 Library.ToggleKeybind = Options.MenuKeybind
@@ -952,68 +813,54 @@ Toggles.ShowWatermark:OnChanged(function()
     Library:SetWatermarkVisibility(Toggles.ShowWatermark.Value)
 end)
 
-MenuGroup:AddButton({
-    Text = 'Show feature notification',
-    Func = function()
-        Library:Notify({
-            Title = 'Forma',
-            Text = 'Themes, fonts, overlays, configs, and motion settings are active.',
-            Duration = 4,
-        })
-    end,
-})
+-- Addons:
+-- SaveManager provides the config system.
+-- ThemeManager provides themes, expanded Forma palette controls, fonts, text size,
+-- optional overlays, and the menu animation/easing controls.
 
--- ThemeManager
---
--- Forma's ThemeManager exposes the expanded palette (including BlendShade,
--- inactive text, contrast, and inline colors), custom/built-in themes, repo fonts,
--- text size, optional character overlays, and persisted UI preferences.
 ThemeManager:SetLibrary(Library)
-ThemeManager:SetFolder('FormaSettings')
-
--- ApplyToTab builds the Theme section. Forma also attaches its MenuManager here,
--- exposing easing style/direction and global animation response controls.
-ThemeManager:ApplyToTab(Tabs['UI Settings'])
-
--- SaveManager
---
--- Colorpicker animation settings (mode, speed, Fade endpoints, solid color) are
--- persisted by Forma's SaveManager in addition to the normal Linoria values.
 SaveManager:SetLibrary(Library)
-SaveManager:SetFolder('FormaSettings')
-SaveManager:IgnoreThemeSettings()
 
+SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({
     'MenuKeybind',
     'ShowKeybindList',
     'ShowWatermark',
     'ShowTargetHUD',
-    'TargetHUDAutoMode',
-    'TargetHUDAutoDistance',
-    'TargetHUDManualHealth',
-    'TargetHUDHealth',
-    'TargetHUDMeter',
-    'TargetHUDStatus',
+    'TargetMode',
+    'AutoDistance',
+    'ManualHealth',
+    'TargetHealth',
+    'TargetMeter',
+    'TargetLabel',
 })
 
+ThemeManager:SetFolder('FormaSettings')
+SaveManager:SetFolder('FormaSettings')
+
+-- BuildConfigSection creates the normal config controls.
 SaveManager:BuildConfigSection(Tabs['UI Settings'])
 
--- Library:OnUnload
-Library:OnUnload(function()
-    RuntimeThreadRunning = false
+-- ApplyToTab creates the theme manager and, in Forma, also exposes the menu
+-- manager's easing style, easing direction, and animation response controls.
+ThemeManager:ApplyToTab(Tabs['UI Settings'])
 
+Library:OnUnload(function()
     if WatermarkConnection then
         WatermarkConnection:Disconnect()
         WatermarkConnection = nil
     end
 
-    print('Forma unloaded')
+    print('Unloaded!')
+    Library.Unloaded = true
 end)
 
+-- Forma SaveManager also persists colorpicker animation mode, speed, fade endpoints,
+-- and solid color for colorpickers that enable Settings.
 SaveManager:LoadAutoloadConfig()
 
 Library:Notify({
     Title = 'Forma',
-    Text = 'Example loaded. Open each tab to explore the fork-specific features.',
-    Duration = 5,
+    Text = 'Example loaded.',
+    Duration = 4,
 })
