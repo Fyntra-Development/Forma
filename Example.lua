@@ -1,47 +1,78 @@
-local Repository = "https://raw.githubusercontent.com/Fyntra-Development/Forma/main/"
+--[[
+    Forma example script
 
-local function LoadFormaModule(Path)
-    local Source = game:HttpGet(Repository .. Path)
-    local Chunk, CompileError = loadstring(Source)
+    This file intentionally reads like a reference implementation rather than a
+    minimal demo. It follows the documented/example-first layout used by Linoria,
+    while covering the features that are specific to this fork.
 
-    assert(
-        Chunk,
-        ("Forma failed to compile %s:\n%s"):format(
-            Path,
-            tostring(CompileError)
-        )
-    )
+    Forma-specific examples in this file include:
+      * smooth sliders with nudge buttons and value editing
+      * animated text input / caret behavior
+      * searchable dropdowns with edge fades
+      * dropdown and multi-dropdown dependency boxes
+      * animated colorpicker Settings tabs (Solid / Fade / Rainbow)
+      * warning confirmation buttons and responsive 2/3-button rows
+      * smooth notifications with animated accent/progress bars and stacking
+      * the Target HUD, automatic targeting, and smoothed health updates
+      * watermark metadata, moving accent gradients, fonts, overlays, themes,
+        save configs, and configurable menu motion/easing
+]]
 
-    return Chunk()
+local repo = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/'
+
+local function LoadFormaModule(path)
+    local source = game:HttpGet(repo .. path)
+    local chunk, compileError = loadstring(source)
+
+    assert(chunk, ('Forma failed to compile %s:\n%s'):format(path, tostring(compileError)))
+    return chunk()
 end
 
-local Library = LoadFormaModule("Library.lua")
-local ThemeManager = LoadFormaModule("addons/ThemeManager.lua")
-local SaveManager = LoadFormaModule("addons/SaveManager.lua")
+local Library = LoadFormaModule('Library.lua')
+local ThemeManager = LoadFormaModule('addons/ThemeManager.lua')
+local SaveManager = LoadFormaModule('addons/SaveManager.lua')
 
 local Toggles = getgenv().Toggles
 local Options = getgenv().Options
 
-local Players = game:GetService("Players")
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local Stats = game:GetService('Stats')
 
 Library.NotifyOnError = true
 
+-- Library:CreateWindow
+--
+-- Forma keeps Linoria's normal window API while adding coordinated menu motion,
+-- resize handles, moving accent outlines, smooth dragging, and game-name metadata.
 local Window = Library:CreateWindow({
-    Title = "Forma",
+    Title = 'Forma Example',
     Center = true,
     AutoShow = true,
     TabPadding = 8,
     MenuFadeTime = 0.2,
 })
 
+-- CALLBACK NOTE:
+-- You can pass Callback functions directly into controls, but it is usually cleaner
+-- to build the interface first and bind behavior with :OnChanged afterwards.
+-- This example uses both forms so the API is easy to reference.
+
 local Tabs = {
-    Main = Window:AddTab("Controls"),
-    Players = Window:AddTab("Players"),
-    Visuals = Window:AddTab("Visuals"),
-    Misc = Window:AddTab("Tools"),
-    ["UI Settings"] = Window:AddTab("UI Settings"),
+    Main = Window:AddTab('Controls'),
+    Players = Window:AddTab('Players'),
+    Visuals = Window:AddTab('Visuals'),
+    Tools = Window:AddTab('Tools'),
+    ['UI Settings'] = Window:AddTab('UI Settings'),
 }
 
+--[[
+    TARGET HUD SETUP
+
+    Forma adds a standalone draggable Target HUD. It can use a Player directly,
+    automatically acquire targets from the camera/mouse, accept custom health
+    providers, display custom meter text, and host additional labels.
+]]
 local TargetHUDManualHealth = 100
 local TargetHUDManualMaxHealth = 100
 local TargetHUDUseManualHealth = false
@@ -51,9 +82,10 @@ local TargetHUD = Library:CreateTargetHUD({
     Visible = false,
     Position = UDim2.new(0.5, 285, 0.5, 120),
 
-    AutoTargetMode = "Off",
+    AutoTargetMode = 'Off',
     AutoDistanceMeter = false,
 
+    -- Rapid health changes follow this value smoothly instead of restarting a tween.
     HealthSmoothTime = 0.20,
     HealthGradientSpeed = 1.15,
 
@@ -62,9 +94,9 @@ local TargetHUD = Library:CreateTargetHUD({
             return TargetHUDManualHealth, TargetHUDManualMaxHealth
         end
 
-        if typeof(Target) == "Instance" and Target:IsA("Player") then
+        if typeof(Target) == 'Instance' and Target:IsA('Player') then
             local Character = Target.Character
-            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+            local Humanoid = Character and Character:FindFirstChildOfClass('Humanoid')
 
             if Humanoid then
                 return Humanoid.Health, Humanoid.MaxHealth
@@ -75,150 +107,132 @@ local TargetHUD = Library:CreateTargetHUD({
     end,
 })
 
+-- ============================================================================
+-- Controls tab
+-- ============================================================================
 
-local MainLeft = Tabs.Main:AddLeftGroupbox("Movement")
+local ControlsLeft = Tabs.Main:AddLeftGroupbox('Basic controls')
 
-MainLeft:AddToggle("Enabled", {
-    Text = "Enable movement controls",
+-- Groupbox:AddToggle
+-- Arguments: Index, Info
+--
+-- Info fields demonstrated here: Text, Default, Tooltip, Callback.
+ControlsLeft:AddToggle('Enabled', {
+    Text = 'Enable example feature',
     Default = false,
-    Tooltip = "Enables the movement settings below.",
+    Tooltip = 'Master toggle used by several examples below.',
     Callback = function(Value)
-        print("Movement controls:", Value)
+        print('[callback] Enabled:', Value)
     end,
 })
 
 Toggles.Enabled:OnChanged(function()
-    print("Movement controls changed:", Toggles.Enabled.Value)
+    print('Enabled changed:', Toggles.Enabled.Value)
 end)
 
-local AutoSprintToggle = MainLeft:AddToggle("AutoSprint", {
-    Text = "Auto sprint",
+-- Toggle:AddKeyPicker
+--
+-- Forma supports Always, Toggle, and Hold modes on toggle-attached keybinds.
+-- SyncToggleState keeps the parent toggle and the keybind state synchronized.
+local AutoSprintToggle = ControlsLeft:AddToggle('AutoSprint', {
+    Text = 'Auto sprint',
     Default = false,
-    Tooltip = "Toggles sprint automatically while moving.",
+    Tooltip = 'Example toggle with a synced keybind.',
 })
 
-AutoSprintToggle:AddKeyPicker("AutoSprintKey", {
-    Default = "F",
+AutoSprintToggle:AddKeyPicker('AutoSprintKey', {
+    Default = 'F',
     SyncToggleState = true,
-    Mode = "Toggle",
-    Text = "Auto sprint",
+    Mode = 'Toggle',
+    Modes = { 'Always', 'Toggle', 'Hold' },
+    Text = 'Auto sprint',
     NoUI = false,
+
     Callback = function(Value)
-        print("Auto sprint key state:", Value)
+        print('[callback] Auto sprint key state:', Value)
     end,
+
     ChangedCallback = function(NewKey)
-        print("Auto sprint key changed:", NewKey)
+        print('[callback] Auto sprint key changed:', NewKey)
     end,
 })
 
-Toggles.AutoSprint:OnChanged(function()
-    print("Auto sprint:", Toggles.AutoSprint.Value)
-end)
+ControlsLeft:AddDivider()
 
-MainLeft:AddDivider()
-
-MainLeft:AddLabel("Movement profile")
-
-MainLeft:AddLabel(
-    "Adjust speed, smoothing, and hotkeys for the active movement profile.",
-    true
-)
-
-MainLeft:AddButton({
-    Text = "Save movement profile",
+-- Groupbox:AddButton
+--
+-- Forma supports responsive secondary/tertiary button rows. Warning buttons can
+-- require confirmation and display a countdown before the action is accepted.
+local ActionButton = ControlsLeft:AddButton({
+    Text = 'Start',
     Func = function()
-        Library:Notify({
-            Title = "Movement",
-            Text = "Profile saved.",
-            Duration = 4,
-        })
+        Library:Notify({ Title = 'Controls', Text = 'Started.', Duration = 2.5 })
     end,
-    Tooltip = "Saves the current movement values.",
+    Tooltip = 'Primary button in a three-button row.',
 })
 
-MainLeft:AddButton({
-    Text = "Reset movement profile",
+local PauseButton = ActionButton:AddButton({
+    Text = 'Pause',
     Func = function()
-        Options.WalkSpeed:SetValue(16)
-        Options.DecimalSlider:SetValue(0.5)
-        Options.CompactSlider:SetValue(50)
-        Library:Notify({
-            Title = "Movement",
-            Text = "Profile reset.",
-            Duration = 3,
-        })
+        Library:Notify({ Title = 'Controls', Text = 'Paused.', Duration = 2.5 })
     end,
+})
+
+PauseButton:AddTertiaryButton({
+    Text = 'Stop',
+    Func = function()
+        Library:Notify({ Title = 'Controls', Text = 'Stopped.', Duration = 2.5 })
+    end,
+})
+
+ControlsLeft:AddButton({
+    Text = 'Reset values',
     Warning = true,
     ConfirmDuration = 3,
-    Tooltip = "Restores the default movement values.",
-})
-
-local MainButton = MainLeft:AddButton({
-    Text = "Start",
+    Tooltip = 'Click again before the countdown ends to confirm.',
     Func = function()
-        print("Movement started")
+        Options.WalkSpeed:SetValue(16)
+        Options.Smoothing:SetValue(0.5)
+        Options.CompactVolume:SetValue(50)
+        Library:Notify({ Title = 'Controls', Text = 'Values reset.', Duration = 3 })
     end,
 })
 
-local SecondaryButton = MainButton:AddButton({
-    Text = "Pause",
-    Func = function()
-        print("Movement paused")
-    end,
-})
+ControlsLeft:AddDivider()
 
-SecondaryButton:AddTertiaryButton({
-    Text = "Stop",
-    Func = function()
-        print("Movement stopped")
-    end,
-})
-
-local ProfileButtonRow = MainLeft:AddButton({
-    Text = "Save preset",
-    Func = function()
-        Library:Notify({ Title = "Presets", Text = "Preset saved.", Duration = 3 })
-    end,
-})
-
-ProfileButtonRow:AddButton({
-    Text = "Load preset",
-    Func = function()
-        Library:Notify({ Title = "Presets", Text = "Preset loaded.", Duration = 3 })
-    end,
-})
-
-MainLeft:AddDivider()
-
-MainLeft:AddSlider("WalkSpeed", {
-    Text = "Walk speed",
+-- Groupbox:AddSlider
+-- Arguments: Index, Info
+--
+-- Required: Text, Default, Min, Max, Rounding
+-- Common extras: Step, Suffix, Compact, Tooltip
+--
+-- Forma's slider fill, thumb, and value badge smoothly follow pointer input while
+-- the logical value/callback remains immediate. +/- nudge controls and numeric
+-- value editing use the same slider implementation.
+ControlsLeft:AddSlider('WalkSpeed', {
+    Text = 'Walk speed',
     Default = 16,
     Min = 0,
     Max = 100,
     Rounding = 0,
-    Suffix = " studs",
+    Step = 1,
+    Suffix = ' studs',
     Callback = function(Value)
-        print("Slider callback:", Value)
+        print('[callback] Walk speed:', Value)
     end,
 })
 
-Options.WalkSpeed:OnChanged(function()
-    print("Walk speed changed:", Options.WalkSpeed.Value)
-end)
-
-MainLeft:AddSlider("DecimalSlider", {
-    Text = "Movement smoothing",
+ControlsLeft:AddSlider('Smoothing', {
+    Text = 'Movement smoothing',
     Default = 0.5,
     Min = 0,
     Max = 1,
     Rounding = 2,
-    Callback = function(Value)
-        print("Decimal:", Value)
-    end,
+    Step = 0.05,
 })
 
-MainLeft:AddSlider("CompactSlider", {
-    Text = "Movement volume",
+ControlsLeft:AddSlider('CompactVolume', {
+    Text = 'Volume',
     Default = 50,
     Min = 0,
     Max = 100,
@@ -226,386 +240,304 @@ MainLeft:AddSlider("CompactSlider", {
     Compact = true,
 })
 
-local ControlTabs = Tabs.Main:AddLeftTabbox("Control modes")
-local RoutingTab = ControlTabs:AddTab("Routing")
-local DisplayTab = ControlTabs:AddTab("Display")
-
-RoutingTab:AddDropdown("RoutingMode", {
-    Text = "Routing mode",
-    Values = { "Automatic", "Manual", "Priority" },
-    Default = 1,
-})
-
-local RoutingModeDependency = RoutingTab:AddDependencyBox()
-
-RoutingModeDependency:AddToggle("CustomRoute", {
-    Text = "Use custom route",
-    Default = false,
-})
-
-RoutingModeDependency:AddDropdown("RouteEndpoint", {
-    Text = "Route endpoint",
-    Values = { "Nearest", "Spawn", "Objective" },
-    Default = 1,
-})
-
-RoutingModeDependency:SetupDependencies({
-    {
-        Options.RoutingMode,
-        { "Manual", "Priority" },
-    },
-})
-
-DisplayTab:AddDropdown("StatusDisplay", {
-    Text = "Status display",
-    Values = { "Compact", "Detailed", "Minimal" },
-    Default = 1,
-})
-
-local MainRight = Tabs.Main:AddRightGroupbox("Profile")
-
-MainRight:AddInput("TextInput", {
-    Text = "Display name",
-    Default = "Player",
-    Numeric = false,
-    Finished = false,
-    Placeholder = "Enter a display name",
-    Callback = function(Value)
-        print("Text input:", Value)
-    end,
-})
-
-Options.TextInput:OnChanged(function()
-    print("TextInput changed:", Options.TextInput.Value)
+Options.WalkSpeed:OnChanged(function()
+    print('WalkSpeed changed:', Options.WalkSpeed.Value)
 end)
 
-MainRight:AddInput("NumericInput", {
-    Text = "Retry limit",
-    Default = "10",
-    Numeric = true,
-    Finished = true,
-    Placeholder = "Enter a number",
-    Callback = function(Value)
-        print("Numeric input:", Value)
-    end,
+-- Groupbox:AddInput
+--
+-- Forma adds animated text rendering/caret motion and smooth horizontal scrolling
+-- for long input. Numeric, Finished, MaxLength, and Placeholder remain supported.
+local ControlsRight = Tabs.Main:AddRightGroupbox('Inputs & selection')
+
+ControlsRight:AddInput('DisplayName', {
+    Text = 'Display name',
+    Default = 'Player',
+    Numeric = false,
+    Finished = false,
+    Placeholder = 'Enter a display name',
 })
 
-MainRight:AddInput("LimitedInput", {
-    Text = "Profile tag",
-    Default = "",
+ControlsRight:AddInput('RetryLimit', {
+    Text = 'Retry limit',
+    Default = '10',
+    Numeric = true,
+    Finished = true,
+    Placeholder = 'Enter a number',
+})
+
+ControlsRight:AddInput('ProfileTag', {
+    Text = 'Profile tag',
+    Default = '',
     Numeric = false,
     Finished = false,
     MaxLength = 16,
-    Placeholder = "Up to 16 characters",
+    Placeholder = 'Up to 16 characters',
 })
 
-MainRight:AddDivider()
+ControlsRight:AddDivider()
 
-MainRight:AddDropdown("ServerRegion", {
-    Text = "Server region",
+-- Groupbox:AddDropdown
+--
+-- Searchable = true creates a live search box. Forma also fades rows at the top
+-- and bottom of the popup viewport while scrolling.
+ControlsRight:AddDropdown('ServerRegion', {
+    Text = 'Server region',
     Values = {
-        "Automatic",
-        "US West",
-        "US Central",
-        "US East",
-        "Europe",
-        "Singapore",
-        "Japan",
-        "Australia",
+        'Automatic',
+        'US West',
+        'US Central',
+        'US East',
+        'Europe',
+        'Singapore',
+        'Japan',
+        'Australia',
     },
     Default = 1,
     Multi = false,
     Searchable = true,
     Tooltip = {
-        Title = "Server region",
+        Title = 'Searchable dropdown',
         Text = {
-            "Filters the region list while you type.",
-            "Automatic selects the lowest available latency.",
+            'Start typing after opening the dropdown to filter its rows.',
+            'Scroll-edge text fades are handled automatically.',
         },
     },
-    Callback = function(Value)
-        print("Dropdown:", Value)
-    end,
 })
 
-Options.ServerRegion:OnChanged(function()
-    print("Server region changed:", Options.ServerRegion.Value)
-end)
-
-local RegionDependency = MainRight:AddDependencyBox()
-
-RegionDependency:AddToggle("RegionalRouting", {
-    Text = "Use regional routing",
-    Default = false,
-})
-
-RegionDependency:SetupDependencies({
-    {
-        Options.ServerRegion,
-        { "US West", "US East" },
-    },
-})
-
-MainRight:AddDropdown("MultiDropdown", {
-    Text = "Visible ESP elements",
-    Values = {
-        "ESP",
-        "Names",
-        "Boxes",
-        "Health",
-        "Distance",
-    },
-    Default = {
-        "ESP",
-        "Names",
-    },
+-- Multi dropdowns return a map of selected values.
+ControlsRight:AddDropdown('ESPElements', {
+    Text = 'Visible ESP elements',
+    Values = { 'ESP', 'Names', 'Boxes', 'Health', 'Distance' },
+    Default = { 'ESP', 'Names' },
     Multi = true,
     Searchable = false,
-    Callback = function(Value)
-        print("Multi dropdown changed")
-
-        for Name, Enabled in pairs(Value) do
-            print(Name, Enabled)
-        end
-    end,
 })
 
-local DistanceDependency = MainRight:AddDependencyBox()
-
-DistanceDependency:AddToggle("ESPDistanceReadout", {
-    Text = "Show distance readout",
-    Default = false,
-})
-
-DistanceDependency:SetupDependencies({
-    {
-        Options.MultiDropdown,
-        "Distance",
-    },
-})
-
-local ColorLabel = MainRight:AddLabel("Accent preview")
-
-ColorLabel:AddColorPicker("AccentPreview", {
-    Default = Color3.fromRGB(0, 170, 255),
-    Title = "Accent preview",
-    Transparency = 0,
-    Settings = {
-        Mode = "Solid",
-        Speed = 1,
-        Color1 = Color3.fromRGB(0, 170, 255),
-        Color2 = Color3.fromRGB(170, 70, 255),
-    },
-    Callback = function(Value)
-        print("Color:", Value)
-    end,
-})
-
-Options.AccentPreview:OnChanged(function()
-    print(
-        "Color changed:",
-        Options.AccentPreview.Value,
-        Options.AccentPreview.Transparency
-    )
+Options.ESPElements:OnChanged(function()
+    print('Selected ESP elements:')
+    for Name, Enabled in pairs(Options.ESPElements.Value) do
+        print('  ', Name, Enabled)
+    end
 end)
 
-local KeyLabel = MainRight:AddLabel("Quick action key")
+ControlsRight:AddDivider()
 
-KeyLabel:AddKeyPicker("StandaloneKey", {
-    Default = "G",
+-- Label:AddColorPicker
+--
+-- Settings is a Forma extension. When enabled, the colorpicker contains a Color
+-- tab and a Settings tab with Solid, Fade, and Rainbow modes.
+--
+-- Fade exposes Color 1 / Color 2 only when needed. Fade and Rainbow reuse the
+-- library's normal slider for speed, animate the real picker cursor/hue rail, and
+-- update the actual Value/callback continuously.
+ControlsRight:AddLabel('Animated accent'):AddColorPicker('AnimatedAccent', {
+    Default = Color3.fromRGB(0, 170, 255),
+    Title = 'Animated accent',
+    Transparency = 0,
+
+    Settings = {
+        Mode = 'Fade',
+        Speed = 1.25,
+        Color1 = Color3.fromRGB(0, 170, 255),
+        Color2 = Color3.fromRGB(190, 70, 255),
+    },
+})
+
+Options.AnimatedAccent:OnChanged(function(Value)
+    print('Animated accent:', Value, 'transparency:', Options.AnimatedAccent.Transparency)
+end)
+
+Options.AnimatedAccent:OnModeChanged(function(Mode)
+    print('Colorpicker mode:', Mode)
+end)
+
+Options.AnimatedAccent:OnSpeedChanged(function(Speed)
+    print('Colorpicker speed:', Speed)
+end)
+
+ControlsRight:AddLabel('Static color'):AddColorPicker('StaticColor', {
+    Default = Color3.fromRGB(255, 255, 255),
+    Title = 'Normal colorpicker',
+})
+
+-- Label:AddKeyPicker can also create a standalone keybind.
+ControlsRight:AddLabel('Quick action key'):AddKeyPicker('StandaloneKey', {
+    Default = 'G',
     SyncToggleState = false,
-    Mode = "Toggle",
-    Text = "Quick action",
+    Mode = 'Toggle',
+    Modes = { 'Always', 'Toggle', 'Hold' },
+    Text = 'Quick action',
     NoUI = false,
-    Callback = function(Value)
-        print("Standalone key state:", Value)
-    end,
-    ChangedCallback = function(New)
-        print("Standalone key changed:", New)
-    end,
 })
 
 Options.StandaloneKey:OnClick(function()
-    print("Standalone key clicked:", Options.StandaloneKey:GetState())
+    print('Standalone key clicked:', Options.StandaloneKey:GetState())
 end)
 
-local DependencyGroup = Tabs.Main:AddRightGroupbox("Advanced movement")
+-- Tabboxes inherit the same control methods as normal groupboxes.
+local ControlTabbox = Tabs.Main:AddLeftTabbox('Tabbox example')
+local RoutingTab = ControlTabbox:AddTab('Routing')
+local DisplayTab = ControlTabbox:AddTab('Display')
 
-DependencyGroup:AddToggle("DependencyMaster", {
-    Text = "Enable advanced movement",
+RoutingTab:AddDropdown('RoutingMode', {
+    Text = 'Routing mode',
+    Values = { 'Automatic', 'Manual', 'Priority' },
+    Default = 1,
+})
+
+-- Groupbox:AddDependencyBox
+--
+-- Forma dependencies can match dropdown values in addition to toggles. A table of
+-- dropdown values means "show for any of these" unless All is explicitly requested.
+local RoutingDependency = RoutingTab:AddDependencyBox()
+RoutingDependency:AddToggle('CustomRoute', { Text = 'Use custom route', Default = false })
+RoutingDependency:AddDropdown('RouteEndpoint', {
+    Text = 'Route endpoint',
+    Values = { 'Nearest', 'Spawn', 'Objective' },
+    Default = 1,
+})
+RoutingDependency:SetupDependencies({
+    { Options.RoutingMode, { 'Manual', 'Priority' } },
+})
+
+DisplayTab:AddDropdown('StatusDisplay', {
+    Text = 'Status display',
+    Values = { 'Compact', 'Detailed', 'Minimal' },
+    Default = 1,
+})
+
+-- Multi-dropdown dependencies are also supported.
+local DistanceDependency = ControlsRight:AddDependencyBox()
+DistanceDependency:AddToggle('DistanceReadout', {
+    Text = 'Show distance readout',
+    Default = false,
+})
+DistanceDependency:SetupDependencies({
+    { Options.ESPElements, 'Distance' },
+})
+
+-- Nested dependency boxes animate their height/fade instead of popping in/out.
+local AdvancedGroup = Tabs.Main:AddRightGroupbox('Nested dependencies')
+AdvancedGroup:AddToggle('AdvancedEnabled', {
+    Text = 'Enable advanced controls',
     Default = false,
 })
 
-local DependencyBox = DependencyGroup:AddDependencyBox()
-
-DependencyBox:AddToggle("DependentToggle", {
-    Text = "Use sprint threshold",
+local AdvancedDependency = AdvancedGroup:AddDependencyBox()
+AdvancedDependency:AddToggle('ReserveEnabled', {
+    Text = 'Use stamina reserve',
     Default = false,
 })
-
-DependencyBox:AddSlider("DependentSlider", {
-    Text = "Sprint threshold",
+AdvancedDependency:AddSlider('SprintThreshold', {
+    Text = 'Sprint threshold',
     Default = 50,
     Min = 0,
     Max = 100,
     Rounding = 0,
 })
-
-DependencyBox:AddDropdown("DependentDropdown", {
-    Text = "Sprint mode",
-    Values = {
-        "Hold",
-        "Toggle",
-        "Always",
-    },
-    Default = 1,
+AdvancedDependency:SetupDependencies({
+    { Toggles.AdvancedEnabled, true },
 })
 
-DependencyBox:SetupDependencies({
-    {
-        Toggles.DependencyMaster,
-        true,
-    },
-})
-
-local NestedDependency = DependencyBox:AddDependencyBox()
-
-NestedDependency:AddToggle("NestedToggle", {
-    Text = "Use stamina reserve",
-    Default = false,
-})
-
-NestedDependency:AddSlider("NestedSlider", {
-    Text = "Stamina reserve",
+local NestedDependency = AdvancedDependency:AddDependencyBox()
+NestedDependency:AddSlider('StaminaReserve', {
+    Text = 'Stamina reserve',
     Default = 10,
     Min = 0,
     Max = 20,
     Rounding = 0,
 })
-
 NestedDependency:SetupDependencies({
-    {
-        Toggles.DependentToggle,
-        true,
-    },
+    { Toggles.ReserveEnabled, true },
 })
 
-local PlayersLeft = Tabs.Players:AddLeftGroupbox("Players")
+-- ============================================================================
+-- Players / Target HUD tab
+-- ============================================================================
 
-PlayersLeft:AddDropdown("PlayerDropdown", {
-    SpecialType = "Player",
-    Text = "Target player",
-    Tooltip = "Sets the player shown in the Target HUD.",
+local PlayersLeft = Tabs.Players:AddLeftGroupbox('Target selection')
+
+-- SpecialType = 'Player' and 'Team' automatically source live game values.
+PlayersLeft:AddDropdown('PlayerDropdown', {
+    SpecialType = 'Player',
+    Text = 'Target player',
     Searchable = true,
-    Callback = function(Value)
-        print("Selected player:", Value)
+    Tooltip = 'Sets the player displayed by the Target HUD.',
+})
 
-        local Player = Value and Players:FindFirstChild(Value)
-        TargetHUD:SetTarget(Player)
+PlayersLeft:AddDropdown('TeamDropdown', {
+    SpecialType = 'Team',
+    Text = 'Team',
+})
+
+Options.PlayerDropdown:OnChanged(function(Value)
+    local Player = Value and Players:FindFirstChild(Value)
+    TargetHUD:SetTarget(Player)
+
+    if TargetHUDUseManualHealth then
+        TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
+    end
+
+    if Toggles.ShowTargetHUD and Toggles.ShowTargetHUD.Value and Player then
+        TargetHUD:SetVisible(true)
+    end
+end)
+
+PlayersLeft:AddButton({
+    Text = 'Target local player',
+    Func = function()
+        TargetHUD:SetTarget(Players.LocalPlayer)
+        TargetHUD:SetVisible(true)
+        Toggles.ShowTargetHUD:SetValue(true)
 
         if TargetHUDUseManualHealth then
             TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
         end
-
-        if Toggles.TrackPlayer and Toggles.TrackPlayer.Value and Player then
-            TargetHUD:SetVisible(true)
-        end
     end,
 })
 
-PlayersLeft:AddDropdown("TeamDropdown", {
-    SpecialType = "Team",
-    Text = "Team",
-    Callback = function(Value)
-        print("Selected team:", Value)
-    end,
-})
+local PlayersRight = Tabs.Players:AddRightGroupbox('Target HUD')
 
-PlayersLeft:AddButton({
-    Text = "Print target player",
-    Func = function()
-        print("Current player:", Options.PlayerDropdown.Value)
-    end,
-})
-
-PlayersLeft:AddButton({
-    Text = "Print selected team",
-    Func = function()
-        print("Current team:", Options.TeamDropdown.Value)
-    end,
-})
-
-local PlayersRight = Tabs.Players:AddRightGroupbox("Target HUD")
-
-PlayersRight:AddToggle("TrackPlayer", {
-    Text = "Show Target HUD",
+PlayersRight:AddToggle('ShowTargetHUD', {
+    Text = 'Show Target HUD',
     Default = false,
-    Tooltip = {
-        Title = "Target HUD",
-        Text = {
-            "Shows the selected target avatar and username.",
-            "Updates health, distance, meter text, and automatic targeting.",
-        },
-    },
 })
 
-Toggles.TrackPlayer:OnChanged(function()
-    local SelectedName = Options.PlayerDropdown.Value
-    local Player = SelectedName and Players:FindFirstChild(SelectedName)
+Toggles.ShowTargetHUD:OnChanged(function()
+    local Name = Options.PlayerDropdown.Value
+    local Player = Name and Players:FindFirstChild(Name)
 
     if not Player and TargetHUDUseManualHealth then
         Player = Players.LocalPlayer
     end
 
-    if Player then
-        TargetHUD:SetTarget(Player)
-    end
-
-    TargetHUD:SetVisible(Toggles.TrackPlayer.Value and Player ~= nil)
+    if Player then TargetHUD:SetTarget(Player) end
+    TargetHUD:SetVisible(Toggles.ShowTargetHUD.Value and Player ~= nil)
 end)
 
-PlayersRight:AddButton({
-    Text = "Target local player",
-    Func = function()
-        TargetHUD:SetTarget(Players.LocalPlayer)
-        TargetHUD:SetVisible(true)
-        Toggles.TrackPlayer:SetValue(true)
-
-        if TargetHUDUseManualHealth then
-            TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
-        end
-    end,
-    Tooltip = "Uses your own player as the current target.",
-})
-
-PlayersRight:AddDropdown("TargetHUDAutoMode", {
-    Text = "Automatic target mode",
-    Values = {
-        "Off",
-        "Look",
-        "Hover",
-        "LookOrHover",
-    },
+-- Automatic target modes are Off, Look, Hover, and LookOrHover.
+PlayersRight:AddDropdown('TargetHUDAutoMode', {
+    Text = 'Automatic target mode',
+    Values = { 'Off', 'Look', 'Hover', 'LookOrHover' },
     Default = 1,
-    Multi = false,
     Tooltip = {
-        Title = "Automatic targeting",
+        Title = 'Automatic targeting',
         Text = {
-            "Look targets the player under the center camera ray.",
-            "Hover targets the player under the mouse.",
-            "LookOrHover accepts either.",
+            'Look uses the center camera ray.',
+            'Hover uses the player under the mouse.',
+            'LookOrHover accepts either source.',
         },
     },
 })
 
-Options.TargetHUDAutoMode:OnChanged(function()
-    TargetHUD:SetAutoTargetMode(Options.TargetHUDAutoMode.Value)
+Options.TargetHUDAutoMode:OnChanged(function(Value)
+    TargetHUD:SetAutoTargetMode(Value)
 end)
 
-PlayersRight:AddToggle("TargetHUDAutoDistance", {
-    Text = "Automatic distance meter",
+PlayersRight:AddToggle('TargetHUDAutoDistance', {
+    Text = 'Automatic distance meter',
     Default = false,
-    Tooltip = "Shows the selected target distance in studs when there is no custom meter override.",
 })
 
 Toggles.TargetHUDAutoDistance:OnChanged(function()
@@ -614,92 +546,79 @@ end)
 
 PlayersRight:AddDivider()
 
-PlayersRight:AddToggle("TargetHUDManualHealth", {
-    Text = "Override target health",
+-- Manual health is useful for seeing the damped health follower without damaging
+-- a real Humanoid. Rapidly press Damage/Heal to see that the bar does not restart.
+PlayersRight:AddToggle('TargetHUDManualHealth', {
+    Text = 'Override target health',
     Default = false,
-    Tooltip = "Overrides the displayed target health without changing the player's real Humanoid health.",
 })
 
 Toggles.TargetHUDManualHealth:OnChanged(function()
     TargetHUDUseManualHealth = Toggles.TargetHUDManualHealth.Value
 
     if TargetHUDUseManualHealth then
-        if not TargetHUD.Target then
-            TargetHUD:SetTarget(Players.LocalPlayer)
-        end
-
+        if not TargetHUD.Target then TargetHUD:SetTarget(Players.LocalPlayer) end
         TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
         TargetHUD:SetVisible(true)
-        Toggles.TrackPlayer:SetValue(true)
+        Toggles.ShowTargetHUD:SetValue(true)
     else
         TargetHUD:Refresh()
     end
 end)
 
-PlayersRight:AddSlider("TargetHUDHealth", {
-    Text = "Displayed health",
+PlayersRight:AddSlider('TargetHUDHealth', {
+    Text = 'Displayed health',
     Default = 100,
     Min = 0,
     Max = 100,
     Rounding = 0,
     Step = 1,
-    Suffix = " HP",
-    Tooltip = "Sets the health value shown while the manual override is active.",
+    Suffix = ' HP',
 })
 
-Options.TargetHUDHealth:OnChanged(function()
-    TargetHUDManualHealth = Options.TargetHUDHealth.Value
-
+Options.TargetHUDHealth:OnChanged(function(Value)
+    TargetHUDManualHealth = Value
     if TargetHUDUseManualHealth then
         TargetHUD:SetHealth(TargetHUDManualHealth, TargetHUDManualMaxHealth, false)
     end
 end)
 
 PlayersRight:AddButton({
-    Text = "Damage -25 HP",
+    Text = 'Damage -25 HP',
     Func = function()
-        Options.TargetHUDHealth:SetValue(
-            math.max(0, Options.TargetHUDHealth.Value - 25)
-        )
+        Options.TargetHUDHealth:SetValue(math.max(0, Options.TargetHUDHealth.Value - 25))
     end,
 }):AddButton({
-    Text = "Heal +25 HP",
+    Text = 'Heal +25 HP',
     Func = function()
-        Options.TargetHUDHealth:SetValue(
-            math.min(100, Options.TargetHUDHealth.Value + 25)
-        )
+        Options.TargetHUDHealth:SetValue(math.min(100, Options.TargetHUDHealth.Value + 25))
     end,
 })
 
-PlayersRight:AddDivider()
-
-PlayersRight:AddInput("TargetHUDMeterOverride", {
-    Text = "Custom meter override",
-    Default = "",
-    Numeric = false,
+PlayersRight:AddInput('TargetHUDMeter', {
+    Text = 'Custom meter text',
+    Default = '',
     Finished = false,
-    Placeholder = "42 meters",
+    Placeholder = '42 meters',
 })
 
-Options.TargetHUDMeterOverride:OnChanged(function()
-    local Value = Options.TargetHUDMeterOverride.Value
-    TargetHUD:SetMeter(Value ~= "" and Value or nil)
+Options.TargetHUDMeter:OnChanged(function(Value)
+    TargetHUD:SetMeter(Value ~= '' and Value or nil)
 end)
 
-PlayersRight:AddInput("TargetHUDCustomLabel", {
-    Text = "Custom HUD label",
-    Default = "",
-    Numeric = false,
+PlayersRight:AddInput('TargetHUDStatus', {
+    Text = 'Custom HUD label',
+    Default = '',
     Finished = false,
-    Placeholder = "Status text",
+    Placeholder = 'Status text',
 })
 
 PlayersRight:AddButton({
-    Text = "Apply custom label",
+    Text = 'Apply custom label',
     Func = function()
-        local Value = Options.TargetHUDCustomLabel.Value
+        local Value = Options.TargetHUDStatus.Value
 
-        if Value == "" then
+        if Value == '' then
             if TargetHUDStatusLabel then
                 TargetHUDStatusLabel:Destroy()
                 TargetHUDStatusLabel = nil
@@ -710,15 +629,11 @@ PlayersRight:AddButton({
         if TargetHUDStatusLabel then
             TargetHUDStatusLabel:SetValue(Value)
         else
-            TargetHUDStatusLabel = TargetHUD:AddLabel(
-                "Status",
-                Value,
-                "StatusLabel"
-            )
+            TargetHUDStatusLabel = TargetHUD:AddLabel('Status', Value, 'StatusLabel')
         end
     end,
 }):AddButton({
-    Text = "Remove custom label",
+    Text = 'Remove label',
     Func = function()
         if TargetHUDStatusLabel then
             TargetHUDStatusLabel:Destroy()
@@ -727,278 +642,243 @@ PlayersRight:AddButton({
     end,
 })
 
-PlayersRight:AddDivider()
-
 PlayersRight:AddButton({
-    Text = "Refresh Target HUD",
+    Text = 'Refresh HUD',
     Func = function()
         TargetHUD:Refresh()
     end,
 }):AddButton({
-    Text = "Clear Target HUD",
+    Text = 'Clear HUD',
     Func = function()
-        TargetHUD:SetAutoTargetMode("Off")
-        Options.TargetHUDAutoMode:SetValue("Off")
+        TargetHUD:SetAutoTargetMode('Off')
+        Options.TargetHUDAutoMode:SetValue('Off')
         TargetHUD:SetTarget(nil)
         TargetHUD:SetVisible(false)
-        Toggles.TrackPlayer:SetValue(false)
+        Toggles.ShowTargetHUD:SetValue(false)
     end,
 })
 
+-- ============================================================================
+-- Visuals tab
+-- ============================================================================
 
-local VisualsLeft = Tabs.Visuals:AddLeftGroupbox("ESP")
+local VisualsLeft = Tabs.Visuals:AddLeftGroupbox('ESP example')
 
-local ESPToggle = VisualsLeft:AddToggle("ESPEnabled", {
-    Text = "Enable ESP",
+local ESPToggle = VisualsLeft:AddToggle('ESPEnabled', {
+    Text = 'Enable ESP',
     Default = false,
 })
 
-ESPToggle:AddKeyPicker("ESPKey", {
-    Default = "V",
+ESPToggle:AddKeyPicker('ESPKey', {
+    Default = 'V',
     SyncToggleState = true,
-    Mode = "Toggle",
-    Text = "ESP",
+    Mode = 'Toggle',
+    Modes = { 'Always', 'Toggle', 'Hold' },
+    Text = 'ESP',
 })
 
-VisualsLeft:AddToggle("ESPBoxes", {
-    Text = "Boxes",
-    Default = true,
-})
+VisualsLeft:AddToggle('ESPBoxes', { Text = 'Boxes', Default = true })
+VisualsLeft:AddToggle('ESPNames', { Text = 'Names', Default = true })
+VisualsLeft:AddToggle('ESPHealth', { Text = 'Health', Default = true })
+VisualsLeft:AddToggle('ESPDistance', { Text = 'Distance', Default = false })
 
-VisualsLeft:AddToggle("ESPNames", {
-    Text = "Names",
-    Default = true,
-})
-
-VisualsLeft:AddToggle("ESPHealth", {
-    Text = "Health",
-    Default = true,
-})
-
-VisualsLeft:AddToggle("ESPDistance", {
-    Text = "Distance",
-    Default = false,
-})
-
-VisualsLeft:AddToggle("ESPTeamCheck", {
-    Text = "Team check",
-    Default = true,
-})
-
-VisualsLeft:AddSlider("ESPMaxDistance", {
-    Text = "Maximum distance",
+VisualsLeft:AddSlider('ESPMaxDistance', {
+    Text = 'Maximum distance',
     Default = 1000,
     Min = 50,
     Max = 5000,
     Rounding = 0,
-    Suffix = " studs",
+    Suffix = ' studs',
 })
 
-VisualsLeft:AddLabel("ESP color"):AddColorPicker("ESPColor", {
+VisualsLeft:AddLabel('ESP color'):AddColorPicker('ESPColor', {
     Default = Color3.fromRGB(255, 255, 255),
-    Title = "ESP color",
+    Title = 'ESP color',
 })
 
-VisualsLeft:AddLabel("Visible color"):AddColorPicker("ESPVisibleColor", {
-    Default = Color3.fromRGB(0, 255, 100),
-    Title = "Visible ESP color",
+local VisualsRight = Tabs.Visuals:AddRightGroupbox('Color animation')
+
+-- A second animated picker makes the new color modes easy to test without touching
+-- the UI theme itself. Its top accent and tab indicator use the same moving gradient
+-- as Forma notifications.
+VisualsRight:AddLabel('World tint'):AddColorPicker('WorldTint', {
+    Default = Color3.fromRGB(95, 135, 255),
+    Title = 'World tint',
+    Settings = {
+        Mode = 'Rainbow',
+        Speed = 0.8,
+        Color1 = Color3.fromRGB(95, 135, 255),
+        Color2 = Color3.fromRGB(255, 80, 155),
+    },
 })
 
-local VisualsRight = Tabs.Visuals:AddRightGroupbox("World")
-
-VisualsRight:AddToggle("CustomAmbient", {
-    Text = "Custom ambient",
+VisualsRight:AddToggle('CustomFOV', {
+    Text = 'Custom FOV',
     Default = false,
 })
 
-VisualsRight:AddLabel("Ambient"):AddColorPicker("AmbientColor", {
-    Default = Color3.fromRGB(128, 128, 128),
-    Title = "Ambient color",
-})
-
-VisualsRight:AddToggle("CustomClockTime", {
-    Text = "Custom time",
-    Default = false,
-})
-
-VisualsRight:AddSlider("ClockTime", {
-    Text = "Clock time",
-    Default = 12,
-    Min = 0,
-    Max = 24,
-    Rounding = 1,
-})
-
-VisualsRight:AddToggle("CustomFOV", {
-    Text = "Custom FOV",
-    Default = false,
-})
-
-VisualsRight:AddSlider("FOVValue", {
-    Text = "Field of view",
+VisualsRight:AddSlider('FOVValue', {
+    Text = 'Field of view',
     Default = 70,
     Min = 40,
     Max = 120,
     Rounding = 0,
 })
 
-local VisualDependency = VisualsRight:AddDependencyBox()
-
-VisualDependency:AddSlider("AmbientStrength", {
-    Text = "Ambient strength",
-    Default = 1,
-    Min = 0,
-    Max = 2,
+local FOVDependency = VisualsRight:AddDependencyBox()
+FOVDependency:AddSlider('FOVResponse', {
+    Text = 'FOV response',
+    Default = 0.2,
+    Min = 0.05,
+    Max = 1,
     Rounding = 2,
+    Step = 0.05,
+    Suffix = 's',
+})
+FOVDependency:SetupDependencies({
+    { Toggles.CustomFOV, true },
 })
 
-VisualDependency:SetupDependencies({
-    {
-        Toggles.CustomAmbient,
-        true,
-    },
-})
+-- ============================================================================
+-- Tools tab
+-- ============================================================================
 
-local MiscLeft = Tabs.Misc:AddLeftGroupbox("Notifications")
+local ToolsLeft = Tabs.Tools:AddLeftGroupbox('Notifications')
 
-MiscLeft:AddButton({
-    Text = "Short notification",
+-- Library:Notify
+--
+-- Legacy string form is still supported.
+ToolsLeft:AddButton({
+    Text = 'Legacy notification',
     Func = function()
-        Library:Notify("Short notification", 2)
+        Library:Notify('Legacy notification form', 3)
     end,
 })
 
-MiscLeft:AddButton({
-    Text = "Long notification",
+-- Titled notifications have a moving accent line and a bottom progress/time bar.
+-- Entry/exit motion, width reveal, progress, and vertical stack reflow are all smooth.
+ToolsLeft:AddButton({
+    Text = 'Titled notification',
     Func = function()
         Library:Notify({
-            Title = "Long Notification",
-            Text = "This notification will stay visible for several seconds.",
+            Title = 'Forma Notification',
+            Text = 'Accent gradient, lifetime bar, smooth slide, and stack motion.',
             Duration = 6,
         })
     end,
 })
 
-MiscLeft:AddInput("CustomNotification", {
-    Text = "Notification text",
-    Default = "Custom notification",
+ToolsLeft:AddButton({
+    Text = 'Notification stack',
+    Func = function()
+        for Index = 1, 4 do
+            task.delay((Index - 1) * 0.12, function()
+                Library:Notify({
+                    Title = ('Notification %d'):format(Index),
+                    Text = 'Watch existing notifications move smoothly in the stack.',
+                    Duration = 3.5 + (Index * 0.35),
+                })
+            end)
+        end
+    end,
+})
+
+ToolsLeft:AddInput('CustomNotification', {
+    Text = 'Notification text',
+    Default = 'Custom notification',
     Finished = false,
 })
 
-MiscLeft:AddButton({
-    Text = "Send custom notification",
+ToolsLeft:AddButton({
+    Text = 'Send custom notification',
     Func = function()
         Library:Notify({
-            Title = "Custom Notification",
+            Title = 'Custom Notification',
             Text = Options.CustomNotification.Value,
             Duration = 4,
         })
     end,
 })
 
-local MiscRight = Tabs.Misc:AddRightGroupbox("Runtime")
+local ToolsRight = Tabs.Tools:AddRightGroupbox('Runtime')
 
-MiscRight:AddToggle("PrintRuntimeValues", {
-    Text = "Print values every second",
+ToolsRight:AddToggle('PrintRuntimeValues', {
+    Text = 'Print values every second',
     Default = false,
 })
 
-MiscRight:AddButton({
-    Text = "Print current values",
+ToolsRight:AddButton({
+    Text = 'Print current values',
     Func = function()
-        print("Enabled:", Toggles.Enabled.Value)
-        print("AutoSprint:", Toggles.AutoSprint.Value)
-        print("WalkSpeed:", Options.WalkSpeed.Value)
-        print("DecimalSlider:", Options.DecimalSlider.Value)
-        print("TextInput:", Options.TextInput.Value)
-        print("ServerRegion:", Options.ServerRegion.Value)
-        print("PlayerDropdown:", Options.PlayerDropdown.Value)
-        print("TargetHUDHealth:", Options.TargetHUDHealth.Value)
-        print("TargetHUDAutoMode:", Options.TargetHUDAutoMode.Value)
-        print("ESPEnabled:", Toggles.ESPEnabled.Value)
-        print("ESPMaxDistance:", Options.ESPMaxDistance.Value)
-        print("FOVValue:", Options.FOVValue.Value)
+        print('Enabled:', Toggles.Enabled.Value)
+        print('WalkSpeed:', Options.WalkSpeed.Value)
+        print('ServerRegion:', Options.ServerRegion.Value)
+        print('Color mode:', Options.AnimatedAccent.Mode)
+        print('Color speed:', Options.AnimatedAccent.Speed)
+        print('Player:', Options.PlayerDropdown.Value)
+        print('Target HUD health:', Options.TargetHUDHealth.Value)
+        print('ESP:', Toggles.ESPEnabled.Value)
     end,
 })
 
-local UtilityTabs = Tabs.Misc:AddRightTabbox("Utilities")
-local SessionTools = UtilityTabs:AddTab("Session")
-local NetworkTools = UtilityTabs:AddTab("Network")
+local UtilityTabbox = Tabs.Tools:AddRightTabbox('Utility tabbox')
+local SessionTab = UtilityTabbox:AddTab('Session')
+local NetworkTab = UtilityTabbox:AddTab('Network')
 
-SessionTools:AddToggle("AutoReconnect", {
-    Text = "Auto reconnect",
+SessionTab:AddToggle('AutoReconnect', {
+    Text = 'Auto reconnect',
     Default = true,
 })
 
-SessionTools:AddInput("SessionNote", {
-    Text = "Session note",
-    Default = "",
+SessionTab:AddInput('SessionNote', {
+    Text = 'Session note',
+    Default = '',
     Finished = false,
-    Placeholder = "Add a note",
+    Placeholder = 'Add a note',
 })
 
-SessionTools:AddButton({
-    Text = "Reconnect now",
-    Func = function()
-        Library:Notify({
-            Title = "Session",
-            Text = "Reconnect requested.",
-            Duration = 3,
-        })
-    end,
-})
-
-NetworkTools:AddDropdown("PreferredRegion", {
-    Text = "Preferred region",
-    Values = { "Automatic", "US West", "US East", "Europe", "Asia" },
+NetworkTab:AddDropdown('PreferredRegion', {
+    Text = 'Preferred region',
+    Values = { 'Automatic', 'US West', 'US East', 'Europe', 'Asia' },
     Default = 1,
+    Searchable = true,
 })
 
-NetworkTools:AddSlider("RetryDelay", {
-    Text = "Retry delay",
+NetworkTab:AddSlider('RetryDelay', {
+    Text = 'Retry delay',
     Default = 3,
     Min = 1,
     Max = 10,
     Rounding = 0,
-    Suffix = " sec",
+    Suffix = ' sec',
 })
 
-NetworkTools:AddToggle("LowBandwidthMode", {
-    Text = "Low bandwidth mode",
-    Default = false,
+-- ============================================================================
+-- Watermark / keybind HUD
+-- ============================================================================
+
+-- Forma's watermark separates the accent title from normal-color stats and adds a
+-- metadata row for game name, username, user id, and date.
+Library:SetWatermarkInfo({
+    ShowGameName = true,
+    ShowUsername = true,
+    ShowUserId = true,
+    ShowDate = true,
 })
-
-local RuntimeThreadRunning = true
-
-task.spawn(function()
-    while RuntimeThreadRunning do
-        task.wait(1)
-
-        if Toggles.PrintRuntimeValues.Value then
-            print("Auto sprint:", Toggles.AutoSprint.Value)
-            print("Speed:", Options.WalkSpeed.Value)
-            print("Region:", Options.ServerRegion.Value)
-            print("Standalone key:", Options.StandaloneKey:GetState())
-        end
-    end
-end)
 
 Library:SetWatermarkVisibility(true)
-Library:SetWatermark("Forma - Loading...")
+Library:SetWatermark('Forma - Loading...')
 
+-- The keybind list and watermark are draggable and use the same moving accent
+-- treatment as the main window / Target HUD.
 Library.KeybindFrame.Visible = true
-
-local RunService = game:GetService("RunService")
-local Stats = game:GetService("Stats")
 
 local FrameTimer = tick()
 local FrameCounter = 0
 local FPS = 60
 local Ping = 0
 
-local WatermarkConnection
-
-WatermarkConnection = RunService.RenderStepped:Connect(function()
+local WatermarkConnection = RunService.RenderStepped:Connect(function()
     FrameCounter += 1
 
     if tick() - FrameTimer >= 1 then
@@ -1007,43 +887,55 @@ WatermarkConnection = RunService.RenderStepped:Connect(function()
         FrameTimer = tick()
 
         local Success, Result = pcall(function()
-            return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+            return Stats.Network.ServerStatsItem['Data Ping']:GetValue()
         end)
 
-        if Success then
-            Ping = math.floor(Result)
-        end
+        if Success then Ping = math.floor(Result) end
     end
 
-    Library:SetWatermark(
-        ("Forma - %d FPS | %d ms"):format(
-            FPS,
-            Ping
-        )
-    )
+    Library:SetWatermark(('Forma - %d FPS | %d ms'):format(FPS, Ping))
 end)
 
-local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu")
+local RuntimeThreadRunning = true
+
+task.spawn(function()
+    while RuntimeThreadRunning do
+        task.wait(1)
+
+        if Toggles.PrintRuntimeValues.Value then
+            print('WalkSpeed:', Options.WalkSpeed.Value)
+            print('Region:', Options.ServerRegion.Value)
+            print('Standalone key:', Options.StandaloneKey:GetState())
+            print('Animated color mode:', Options.AnimatedAccent.Mode)
+        end
+    end
+end)
+
+-- ============================================================================
+-- UI Settings / addons
+-- ============================================================================
+
+local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
 
 MenuGroup:AddButton({
-    Text = "Unload",
+    Text = 'Unload',
+    Warning = true,
+    ConfirmDuration = 3,
     Func = function()
         Library:Unload()
     end,
-    Warning = true,
-    ConfirmDuration = 3,
 })
 
-MenuGroup:AddLabel("Menu key"):AddKeyPicker("MenuKeybind", {
-    Default = "End",
+MenuGroup:AddLabel('Menu key'):AddKeyPicker('MenuKeybind', {
+    Default = 'End',
     NoUI = true,
-    Text = "Menu key",
+    Text = 'Menu key',
 })
 
 Library.ToggleKeybind = Options.MenuKeybind
 
-MenuGroup:AddToggle("ShowKeybindList", {
-    Text = "Show keybind list",
+MenuGroup:AddToggle('ShowKeybindList', {
+    Text = 'Show keybind list',
     Default = true,
 })
 
@@ -1051,52 +943,62 @@ Toggles.ShowKeybindList:OnChanged(function()
     Library.KeybindFrame.Visible = Toggles.ShowKeybindList.Value
 end)
 
-MenuGroup:AddToggle("ShowWatermark", {
-    Text = "Show watermark",
+MenuGroup:AddToggle('ShowWatermark', {
+    Text = 'Show watermark',
     Default = true,
 })
 
 Toggles.ShowWatermark:OnChanged(function()
-    Library:SetWatermarkVisibility(
-        Toggles.ShowWatermark.Value
-    )
+    Library:SetWatermarkVisibility(Toggles.ShowWatermark.Value)
 end)
 
 MenuGroup:AddButton({
-    Text = "Send status notification",
+    Text = 'Show feature notification',
     Func = function()
         Library:Notify({
-            Title = "Forma",
-            Text = "Interface is working.",
-            Duration = 3,
+            Title = 'Forma',
+            Text = 'Themes, fonts, overlays, configs, and motion settings are active.',
+            Duration = 4,
         })
     end,
 })
 
+-- ThemeManager
+--
+-- Forma's ThemeManager exposes the expanded palette (including BlendShade,
+-- inactive text, contrast, and inline colors), custom/built-in themes, repo fonts,
+-- text size, optional character overlays, and persisted UI preferences.
 ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
+ThemeManager:SetFolder('FormaSettings')
 
+-- ApplyToTab builds the Theme section. Forma also attaches its MenuManager here,
+-- exposing easing style/direction and global animation response controls.
+ThemeManager:ApplyToTab(Tabs['UI Settings'])
+
+-- SaveManager
+--
+-- Colorpicker animation settings (mode, speed, Fade endpoints, solid color) are
+-- persisted by Forma's SaveManager in addition to the normal Linoria values.
+SaveManager:SetLibrary(Library)
+SaveManager:SetFolder('FormaSettings')
 SaveManager:IgnoreThemeSettings()
 
 SaveManager:SetIgnoreIndexes({
-    "MenuKeybind",
-    "ShowKeybindList",
-    "ShowWatermark",
-    "TrackPlayer",
-    "TargetHUDAutoMode",
-    "TargetHUDAutoDistance",
-    "TargetHUDManualHealth",
-    "TargetHUDHealth",
-    "TargetHUDMeterOverride",
-    "TargetHUDCustomLabel",
+    'MenuKeybind',
+    'ShowKeybindList',
+    'ShowWatermark',
+    'ShowTargetHUD',
+    'TargetHUDAutoMode',
+    'TargetHUDAutoDistance',
+    'TargetHUDManualHealth',
+    'TargetHUDHealth',
+    'TargetHUDMeter',
+    'TargetHUDStatus',
 })
 
-ThemeManager:SetFolder("FormaSettings")
-SaveManager:SetFolder("FormaSettings")
+SaveManager:BuildConfigSection(Tabs['UI Settings'])
 
-SaveManager:BuildConfigSection(Tabs["UI Settings"])
-ThemeManager:ApplyToTab(Tabs["UI Settings"])
-
+-- Library:OnUnload
 Library:OnUnload(function()
     RuntimeThreadRunning = false
 
@@ -1105,13 +1007,13 @@ Library:OnUnload(function()
         WatermarkConnection = nil
     end
 
-    print("Forma unloaded")
+    print('Forma unloaded')
 end)
 
 SaveManager:LoadAutoloadConfig()
 
 Library:Notify({
-    Title = "Forma",
-    Text = "Interface loaded.",
-    Duration = 4,
+    Title = 'Forma',
+    Text = 'Example loaded. Open each tab to explore the fork-specific features.',
+    Duration = 5,
 })
