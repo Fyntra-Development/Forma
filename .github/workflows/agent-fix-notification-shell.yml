@@ -1,0 +1,49 @@
+name: Agent fix notification shell
+
+on:
+  push:
+    branches:
+      - agent/fix-notification-shell-and-picker-indicator
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python3 .github/agent_fix_notification_shell_patch.py
+
+      - name: Validate targeted changes
+        shell: bash
+        run: |
+          grep -q "BackgroundTransparency = 1;" Library.lua
+          grep -q "Size = UDim2.new(1, -4, 0, 3);" Library.lua
+          grep -q "local TabIndicator;" Library.lua
+          grep -q "if SettingsEnabled then" Library.lua
+
+      - name: Build Luau compiler
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/luau-lang/luau.git /tmp/luau
+          cmake -S /tmp/luau -B /tmp/luau/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/luau/build --target Luau.Compile.CLI -j2
+
+      - name: Compile Library.lua
+        shell: bash
+        run: /tmp/luau/build/luau-compile Library.lua >/dev/null
+
+      - name: Commit validated patch
+        shell: bash
+        run: |
+          git config user.name "Fyntra-Development"
+          git config user.email "129816818+Fyntra-Development@users.noreply.github.com"
+          git add Library.lua
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Fix notification shell artifacts and picker indicator"
+          git push
