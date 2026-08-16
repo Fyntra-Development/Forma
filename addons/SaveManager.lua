@@ -36,11 +36,22 @@ local SaveManager = {} do
 		},
 		ColorPicker = {
 			Save = function(idx, object)
-				return { type = 'ColorPicker', idx = idx, value = object.Value:ToHex(), transparency = object.Transparency }
+				local solid = object.SolidColor or object.Value
+				local data = { type = 'ColorPicker', idx = idx, value = solid:ToHex(), transparency = object.Transparency }
+				if object.SettingsEnabled then
+					data.mode, data.speed = object.Mode, object.Speed
+					data.color1 = object.Color1 and object.Color1:ToHex() or nil
+					data.color2 = object.Color2 and object.Color2:ToHex() or nil
+				end
+				return data
 			end,
 			Load = function(idx, data)
-				if Options[idx] then 
-					Options[idx]:SetValueRGB(Color3.fromHex(data.value), data.transparency)
+				local picker = Options[idx]
+				if picker then
+					picker:SetValueRGB(Color3.fromHex(data.value), data.transparency, true)
+					if picker.SetAnimationSettings and data.mode then
+						picker:SetAnimationSettings({ Mode = data.mode, Speed = data.speed, SolidColor = Color3.fromHex(data.value), Color1 = data.color1 and Color3.fromHex(data.color1) or nil, Color2 = data.color2 and Color3.fromHex(data.color2) or nil })
+					end
 				end
 			end,
 		},
