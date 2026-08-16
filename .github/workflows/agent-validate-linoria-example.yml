@@ -1,0 +1,45 @@
+name: Agent validate Linoria-style example
+
+on:
+  push:
+    branches:
+      - agent/base-example-on-linoria
+
+jobs:
+  validate-example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check example coverage
+        shell: bash
+        run: |
+          grep -q "-- Groupbox:AddToggle" Example.lua
+          grep -q "-- Groupbox:AddSlider" Example.lua
+          grep -q "-- Groupbox:AddInput" Example.lua
+          grep -q "-- Groupbox:AddDropdown" Example.lua
+          grep -q "-- Label:AddColorPicker" Example.lua
+          grep -q "-- Label:AddKeyPicker" Example.lua
+          grep -q "Settings = {" Example.lua
+          grep -q "Mode = 'Fade'" Example.lua
+          grep -q "Mode = 'Rainbow'" Example.lua
+          grep -q "Searchable = true" Example.lua
+          grep -q "AddDependencyBox" Example.lua
+          grep -q "AddTertiaryButton" Example.lua
+          grep -q "Warning = true" Example.lua
+          grep -q "CreateTargetHUD" Example.lua
+          grep -q "Notification stack" Example.lua
+          grep -q "SetWatermarkInfo" Example.lua
+          grep -q "ThemeManager:ApplyToTab" Example.lua
+          grep -q "SaveManager:BuildConfigSection" Example.lua
+
+      - name: Build Luau compiler
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/luau-lang/luau.git /tmp/luau
+          cmake -S /tmp/luau -B /tmp/luau/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/luau/build --target Luau.Compile.CLI -j2
+
+      - name: Compile Example.lua
+        shell: bash
+        run: /tmp/luau/build/luau-compile Example.lua >/dev/null
