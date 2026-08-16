@@ -48,8 +48,9 @@ local SaveManager = {} do
 			Load = function(idx, data)
 				local picker = Options[idx]
 				if picker then
-					picker:SetValueRGB(Color3.fromHex(data.value), data.transparency, true)
-					if picker.SetAnimationSettings and data.mode then
+					local HasAnimationData = data.mode ~= nil
+					picker:SetValueRGB(Color3.fromHex(data.value), data.transparency, HasAnimationData)
+					if picker.SetAnimationSettings and HasAnimationData then
 						picker:SetAnimationSettings({ Mode = data.mode, Speed = data.speed, SolidColor = Color3.fromHex(data.value), Color1 = data.color1 and Color3.fromHex(data.color1) or nil, Color2 = data.color2 and Color3.fromHex(data.color2) or nil })
 					end
 				end
