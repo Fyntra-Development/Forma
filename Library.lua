@@ -4534,6 +4534,8 @@ do
         end;
 
         local IsDragging = false;
+        local FillTargetSize;
+        local ThumbTargetPosition;
         local BadgeTargetPosition;
 
         local function TrackWidth()
@@ -4585,23 +4587,22 @@ do
             local FillSize, ThumbPosition, BadgePosition = GetSliderVisuals(TargetX);
             ValueBadge.AnchorPoint = Vector2.new(0, 0.5);
 
+            FillTargetSize = FillSize;
+            ThumbTargetPosition = ThumbPosition;
+            BadgeTargetPosition = BadgePosition;
+
             if Instant then
                 StopVisualAnimation();
                 Fill.Size = FillSize;
                 Thumb.Position = ThumbPosition;
                 ValueBadge.Position = BadgePosition;
-                BadgeTargetPosition = BadgePosition;
             elseif IsDragging then
-                Library:CancelMotion(Fill, 'Size');
-                Library:CancelMotion(Thumb, 'Position');
-                Fill.Size = FillSize;
-                Thumb.Position = ThumbPosition;
-                BadgeTargetPosition = BadgePosition;
+                -- Dragging updates the logical value immediately while the visuals
+                -- follow the pointer through a frame-rate-independent micro-filter.
             else
-                BadgeTargetPosition = BadgePosition;
-                Library:Animate(Fill, { Size = FillSize }, 0.15, nil, 'Slider');
-                Library:Animate(Thumb, { Position = ThumbPosition }, 0.15, nil, 'Slider');
-                Library:Animate(ValueBadge, { Position = BadgePosition }, 0.16, nil, 'Badge');
+                Library:Animate(Fill, { Size = FillSize }, 0.17, nil, 'Slider');
+                Library:Animate(Thumb, { Position = ThumbPosition }, 0.17, nil, 'Slider');
+                Library:Animate(ValueBadge, { Position = BadgePosition }, 0.18, nil, 'Badge');
             end;
         end;
 
@@ -4732,7 +4733,7 @@ do
 
             StopSliderDrag();
             IsDragging = true;
-            Library:CancelMotion(ValueBadge, 'Position');
+            StopVisualAnimation();
 
             local function UpdateFromX(PointerX)
                 local Width = TrackWidth();
@@ -4742,6 +4743,12 @@ do
                 if nValue ~= Slider.Value then
                     Slider:SetValue(nValue);
                 end;
+
+                -- Keep pointer tracking continuous even when the slider value is rounded.
+                local FillSize, ThumbPosition, BadgePosition = GetSliderVisuals(nX);
+                FillTargetSize = FillSize;
+                ThumbTargetPosition = ThumbPosition;
+                BadgeTargetPosition = BadgePosition;
             end;
 
             UpdateFromX(Input.UserInputType == Enum.UserInputType.Touch and Input.Position.X or Mouse.X);
@@ -4753,9 +4760,17 @@ do
                     UpdateFromX(Mouse.X);
                 end
 
+                local Dt = math.min(math.max(Delta, 0), 1 / 20);
+                local TrackAlpha = 1 - math.exp(-34 * Dt);
+                local BadgeAlpha = 1 - math.exp(-26 * Dt);
+                if FillTargetSize then
+                    Fill.Size = Fill.Size:Lerp(FillTargetSize, TrackAlpha);
+                end
+                if ThumbTargetPosition then
+                    Thumb.Position = Thumb.Position:Lerp(ThumbTargetPosition, TrackAlpha);
+                end
                 if BadgeTargetPosition then
-                    local FollowAlpha = 1 - math.exp(-24 * math.min(Delta, 1 / 20));
-                    ValueBadge.Position = ValueBadge.Position:Lerp(BadgeTargetPosition, FollowAlpha);
+                    ValueBadge.Position = ValueBadge.Position:Lerp(BadgeTargetPosition, BadgeAlpha);
                 end
             end);
             DragEndedConnection = InputService.InputEnded:Connect(function(EndedInput)
@@ -6282,7 +6297,8 @@ function Library:CreateTargetHUD(Config)
     HealthDriver.Name = 'FormaTargetHealthDriver';
     HealthDriver.Value = 0;
     HealthDriver.Parent = HealthOuter;
-    local HealthSmoothTime = math.clamp(tonumber(Config.HealthSmoothTime or Config.HealthTweenTime) or 0.12, 0.05, 0.5);
+    local HealthVelocity = 0;
+    local HealthSmoothTime = math.clamp(tonumber(Config.HealthSmoothTime or Config.HealthTweenTime) or 0.18, 0.06, 0.6);
 
     local function HealthBaseColor(Ratio)
         local Danger = Color3.fromRGB(211, 63, 69);
@@ -6321,6 +6337,27 @@ function Library:CreateTargetHUD(Config)
         else
             HealthValueLabel.Text = '-- HP';
         end
+    end
+
+    local function StepHealthVisual(Delta)
+        if not HUD.HealthAvailable then return; end
+        local Target = math.clamp(HUD.HealthTargetRatio or 0, 0, 1);
+        local Current = math.clamp(HealthDriver.Value, 0, 1);
+        local Dt = math.min(math.max(Delta, 0), 0.05);
+        local Omega = 2 / math.max(HealthSmoothTime, 0.001);
+        local X = Omega * Dt;
+        local Exp = 1 / (1 + X + (0.48 * X * X) + (0.235 * X * X * X));
+        local Change = Current - Target;
+        local Temp = (HealthVelocity + (Omega * Change)) * Dt;
+        HealthVelocity = (HealthVelocity - (Omega * Temp)) * Exp;
+        local Next = Target + ((Change + Temp) * Exp);
+
+        if math.abs(Target - Next) < 0.00005 and math.abs(HealthVelocity) < 0.00005 then
+            Next = Target;
+            HealthVelocity = 0;
+        end
+
+        HealthDriver.Value = math.clamp(Next, 0, 1);
     end
 
     HealthDriver:GetPropertyChangedSignal('Value'):Connect(UpdateHealthVisual);
@@ -6535,7 +6572,7 @@ function Library:CreateTargetHUD(Config)
             HUD.HealthAvailable = false;
             HUD.HealthMax = 100;
             HUD.HealthTargetRatio = 0;
-            Library:CancelMotion(HealthDriver, 'Value');
+            HealthVelocity = 0;
             HealthDriver.Value = 0;
             UpdateHealthVisual();
             return;
@@ -6543,13 +6580,10 @@ function Library:CreateTargetHUD(Config)
         HUD.HealthAvailable = true;
         HUD.HealthMax = math.max(1, Maximum);
         local NewRatio = math.clamp(Current / HUD.HealthMax, 0, 1);
-        local TargetChanged = math.abs(NewRatio - (HUD.HealthTargetRatio or -1)) > 0.0001;
         HUD.HealthTargetRatio = NewRatio;
         if Instant then
-            Library:CancelMotion(HealthDriver, 'Value');
+            HealthVelocity = 0;
             HealthDriver.Value = NewRatio;
-        elseif TargetChanged then
-            Library:Animate(HealthDriver, { Value = NewRatio }, HealthSmoothTime, nil, 'Health');
         end
     end
 
@@ -6797,6 +6831,8 @@ function Library:CreateTargetHUD(Config)
     Library:GiveSignal(RenderStepped:Connect(function(Delta)
         if not Outer.Parent then return; end
 
+        StepHealthVisual(Delta);
+
         if HUD.Target and Outer.Visible then
             RefreshAccumulator = RefreshAccumulator + Delta;
             if RefreshAccumulator >= 0.15 then
@@ -6890,6 +6926,7 @@ function Library:Notify(Text, Time, Title)
     end;
     local XSize = math.max(TextWidth, TitleWidth) + 14;
     local YSize = HasTitle and (TitleHeight + TextHeight + 10) or (TextHeight + 7);
+    local Duration = math.max(tonumber(Time) or 5, 0.1);
 
     local NotifyOuter = Library:Create('CanvasGroup', {
         BorderColor3 = Color3.new(0, 0, 0);
@@ -6905,7 +6942,7 @@ function Library:Notify(Text, Time, Title)
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
-        Position = UDim2.fromOffset(-14, 0);
+        Position = UDim2.fromOffset(-28, 0);
         Size = UDim2.new(1, 0, 1, 0);
         ZIndex = 101;
         Parent = NotifyOuter;
@@ -6980,14 +7017,44 @@ function Library:Notify(Text, Time, Title)
         BackgroundColor3 = 'AccentColor';
     }, true);
 
-    Library:SetUnifiedFadeProgress(NotifyOuter, 0);
-    Library:Animate(NotifyInner, { Position = UDim2.fromOffset(0, 0); }, 0.24, nil, 'Notification');
-    Library:TweenUnifiedFade(NotifyOuter, 1, 0.21, nil, 'Fade');
+    local TimeTrack = Library:Create('Frame', {
+        BackgroundColor3 = Library.OutlineColor;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 3, 1, -3);
+        Size = UDim2.new(1, -6, 0, 2);
+        ZIndex = 105;
+        Parent = NotifyInner;
+    });
+    Library:AddToRegistry(TimeTrack, {
+        BackgroundColor3 = 'OutlineColor';
+    }, true);
 
-    task.delay(math.max(tonumber(Time) or 5, 0.1), function()
+    local TimeBar = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Size = UDim2.new(0, 0, 1, 0);
+        ZIndex = 106;
+        Parent = TimeTrack;
+    });
+    Library:AddToRegistry(TimeBar, {
+        BackgroundColor3 = 'AccentColor';
+    }, true);
+
+    Library:SetUnifiedFadeProgress(NotifyOuter, 0);
+    Library:Animate(NotifyInner, { Position = UDim2.fromOffset(0, 0); }, 0.30, nil, 'Notification');
+    Library:TweenUnifiedFade(NotifyOuter, 1, 0.24, nil, 'Fade');
+
+    local TimeBarTween = TweenService:Create(
+        TimeBar,
+        TweenInfo.new(Duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+        { Size = UDim2.new(1, 0, 1, 0) }
+    );
+    TimeBarTween:Play();
+
+    task.delay(Duration, function()
         if not NotifyOuter.Parent then return; end
-        Library:Animate(NotifyInner, { Position = UDim2.fromOffset(-10, 0); }, 0.18, nil, 'NotificationExit');
-        Library:TweenUnifiedFade(NotifyOuter, 0, 0.18, function(State)
+        Library:Animate(NotifyInner, { Position = UDim2.fromOffset(-28, 0); }, 0.22, nil, 'NotificationExit');
+        Library:TweenUnifiedFade(NotifyOuter, 0, 0.20, function(State)
             if State ~= Enum.PlaybackState.Cancelled and NotifyOuter.Parent then NotifyOuter:Destroy(); end
         end, 'Fade');
     end);
