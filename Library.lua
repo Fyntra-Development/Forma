@@ -2780,16 +2780,19 @@ do
                 Parent = TabBar;
             });
         end;
-        local TabIndicator = Library:Create('Frame', {
-            BackgroundColor3 = Library.AccentColor;
-            BorderSizePixel = 0;
-            Position = UDim2.new(0, 0, 1, -1);
-            Size = SettingsEnabled and UDim2.new(0.5, -2, 0, 1) or UDim2.new(1, 0, 0, 1);
-            ZIndex = 24;
-            Parent = TabBar;
-        });
-        Library:AddToRegistry(TabIndicator, { BackgroundColor3 = 'AccentColor'; });
-        Library:AddMovingAccentGradient(TabIndicator, 1.6);
+        local TabIndicator;
+        if SettingsEnabled then
+            TabIndicator = Library:Create('Frame', {
+                BackgroundColor3 = Library.AccentColor;
+                BorderSizePixel = 0;
+                Position = UDim2.new(0, 0, 1, -1);
+                Size = UDim2.new(0.5, -2, 0, 1);
+                ZIndex = 24;
+                Parent = TabBar;
+            });
+            Library:AddToRegistry(TabIndicator, { BackgroundColor3 = 'AccentColor'; });
+            Library:AddMovingAccentGradient(TabIndicator, 1.6);
+        end;
 
         if SettingsEnabled then
             SettingsContent = Library:Create('Frame', {
@@ -7611,7 +7614,8 @@ function Library:Notify(Text, Time, Title)
     local Duration = math.max(tonumber(Time) or 5, 0.1);
 
     local NotifyOuter = Library:Create('CanvasGroup', {
-        BorderColor3 = Color3.new(0, 0, 0);
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
         Position = UDim2.fromOffset(8, 0);
         Size = UDim2.new(0, XSize, 0, YSize);
         ClipsDescendants = false;
@@ -7708,7 +7712,7 @@ function Library:Notify(Text, Time, Title)
         BorderSizePixel = 0;
         ClipsDescendants = true;
         Position = UDim2.new(0, 3, 1, -1);
-        Size = UDim2.new(1, -4, 0, 2);
+        Size = UDim2.new(1, -4, 0, 3);
         ZIndex = 105;
         Parent = NotifyInner;
     });
