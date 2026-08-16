@@ -14,12 +14,12 @@ jobs:
       - name: Check example coverage
         shell: bash
         run: |
-          grep -q "-- Groupbox:AddToggle" Example.lua
-          grep -q "-- Groupbox:AddSlider" Example.lua
-          grep -q "-- Groupbox:AddInput" Example.lua
-          grep -q "-- Groupbox:AddDropdown" Example.lua
-          grep -q "-- Label:AddColorPicker" Example.lua
-          grep -q "-- Label:AddKeyPicker" Example.lua
+          grep -q -- "-- Groupbox:AddToggle" Example.lua
+          grep -q -- "-- Groupbox:AddSlider" Example.lua
+          grep -q -- "-- Groupbox:AddInput" Example.lua
+          grep -q -- "-- Groupbox:AddDropdown" Example.lua
+          grep -q -- "-- Label:AddColorPicker" Example.lua
+          grep -q -- "-- Label:AddKeyPicker" Example.lua
           grep -q "Settings = {" Example.lua
           grep -q "Mode = 'Fade'" Example.lua
           grep -q "Mode = 'Rainbow'" Example.lua
