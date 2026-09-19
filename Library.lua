@@ -1268,8 +1268,8 @@ function Library:AddCorner(Instance, Radius)
     return nil;
 end;
 
-function Library:GetMovingAccentGradientColor()
-    local Accent = Library.AccentColor;
+function Library:GetMovingAccentGradientColor(BaseColor)
+    local Accent = BaseColor or Library.AccentColor;
     return ColorSequence.new({
         ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Accent));
         ColorSequenceKeypoint.new(0.34, Accent);
@@ -2626,7 +2626,7 @@ do
         end;
 
         local InitialMode = tostring(Setting('Mode', 'Solid'));
-        if InitialMode ~= 'Solid' and InitialMode ~= 'Fade' and InitialMode ~= 'Rainbow' then InitialMode = 'Solid'; end;
+        if InitialMode ~= 'Solid' and InitialMode ~= 'Fade' and InitialMode ~= 'Rainbow' and InitialMode ~= 'Cycle' and InitialMode ~= 'Random' then InitialMode = 'Solid'; end;
         if not SettingsEnabled then InitialMode = 'Solid'; end;
         local H, S, V = Color3.toHSV(Info.Default);
         local DefaultColor2 = Color3.fromHSV((H + 0.5) % 1, S, V);
@@ -2739,7 +2739,7 @@ do
             ZIndex = 17;
             Parent = PickerFrameInner;
         });
-        Library:AddMovingAccentGradient(Highlight, 1.6);
+        local HighlightGradient = Library:AddMovingAccentGradient(Highlight, 1.6);
 
         local SatVibMapOuter = Library:Create('Frame', {
             BorderColor3 = Color3.new(0, 0, 0);
@@ -3056,6 +3056,34 @@ do
         local SpeedSection, SpeedSlider;
         local SelectTab, SetEditorFromColor, RefreshSettingsVisuals, UpdateModeLayout, PrepareManualEdit, ApplyOutputColor, ComputeAnimatedColor;
 
+        local PickerCurrentAccent = Library.AccentColor;
+        local IsInteractivelyPicking = false;
+
+        local CycleColors = {
+            Color3.fromRGB(255, 75, 110),   -- Vibrant Coral Rose
+            Color3.fromRGB(255, 160, 45),   -- Sunset Amber
+            Color3.fromRGB(250, 215, 60),   -- Warm Gold
+            Color3.fromRGB(46, 213, 115),   -- Emerald Green
+            Color3.fromRGB(0, 210, 255),    -- Vivid Cyan
+            Color3.fromRGB(56, 115, 255),   -- Royal Blue
+            Color3.fromRGB(160, 85, 255),   -- Purple
+            Color3.fromRGB(245, 95, 220),   -- Neon Magenta
+        };
+
+        local RandomFrom = ColorPicker.Value;
+        local RandomTo = ColorPicker.Value;
+        local RandomElapsed = 0;
+        local RandomStepDuration = 2.4;
+
+        local function PickRandomAestheticColor()
+            local LastH = select(1, Color3.toHSV(RandomTo));
+            local NewH = (LastH + 0.22 + (math.random() * 0.56)) % 1;
+            local NewS = 0.68 + (math.random() * 0.32);
+            local NewV = 0.88 + (math.random() * 0.12);
+            return Color3.fromHSV(NewH, NewS, NewV);
+        end;
+        RandomTo = PickRandomAestheticColor();
+
         local TabBar = Library:Create('Frame', {
             BackgroundTransparency = 1;
             Position = UDim2.fromOffset(4, 3);
@@ -3072,7 +3100,6 @@ do
             ZIndex = 23;
             Parent = TabBar;
         });
-        Library.RegistryMap[ColorTab].Properties.TextColor3 = 'AccentColor';
         local SettingsTab;
         if SettingsEnabled then
             SettingsTab = Library:CreateLabel({
@@ -3085,7 +3112,7 @@ do
                 Parent = TabBar;
             });
         end;
-        local TabIndicator;
+        local TabIndicator, TabIndicatorGradient;
         if SettingsEnabled then
             TabIndicator = Library:Create('Frame', {
                 BackgroundColor3 = Library.AccentColor;
@@ -3095,8 +3122,43 @@ do
                 ZIndex = 24;
                 Parent = TabBar;
             });
-            Library:AddToRegistry(TabIndicator, { BackgroundColor3 = 'AccentColor'; });
-            Library:AddMovingAccentGradient(TabIndicator, 1.6);
+            Library:AddToRegistry(TabIndicator, {
+                BackgroundColor3 = function()
+                    return PickerCurrentAccent or Library.AccentColor;
+                end;
+            });
+            TabIndicatorGradient = Library:AddMovingAccentGradient(TabIndicator, 1.6);
+        end;
+
+        local function ApplyPickerAccent(Color)
+            Highlight.BackgroundColor3 = Color;
+            if HighlightGradient then
+                HighlightGradient.Color = Library:GetMovingAccentGradientColor(Color);
+            end;
+            if TabIndicator then
+                TabIndicator.BackgroundColor3 = Color;
+                if TabIndicatorGradient then
+                    TabIndicatorGradient.Color = Library:GetMovingAccentGradientColor(Color);
+                end;
+            end;
+            if ActiveTab == 'Color' then
+                ColorTab.TextColor3 = Color;
+            elseif ActiveTab == 'Settings' and SettingsTab then
+                SettingsTab.TextColor3 = Color;
+            end;
+        end;
+
+        Library:AddToRegistry(ColorTab, {
+            TextColor3 = function()
+                return ActiveTab == 'Color' and (PickerCurrentAccent or Library.AccentColor) or Library.FontColor;
+            end;
+        });
+        if SettingsTab then
+            Library:AddToRegistry(SettingsTab, {
+                TextColor3 = function()
+                    return ActiveTab == 'Settings' and (PickerCurrentAccent or Library.AccentColor) or Library.FontColor;
+                end;
+            });
         end;
 
         if SettingsEnabled then
@@ -3117,53 +3179,64 @@ do
                 ZIndex = 19;
                 Parent = SettingsContent;
             });
-            local ModeRow = Library:Create('Frame', {
-                BackgroundTransparency = 1;
-                Position = UDim2.fromOffset(7, 22);
-                Size = UDim2.new(1, -14, 0, 22);
-                ZIndex = 19;
-                Parent = SettingsContent;
-            });
-            for Index, Mode in ipairs({ 'Solid', 'Fade', 'Rainbow' }) do
-                local Outer = Library:Create('Frame', {
-                    BackgroundColor3 = Color3.new(0, 0, 0);
-                    BorderColor3 = Color3.new(0, 0, 0);
-                    Position = UDim2.new((Index - 1) / 3, Index == 1 and 0 or 2, 0, 0);
-                    Size = UDim2.new(1 / 3, -3, 1, 0);
+            local ModeList = {
+                { 'Solid', 'Fade', 'Rainbow' },
+                { 'Cycle', 'Random' },
+            };
+            for RowIndex, RowModes in ipairs(ModeList) do
+                local RowY = RowIndex == 1 and 22 or 45;
+                local RowFrame = Library:Create('Frame', {
+                    BackgroundTransparency = 1;
+                    BorderSizePixel = 0;
+                    Position = UDim2.fromOffset(7, RowY);
+                    Size = UDim2.new(1, -14, 0, 20);
                     ZIndex = 19;
-                    Parent = ModeRow;
+                    Parent = SettingsContent;
                 });
-                local Inner = Library:Create('Frame', {
-                    BackgroundColor3 = Library.MainColor;
-                    BorderColor3 = Library.OutlineColor;
-                    BorderMode = Enum.BorderMode.Inset;
-                    Size = UDim2.fromScale(1, 1);
-                    ZIndex = 20;
-                    Parent = Outer;
-                });
-                local Label = Library:CreateLabel({
-                    Active = true;
-                    Size = UDim2.fromScale(1, 1);
-                    Text = Mode;
-                    TextSize = 12;
-                    ZIndex = 21;
-                    Parent = Inner;
-                });
-                Library:AddToRegistry(Inner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'OutlineColor'; });
-                ModeButtons[Mode] = { Inner = Inner; Label = Label; };
-                Outer.InputBegan:Connect(function(Input)
-                    if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                        ColorPicker:SetMode(Mode);
-                        Library:AttemptSave();
-                    end;
-                end);
+                local Count = #RowModes;
+                for Index, Mode in ipairs(RowModes) do
+                    local Outer = Library:Create('Frame', {
+                        BackgroundColor3 = Color3.new(0, 0, 0);
+                        BorderSizePixel = 0;
+                        Position = UDim2.new((Index - 1) / Count, Index == 1 and 0 or 2, 0, 0);
+                        Size = UDim2.new(1 / Count, -2, 1, 0);
+                        ZIndex = 19;
+                        Parent = RowFrame;
+                    });
+                    local Inner = Library:Create('Frame', {
+                        BackgroundColor3 = Library.MainColor;
+                        BorderColor3 = Library.OutlineColor;
+                        BorderMode = Enum.BorderMode.Inset;
+                        BorderSizePixel = 1;
+                        Position = UDim2.new(0, 1, 0, 1);
+                        Size = UDim2.new(1, -2, 1, -2);
+                        ZIndex = 20;
+                        Parent = Outer;
+                    });
+                    local Label = Library:CreateLabel({
+                        Active = true;
+                        Size = UDim2.fromScale(1, 1);
+                        Text = Mode;
+                        TextSize = 12;
+                        ZIndex = 21;
+                        Parent = Inner;
+                    });
+                    Library:AddToRegistry(Inner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'OutlineColor'; });
+                    ModeButtons[Mode] = { Inner = Inner; Label = Label; };
+                    Outer.InputBegan:Connect(function(Input)
+                        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            ColorPicker:SetMode(Mode);
+                            Library:AttemptSave();
+                        end;
+                    end);
+                end;
             end;
 
             FadeDependency = Library:Create('Frame', {
                 BackgroundTransparency = 1;
                 BorderSizePixel = 0;
                 ClipsDescendants = true;
-                Position = UDim2.fromOffset(7, 53);
+                Position = UDim2.fromOffset(7, 70);
                 Size = UDim2.new(1, -14, 0, 0);
                 Visible = false;
                 ZIndex = 19;
@@ -3224,7 +3297,7 @@ do
                 BackgroundTransparency = 1;
                 BorderSizePixel = 0;
                 ClipsDescendants = true;
-                Position = UDim2.fromOffset(7, 119);
+                Position = UDim2.fromOffset(7, 70);
                 Size = UDim2.new(1, -14, 0, 30);
                 Visible = false;
                 ZIndex = 19;
@@ -3336,6 +3409,8 @@ do
                 PrepareManualEdit();
             end;
             ColorPicker:SetValueRGB(TargetColor, TargetTransparency, false);
+            PickerCurrentAccent = TargetColor;
+            ApplyPickerAccent(PickerCurrentAccent);
             Library:AttemptSave();
 
             if PasteLabel and PasteIcon then
@@ -3545,7 +3620,11 @@ do
         end
 
         Library:AddToRegistry(PickerFrameInner, { BackgroundColor3 = 'BackgroundColor'; BorderColor3 = 'OutlineColor'; });
-        Library:AddToRegistry(Highlight, { BackgroundColor3 = 'AccentColor'; });
+        Library:AddToRegistry(Highlight, {
+            BackgroundColor3 = function()
+                return PickerCurrentAccent or Library.AccentColor;
+            end;
+        });
         Library:AddToRegistry(SatVibMapInner, { BackgroundColor3 = 'BackgroundColor'; BorderColor3 = 'OutlineColor'; });
 
         Library:AddToRegistry(HueBoxInner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'OutlineColor'; });
@@ -3567,9 +3646,7 @@ do
 
         local function SetTabLabel(Label, Active)
             if not Label then return; end;
-            Label.TextColor3 = Active and Library.AccentColor or Library.FontColor;
-            local Data = Library.RegistryMap[Label];
-            if Data then Data.Properties.TextColor3 = Active and 'AccentColor' or 'FontColor'; end;
+            Label.TextColor3 = Active and (PickerCurrentAccent or Library.AccentColor) or Library.FontColor;
         end;
 
         local function SetColorControlsVisible(Visible)
@@ -3641,13 +3718,33 @@ do
             if Fire then FireCallbacks(); end;
         end;
 
-        ComputeAnimatedColor = function()
-            if ColorPicker.Mode == 'Rainbow' then
+        ComputeAnimatedColor = function(Delta)
+            local Mode = ColorPicker.Mode;
+            if Mode == 'Rainbow' then
                 return Color3.fromHSV((RainbowHueOffset + AnimationElapsed * ColorPicker.Speed / 6) % 1, 1, 1);
-            elseif ColorPicker.Mode == 'Fade' then
+            elseif Mode == 'Fade' then
                 local Phase = (AnimationElapsed * ColorPicker.Speed / 4) % 1;
                 local Alpha = 0.5 - 0.5 * math.cos(Phase * math.pi * 2);
                 return ColorPicker.Color1:Lerp(ColorPicker.Color2, Alpha);
+            elseif Mode == 'Cycle' then
+                local TotalColors = #CycleColors;
+                local Progress = (AnimationElapsed * (ColorPicker.Speed * 0.75)) % TotalColors;
+                local Index1 = math.floor(Progress) + 1;
+                local Index2 = (Index1 % TotalColors) + 1;
+                local Fraction = Progress - math.floor(Progress);
+                local SmoothAlpha = 0.5 - 0.5 * math.cos(Fraction * math.pi);
+                return CycleColors[Index1]:Lerp(CycleColors[Index2], SmoothAlpha);
+            elseif Mode == 'Random' then
+                local StepDuration = math.max(0.25, RandomStepDuration / ColorPicker.Speed);
+                RandomElapsed = RandomElapsed + (Delta or 0.016);
+                if RandomElapsed >= StepDuration then
+                    RandomElapsed = RandomElapsed % StepDuration;
+                    RandomFrom = RandomTo;
+                    RandomTo = PickRandomAestheticColor();
+                end;
+                local Alpha = math.clamp(RandomElapsed / StepDuration, 0, 1);
+                local SmoothAlpha = Alpha * Alpha * (3 - 2 * Alpha);
+                return RandomFrom:Lerp(RandomTo, SmoothAlpha);
             end;
             return ColorPicker.SolidColor;
         end;
@@ -3677,7 +3774,7 @@ do
             local CurrentId = ModeAnimationId;
             local ShowFade = ColorPicker.Mode == 'Fade';
             local ShowSpeed = ColorPicker.Mode ~= 'Solid';
-            local SpeedY = ShowFade and 119 or 53;
+            local SpeedY = ShowFade and 133 or 70;
 
             Library:CancelMotion(FadeDependency);
             Library:CancelMotion(SpeedSection);
@@ -3721,7 +3818,7 @@ do
                     }, 0.22, nil, 'ColorPickerMode');
                 end;
             elseif Instant then
-                SpeedSection.Position = UDim2.fromOffset(7, 53);
+                SpeedSection.Position = UDim2.fromOffset(7, 70);
                 SpeedSection.Visible = false;
             elseif SpeedSection.Visible then
                 local CurrentY = SpeedSection.Position.Y.Offset;
@@ -3730,7 +3827,7 @@ do
                 }, 0.18, function(State)
                     if CurrentId == ModeAnimationId and ColorPicker.Mode == 'Solid' and State ~= Enum.PlaybackState.Cancelled then
                         SpeedSection.Visible = false;
-                        SpeedSection.Position = UDim2.fromOffset(7, 53);
+                        SpeedSection.Position = UDim2.fromOffset(7, 70);
                     end;
                 end, 'ColorPickerMode');
             end;
@@ -3748,6 +3845,7 @@ do
                     Position = Name == 'Settings' and UDim2.new(0.5, 2, 1, -1) or UDim2.new(0, 0, 1, -1)
                 }, 0.14, nil, 'TabIndicator');
             end;
+            ApplyPickerAccent(PickerCurrentAccent);
             if Name == 'Color' and not PreserveTarget then
                 if ColorPicker.Mode == 'Solid' then
                     ColorPicker.EditingTarget = 'Solid';
@@ -3771,7 +3869,7 @@ do
 
         function ColorPicker:SetMode(Mode, Internal)
             Mode = tostring(Mode or 'Solid');
-            if not SettingsEnabled or (Mode ~= 'Solid' and Mode ~= 'Fade' and Mode ~= 'Rainbow') then Mode = 'Solid'; end;
+            if not SettingsEnabled or (Mode ~= 'Solid' and Mode ~= 'Fade' and Mode ~= 'Rainbow' and Mode ~= 'Cycle' and Mode ~= 'Random') then Mode = 'Solid'; end;
             if Mode == ColorPicker.Mode and not Internal then
                 RefreshSettingsVisuals();
                 UpdateModeLayout(false);
@@ -3788,11 +3886,17 @@ do
                 ColorPicker.EditingTarget = 'Solid';
             else
                 ColorPicker.EditingTarget = 'Live';
-                if Mode == 'Rainbow' then RainbowHueOffset = select(1, Color3.toHSV(PreviousColor)); end;
+                if Mode == 'Rainbow' then
+                    RainbowHueOffset = select(1, Color3.toHSV(PreviousColor));
+                elseif Mode == 'Random' then
+                    RandomFrom = PreviousColor;
+                    RandomTo = PickRandomAestheticColor();
+                    RandomElapsed = 0;
+                end;
             end;
 
             if Internal then
-                local TargetColor = ComputeAnimatedColor();
+                local TargetColor = ComputeAnimatedColor(0);
                 ApplyOutputColor(TargetColor, true, false);
                 if ActiveTab == 'Color' then SetEditorFromColor(TargetColor); end;
             else
@@ -3859,7 +3963,9 @@ do
                 local success, result = pcall(Color3.fromHex, HueBox.Text)
                 if success and typeof(result) == 'Color3' then
                     PrepareManualEdit();
-                    ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib = Color3.toHSV(result)
+                    ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib = Color3.toHSV(result);
+                    PickerCurrentAccent = result;
+                    ApplyPickerAccent(PickerCurrentAccent);
                 end
             end
 
@@ -3870,8 +3976,11 @@ do
             if enter then
                 local r, g, b = RgbBox.Text:match('(%d+),%s*(%d+),%s*(%d+)')
                 if r and g and b then
+                    local NewColor = Color3.fromRGB(r, g, b);
                     PrepareManualEdit();
-                    ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib = Color3.toHSV(Color3.fromRGB(r, g, b))
+                    ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib = Color3.toHSV(NewColor);
+                    PickerCurrentAccent = NewColor;
+                    ApplyPickerAccent(PickerCurrentAccent);
                 end
             end
 
@@ -3925,6 +4034,9 @@ do
         end;
 
         function ColorPicker:Show()
+            IsInteractivelyPicking = false;
+            PickerCurrentAccent = Library.AccentColor;
+            ApplyPickerAccent(PickerCurrentAccent);
             for Frame in next, Library.OpenedFrames do
                 if Frame.Name == 'Color' and Frame ~= PickerFrameOuter then
                     Frame.Visible = false;
@@ -3956,6 +4068,9 @@ do
         end;
 
         function ColorPicker:Hide()
+            IsInteractivelyPicking = false;
+            PickerCurrentAccent = Library.AccentColor;
+            ApplyPickerAccent(PickerCurrentAccent);
             if not PickerFrameOuter.Visible then
                 Library.OpenedFrames[PickerFrameOuter] = nil;
                 return;
@@ -4018,6 +4133,7 @@ do
         SatVibMap.InputBegan:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.MouseButton1 then
                 PrepareManualEdit();
+                IsInteractivelyPicking = true;
                 while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
                     local MinX = SatVibMap.AbsolutePosition.X;
                     local MaxX = MinX + SatVibMap.AbsoluteSize.X;
@@ -4034,6 +4150,7 @@ do
                     RenderStepped:Wait();
                 end;
 
+                IsInteractivelyPicking = false;
                 Library:AttemptSave();
             end;
         end);
@@ -4041,6 +4158,7 @@ do
         HueSelectorInner.InputBegan:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.MouseButton1 then
                 PrepareManualEdit();
+                IsInteractivelyPicking = true;
                 while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
                     local MinY = HueSelectorInner.AbsolutePosition.Y;
                     local MaxY = MinY + HueSelectorInner.AbsoluteSize.Y;
@@ -4052,6 +4170,7 @@ do
                     RenderStepped:Wait();
                 end;
 
+                IsInteractivelyPicking = false;
                 Library:AttemptSave();
             end;
         end);
@@ -4073,6 +4192,7 @@ do
         if TransparencyBoxInner then
             TransparencyBoxInner.InputBegan:Connect(function(Input)
                 if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    IsInteractivelyPicking = true;
                     while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
                         local MinX = TransparencyBoxInner.AbsolutePosition.X;
                         local MaxX = MinX + TransparencyBoxInner.AbsoluteSize.X;
@@ -4084,6 +4204,7 @@ do
                         RenderStepped:Wait();
                     end;
 
+                    IsInteractivelyPicking = false;
                     Library:AttemptSave();
                 end;
             end);
@@ -4111,32 +4232,51 @@ do
             end
         end))
 
-        if SettingsEnabled then
-            Library:GiveSignal(RenderStepped:Connect(function(Delta)
-                local Dt = math.min(math.max(tonumber(Delta) or 0, 0), 0.1);
+        Library:GiveSignal(RenderStepped:Connect(function(Delta)
+            local Dt = math.min(math.max(tonumber(Delta) or 0, 0), 0.1);
+
+            local TargetAccent = IsInteractivelyPicking
+                and Color3.fromHSV(ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib)
+                or Library.AccentColor;
+
+            local DiffR = math.abs(PickerCurrentAccent.R - TargetAccent.R);
+            local DiffG = math.abs(PickerCurrentAccent.G - TargetAccent.G);
+            local DiffB = math.abs(PickerCurrentAccent.B - TargetAccent.B);
+
+            if DiffR > 0.001 or DiffG > 0.001 or DiffB > 0.001 then
+                local Responsiveness = IsInteractivelyPicking and 22 or 10;
+                local Alpha = 1 - math.exp(-Responsiveness * Dt);
+                PickerCurrentAccent = PickerCurrentAccent:Lerp(TargetAccent, Alpha);
+                ApplyPickerAccent(PickerCurrentAccent);
+            elseif PickerCurrentAccent ~= TargetAccent then
+                PickerCurrentAccent = TargetAccent;
+                ApplyPickerAccent(PickerCurrentAccent);
+            end;
+
+            if SettingsEnabled then
                 local Transitioning = ModeTransitionElapsed < ModeTransitionDuration;
-                if ColorPicker.Mode == 'Solid' and not Transitioning then return; end;
+                if ColorPicker.Mode ~= 'Solid' or Transitioning then
+                    if ColorPicker.Mode ~= 'Solid' then
+                        AnimationElapsed = AnimationElapsed + Dt;
+                    end;
+                    if Transitioning then
+                        ModeTransitionElapsed = math.min(ModeTransitionElapsed + Dt, ModeTransitionDuration);
+                    end;
 
-                if ColorPicker.Mode ~= 'Solid' then
-                    AnimationElapsed = AnimationElapsed + Dt;
-                end;
-                if Transitioning then
-                    ModeTransitionElapsed = math.min(ModeTransitionElapsed + Dt, ModeTransitionDuration);
-                end;
+                    local TargetColor = ComputeAnimatedColor(Dt);
+                    local OutputColor = TargetColor;
+                    if ModeTransitionElapsed < ModeTransitionDuration then
+                        local Alpha = math.clamp(ModeTransitionElapsed / ModeTransitionDuration, 0, 1);
+                        local Eased = 1 - ((1 - Alpha) ^ 3);
+                        OutputColor = ModeTransitionFrom:Lerp(TargetColor, Eased);
+                    end;
 
-                local TargetColor = ComputeAnimatedColor();
-                local OutputColor = TargetColor;
-                if ModeTransitionElapsed < ModeTransitionDuration then
-                    local Alpha = math.clamp(ModeTransitionElapsed / ModeTransitionDuration, 0, 1);
-                    local Eased = 1 - ((1 - Alpha) ^ 3);
-                    OutputColor = ModeTransitionFrom:Lerp(TargetColor, Eased);
+                    local SyncEditor = PickerFrameOuter.Visible and ActiveTab == 'Color' and ColorPicker.EditingTarget == 'Live';
+                    ApplyOutputColor(OutputColor, true, false);
+                    if SyncEditor then StepAnimatedEditor(OutputColor, Dt); end;
                 end;
-
-                local SyncEditor = PickerFrameOuter.Visible and ActiveTab == 'Color' and ColorPicker.EditingTarget == 'Live';
-                ApplyOutputColor(OutputColor, true, false);
-                if SyncEditor then StepAnimatedEditor(OutputColor, Dt); end;
-            end));
-        end;
+            end;
+        end));
 
         RefreshSettingsVisuals();
         SelectTab('Color', true);
