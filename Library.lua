@@ -86,10 +86,26 @@ local FontOrder = {
 local ProtectGui = protectgui or (syn and syn.protect_gui) or (function() end);
 
 local ScreenGui = Instance.new('ScreenGui');
-ProtectGui(ScreenGui);
-
+ScreenGui.Name = 'FormaGui';
+ScreenGui.ResetOnSpawn = false;
+ScreenGui.IgnoreGuiInset = true;
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global;
-ScreenGui.Parent = CoreGui;
+
+local function GetGuiParent()
+    local success, result = pcall(function()
+        return gethui and gethui()
+    end)
+    if success and typeof(result) == 'Instance' and (result:IsA('BasePlayerGui') or result:IsA('CoreGui') or result.ClassName == 'Folder') then
+        return result
+    end
+    return CoreGui
+end
+
+local ParentGui = GetGuiParent();
+pcall(function()
+    ProtectGui(ScreenGui);
+end);
+ScreenGui.Parent = ParentGui;
 
 local Toggles = {};
 local Options = {};
@@ -122,6 +138,7 @@ local Library = {
     FontName = 'Code',
     TextScale = 1;
     TextSize = 14;
+    ShowGlow = false;
 
     OpenedFrames = {};
     DependencyBoxes = {};
@@ -1217,6 +1234,12 @@ function Library:Create(Class, Properties)
         _Instance[Property] = Value;
     end;
 
+    if _Instance:IsA('GuiObject') then
+        if Properties.BorderSizePixel == nil and (Properties.BorderColor3 ~= nil or Properties.BorderMode ~= nil) then
+            _Instance.BorderSizePixel = 1;
+        end;
+    end;
+
     if IsTextObject then
         local BaseSize = ExplicitTextSize or Library.BaseTextSizes[_Instance] or _Instance.TextSize;
         Library.BaseTextSizes[_Instance] = BaseSize;
@@ -1302,8 +1325,6 @@ function Library:AddAccentGlow(Instance, Scale)
         return;
     end;
 
-    Scale = math.max(tonumber(Scale) or 1, 0.05);
-
     for _, Child in ipairs(Instance:GetChildren()) do
         if (Child:IsA('UIStroke') and Child.Name:match('^FormaAccentGlow%d+$'))
             or (Child:IsA('Frame') and Child.Name:match('^FormaAccentGlowLayer%d+$')) then
@@ -1311,18 +1332,15 @@ function Library:AddAccentGlow(Instance, Scale)
         end
     end
 
+    if not Library.ShowGlow then
+        return;
+    end;
+
+    Scale = math.max(tonumber(Scale) or 1, 0.05);
+
     local Layers = {
-        { 0.4,  1.4, 0.940 },
-        { 1.2,  1.6, 0.948 },
-        { 2.2,  1.8, 0.956 },
-        { 3.5,  2.0, 0.964 },
-        { 5.0,  2.2, 0.971 },
-        { 6.8,  2.5, 0.977 },
-        { 8.9,  2.8, 0.982 },
-        { 11.3, 3.1, 0.987 },
-        { 14.0, 3.5, 0.991 },
-        { 17.0, 3.9, 0.994 },
-        { 20.4, 4.3, 0.996 },
+        { 0.8, 1.2, 0.92 },
+        { 2.0, 1.8, 0.97 },
     };
 
     for Index, Info in ipairs(Layers) do
@@ -1360,6 +1378,8 @@ function Library:AddAccentOutline(Instance, Scale)
     if not Instance then
         return nil;
     end;
+
+    Instance.BorderSizePixel = 0;
 
     Scale = math.max(tonumber(Scale) or 1, 0.25);
     local Stroke = Instance:FindFirstChild('FormaAccentOutline');
@@ -2228,11 +2248,10 @@ function Library:AddToolTip(Info, HoverInstance)
         Visible = false,
     })
 
-    local Content = Library:Create('CanvasGroup', {
+    local Content = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor,
         BackgroundTransparency = 0,
         BorderSizePixel = 0,
-        GroupTransparency = 1,
         Position = UDim2.fromOffset(0, 4),
         Size = UDim2.fromScale(1, 1),
         ZIndex = Tooltip.ZIndex,
@@ -2688,11 +2707,10 @@ do
             Parent = DisplayFrame;
         });
 
-        local PickerFrameOuter = Library:Create('CanvasGroup', {
+        local PickerFrameOuter = Library:Create('Frame', {
             Name = 'Color';
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            GroupTransparency = 1;
             Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18),
             Size = UDim2.fromOffset(230, Info.Transparency and 295 or 276);
             Visible = false;
@@ -2706,7 +2724,7 @@ do
         });
 
         DisplayFrame:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()
-            if PickerFrameOuter.Visible and PickerFrameOuter.GroupTransparency < 0.95 then
+            if PickerFrameOuter.Visible then
                 PickerFrameOuter.Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18);
             end;
         end)
@@ -3146,10 +3164,10 @@ do
                 end);
             end;
 
-            FadeDependency = Library:Create('CanvasGroup', {
+            FadeDependency = Library:Create('Frame', {
                 BackgroundTransparency = 1;
+                BorderSizePixel = 0;
                 ClipsDescendants = true;
-                GroupTransparency = 1;
                 Position = UDim2.fromOffset(7, 53);
                 Size = UDim2.new(1, -14, 0, 0);
                 Visible = false;
@@ -3207,9 +3225,10 @@ do
             Color1Preview = MakeFadeRow('Color 1', 0, 1);
             Color2Preview = MakeFadeRow('Color 2', 29, 2);
 
-            SpeedSection = Library:Create('CanvasGroup', {
+            SpeedSection = Library:Create('Frame', {
                 BackgroundTransparency = 1;
-                GroupTransparency = 1;
+                BorderSizePixel = 0;
+                ClipsDescendants = true;
                 Position = UDim2.fromOffset(7, 119);
                 Size = UDim2.new(1, -14, 0, 30);
                 Visible = false;
@@ -3358,9 +3377,9 @@ do
         local ContextMenu = {}
         do
             ContextMenu.Options = {}
-            ContextMenu.Container = Library:Create('CanvasGroup', {
-                BorderColor3 = Color3.new(),
-                GroupTransparency = 1,
+            ContextMenu.Container = Library:Create('Frame', {
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
                 ZIndex = 14,
 
                 Visible = false,
@@ -3672,25 +3691,20 @@ do
                 FadeDependency.Visible = true;
                 if Instant then
                     FadeDependency.Size = UDim2.new(1, -14, 0, 58);
-                    FadeDependency.GroupTransparency = 0;
                 else
                     if FadeDependency.Size.Y.Offset <= 0 then
                         FadeDependency.Size = UDim2.new(1, -14, 0, 0);
-                        FadeDependency.GroupTransparency = 1;
                     end;
                     Library:Animate(FadeDependency, {
                         Size = UDim2.new(1, -14, 0, 58);
-                        GroupTransparency = 0;
                     }, 0.22, nil, 'ColorPickerMode');
                 end;
             elseif Instant then
                 FadeDependency.Size = UDim2.new(1, -14, 0, 0);
-                FadeDependency.GroupTransparency = 1;
                 FadeDependency.Visible = false;
             elseif FadeDependency.Visible then
                 Library:Animate(FadeDependency, {
                     Size = UDim2.new(1, -14, 0, 0);
-                    GroupTransparency = 1;
                 }, 0.18, function(State)
                     if CurrentId == ModeAnimationId and ColorPicker.Mode ~= 'Fade' and State ~= Enum.PlaybackState.Cancelled then
                         FadeDependency.Visible = false;
@@ -3703,26 +3717,21 @@ do
                 SpeedSection.Visible = true;
                 if Instant then
                     SpeedSection.Position = UDim2.fromOffset(7, SpeedY);
-                    SpeedSection.GroupTransparency = 0;
                 else
                     if not WasVisible then
                         SpeedSection.Position = UDim2.fromOffset(7, SpeedY + 6);
-                        SpeedSection.GroupTransparency = 1;
                     end;
                     Library:Animate(SpeedSection, {
                         Position = UDim2.fromOffset(7, SpeedY);
-                        GroupTransparency = 0;
                     }, 0.22, nil, 'ColorPickerMode');
                 end;
             elseif Instant then
                 SpeedSection.Position = UDim2.fromOffset(7, 53);
-                SpeedSection.GroupTransparency = 1;
                 SpeedSection.Visible = false;
             elseif SpeedSection.Visible then
                 local CurrentY = SpeedSection.Position.Y.Offset;
                 Library:Animate(SpeedSection, {
                     Position = UDim2.fromOffset(7, CurrentY + 6);
-                    GroupTransparency = 1;
                 }, 0.18, function(State)
                     if CurrentId == ModeAnimationId and ColorPicker.Mode == 'Solid' and State ~= Enum.PlaybackState.Cancelled then
                         SpeedSection.Visible = false;
@@ -3935,7 +3944,7 @@ do
             if not PickerFrameOuter.Visible then
                 PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 6);
                 PickerScale.Scale = 0.94;
-                PickerFrameOuter.GroupTransparency = 1;
+                Library:SetUnifiedFadeProgress(PickerFrameOuter, 0);
             end;
 
             PickerFrameOuter.Visible = true;
@@ -3944,8 +3953,8 @@ do
             local OpenInfo = Library:GetMenuTweenInfo(0.22, 'Picker');
             PlayPickerTween(PickerFrameOuter, OpenInfo, {
                 Position = TargetPosition;
-                GroupTransparency = 0;
             });
+            Library:TweenUnifiedFade(PickerFrameOuter, 1, 0.22, nil, 'Fade');
             PlayPickerTween(PickerScale, OpenInfo, {
                 Scale = 1;
             });
@@ -3973,7 +3982,6 @@ do
 
                 PickerFrameOuter.Visible = false;
                 PickerFrameOuter.Position = TargetPosition;
-                PickerFrameOuter.GroupTransparency = 1;
                 PickerScale.Scale = 1;
                 table.clear(PickerTweens);
             end
@@ -3981,8 +3989,8 @@ do
             local ExitInfo = Library:GetMenuTweenInfo(0.16, 'PopupExit');
             PlayPickerTween(PickerFrameOuter, ExitInfo, {
                 Position = ExitPosition;
-                GroupTransparency = 1;
             });
+            Library:TweenUnifiedFade(PickerFrameOuter, 0, 0.16, FinishHide, 'Fade');
             local ScaleTween = PlayPickerTween(PickerScale, ExitInfo, {
                 Scale = 0.96;
             });
@@ -4222,9 +4230,9 @@ do
         DisplayLabel:GetPropertyChangedSignal('TextBounds'):Connect(ResizeKeyDisplay);
         SetKeyDisplay(Info.Default);
 
-        local ModeSelectOuter = Library:Create('CanvasGroup', {
+        local ModeSelectOuter = Library:Create('Frame', {
             BorderColor3 = Color3.new(0, 0, 0);
-            GroupTransparency = 1;
+            BorderSizePixel = 1;
             Position = UDim2.fromOffset(ToggleLabel.AbsolutePosition.X + ToggleLabel.AbsoluteSize.X + 4, ToggleLabel.AbsolutePosition.Y + 1);
             Size = UDim2.new(0, 60, 0, (#Modes * 15) + 2);
             Visible = false;
@@ -5142,11 +5150,11 @@ do
             BorderColor3 = 'OutlineColor';
         });
 
-        local ToggleFill = Library:Create('CanvasGroup', {
+        local ToggleFill = Library:Create('Frame', {
             BackgroundColor3 = Library.AccentColor;
+            BackgroundTransparency = 1;
             BorderSizePixel = 0;
             ClipsDescendants = true;
-            GroupTransparency = 1;
             Size = UDim2.fromScale(1, 1);
             ZIndex = 7;
             Parent = ToggleInner;
@@ -5214,7 +5222,7 @@ do
             ToggleShade.Visible = Toggle.Value;
             Library:TweenProperty(ToggleInner, 'BackgroundColor3', Library.MainColor, 0.11);
             Library:TweenProperty(ToggleInner, 'BorderColor3', Library[BorderKey], 0.11);
-            Library:TweenProperty(ToggleFill, 'GroupTransparency', Toggle.Value and 0 or 1, 0.11);
+            Library:TweenProperty(ToggleFill, 'BackgroundTransparency', Toggle.Value and 0 or 1, 0.11);
             Library:TweenProperty(ToggleLabel, 'TextColor3', Library[TextColorKey], 0.11);
 
             Library.RegistryMap[ToggleInner].Properties.BackgroundColor3 = 'MainColor';
@@ -6749,12 +6757,12 @@ do
         local SearchOuter;
         local SearchBox;
 
-        local ListOuter = Library:Create('CanvasGroup', {
+        local ListOuter = Library:Create('Frame', {
             BackgroundColor3 = Library.Contrast;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
+            BorderSizePixel = 1;
             ClipsDescendants = true;
-            GroupTransparency = 1;
             Size = UDim2.fromOffset(math.max(DropdownOuter.AbsoluteSize.X, 1), ROW_HEIGHT + (VALUES_PADDING * 2) + LIST_BOTTOM_GUARD);
             ZIndex = 20;
             Visible = false;
@@ -6782,11 +6790,11 @@ do
         end
 
         if Searchable then
-            SearchOuter = Library:Create('CanvasGroup', {
+            SearchOuter = Library:Create('Frame', {
                 BackgroundColor3 = Library.Inline;
                 BorderColor3 = Library.Inline;
+                BorderSizePixel = 1;
                 Size = UDim2.fromOffset(math.max(DropdownOuter.AbsoluteSize.X, 1), SEARCH_HEIGHT);
-                GroupTransparency = 1;
                 ZIndex = 26;
                 Visible = false;
                 Parent = ScreenGui;
@@ -7008,12 +7016,11 @@ do
 
             for Index, Value in ipairs(Dropdown.Values) do
                 local Row = {};
-                local Button = Library:Create('CanvasGroup', {
+                local Button = Library:Create('Frame', {
                     Active = true;
                     BackgroundTransparency = 1;
                     BorderSizePixel = 0;
                     ClipsDescendants = true;
-                    GroupTransparency = 0;
                     LayoutOrder = Index;
                     Size = UDim2.new(1, -5, 0, ROW_HEIGHT);
                     ZIndex = 23;
@@ -7374,10 +7381,10 @@ do
         local Groupbox = self;
         local Container = Groupbox.Container;
 
-        local Holder = Library:Create('CanvasGroup', {
+        local Holder = Library:Create('Frame', {
             BackgroundTransparency = 1;
+            BorderSizePixel = 0;
             ClipsDescendants = true;
-            GroupTransparency = 1;
             Size = UDim2.new(1, 0, 0, 0);
             Visible = false;
             Parent = Container;
@@ -7732,10 +7739,10 @@ do
         if Dirty then Library:ReflowNotifications(); end
     end));
 
-    local WatermarkOuter = Library:Create('CanvasGroup', {
+    local WatermarkOuter = Library:Create('Frame', {
         BackgroundColor3 = Library.Inline;
         BorderColor3 = Color3.new(0, 0, 0);
-        GroupTransparency = 1;
+        BorderSizePixel = 1;
         Position = UDim2.new(0, 100, 0, -25);
         Size = UDim2.new(0, 230, 0, 26);
         ZIndex = 200;
@@ -7914,7 +7921,8 @@ do
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.AccentColor;
         BorderMode = Enum.BorderMode.Inset;
-        Size = UDim2.new(1, 0, 1, 0);
+        Position = UDim2.fromOffset(1, 1);
+        Size = UDim2.new(1, -2, 1, -2);
         ZIndex = 101;
         Parent = KeybindOuter;
     });
@@ -8065,12 +8073,11 @@ function Library:CreateTargetHUD(Config)
     local BaseSize = Config.Size or UDim2.fromOffset(290, 148);
     local BaseHeight = math.max(BaseSize.Y.Offset, 148);
 
-    local Outer = Library:Create('CanvasGroup', {
+    local Outer = Library:Create('Frame', {
         BackgroundColor3 = Color3.new(0, 0, 0);
         BorderColor3 = Color3.new(0, 0, 0);
         Position = Config.Position or UDim2.new(0.5, 285, 0.5, 120);
         Size = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset, BaseSize.Y.Scale, BaseHeight);
-        GroupTransparency = 1;
         Visible = false;
         ZIndex = 250;
         Parent = ScreenGui;
@@ -8898,13 +8905,12 @@ function Library:Notify(Text, Time, Title)
     local YSize = HasTitle and (TitleHeight + TextHeight + 18) or (TextHeight + 14);
     local Duration = math.max(tonumber(Time) or 5, 0.1);
 
-    local NotifyOuter = Library:Create('CanvasGroup', {
+    local NotifyOuter = Library:Create('Frame', {
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
         Position = UDim2.fromOffset(8, 0);
         Size = UDim2.new(0, XSize, 0, YSize);
         ClipsDescendants = false;
-        GroupTransparency = 1;
         ZIndex = 100;
         Parent = Library.NotificationArea;
     });
@@ -9065,13 +9071,13 @@ function Library:CreateWindow(...)
         Tabs = {};
     };
 
-    local Outer = Library:Create('CanvasGroup', {
+    local Outer = Library:Create('Frame', {
         AnchorPoint = Config.AnchorPoint,
         BackgroundColor3 = Color3.new(0, 0, 0);
         BorderSizePixel = 0;
+        ClipsDescendants = true;
         Position = Config.Position,
         Size = Config.Size,
-        GroupTransparency = 1;
         Visible = false;
         ZIndex = 1;
         Parent = ScreenGui;
@@ -9319,10 +9325,10 @@ function Library:CreateWindow(...)
         Tab.ContentAnimationId = 0;
         Tab.Button = TabButton;
 
-        local TabFrame = Library:Create('CanvasGroup', {
+        local TabFrame = Library:Create('Frame', {
             Name = 'TabFrame',
             BackgroundTransparency = 1;
-            GroupTransparency = 1;
+            BorderSizePixel = 0;
             Position = UDim2.new(0, 0, 0, 7);
             Size = UDim2.new(1, 0, 1, 0);
             Visible = false;
@@ -9331,6 +9337,7 @@ function Library:CreateWindow(...)
         });
 
         local LeftSide = Library:Create('ScrollingFrame', {
+            Name = 'LeftSide';
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Position = UDim2.new(0, 8 - 1, 0, 8 - 1);
@@ -9344,6 +9351,7 @@ function Library:CreateWindow(...)
         });
 
         local RightSide = Library:Create('ScrollingFrame', {
+            Name = 'RightSide';
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Position = UDim2.new(0.5, 4 + 1, 0, 8 - 1);
@@ -9354,6 +9362,18 @@ function Library:CreateWindow(...)
             ScrollBarThickness = 0;
             ZIndex = 2;
             Parent = TabFrame;
+        });
+
+        Library:Create('UIPadding', {
+            PaddingTop = UDim.new(0, 8);
+            PaddingBottom = UDim.new(0, 8);
+            Parent = LeftSide;
+        });
+
+        Library:Create('UIPadding', {
+            PaddingTop = UDim.new(0, 8);
+            PaddingBottom = UDim.new(0, 8);
+            Parent = RightSide;
         });
 
         Library:Create('UIListLayout', {
@@ -9374,7 +9394,7 @@ function Library:CreateWindow(...)
 
         for _, Side in next, { LeftSide, RightSide } do
             Side:WaitForChild('UIListLayout'):GetPropertyChangedSignal('AbsoluteContentSize'):Connect(function()
-                Side.CanvasSize = UDim2.fromOffset(0, Side.UIListLayout.AbsoluteContentSize.Y);
+                Side.CanvasSize = UDim2.fromOffset(0, Side.UIListLayout.AbsoluteContentSize.Y + 16);
             end);
         end;
 
@@ -9485,6 +9505,7 @@ function Library:CreateWindow(...)
             local BoxInner = Library:Create('Frame', {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Color3.new(0, 0, 0);
+                BorderMode = Enum.BorderMode.Inset;
                 Size = UDim2.new(1, -2, 1, -2);
                 Position = UDim2.new(0, 1, 0, 1);
                 ZIndex = 4;
@@ -9590,6 +9611,7 @@ function Library:CreateWindow(...)
             local BoxInner = Library:Create('Frame', {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Color3.new(0, 0, 0);
+                BorderMode = Enum.BorderMode.Inset;
                 Size = UDim2.new(1, -2, 1, -2);
                 Position = UDim2.new(0, 1, 0, 1);
                 ZIndex = 4;
@@ -9598,18 +9620,6 @@ function Library:CreateWindow(...)
 
             Library:AddToRegistry(BoxInner, {
                 BackgroundColor3 = 'BackgroundColor';
-            });
-
-            local Highlight = Library:Create('Frame', {
-                BackgroundColor3 = Library.AccentColor;
-                BorderSizePixel = 0;
-                Size = UDim2.new(1, 0, 0, 2);
-                ZIndex = 10;
-                Parent = BoxInner;
-            });
-
-            Library:AddToRegistry(Highlight, {
-                BackgroundColor3 = 'AccentColor';
             });
 
             local TabboxButtons = Library:Create('Frame', {
@@ -9681,9 +9691,9 @@ function Library:CreateWindow(...)
                 Tab.Active = false;
                 Tab.ContentAnimationId = 0;
 
-                local Container = Library:Create('CanvasGroup', {
+                local Container = Library:Create('Frame', {
                     BackgroundTransparency = 1;
-                    GroupTransparency = 1;
+                    BorderSizePixel = 0;
                     Position = UDim2.new(0, 4, 0, 25);
                     Size = UDim2.new(1, -4, 1, -20);
                     ZIndex = 1;
