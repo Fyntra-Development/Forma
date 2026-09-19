@@ -88,7 +88,6 @@ local ProtectGui = protectgui or (syn and syn.protect_gui) or (function() end);
 local ScreenGui = Instance.new('ScreenGui');
 ScreenGui.Name = 'FormaGui';
 ScreenGui.ResetOnSpawn = false;
-ScreenGui.IgnoreGuiInset = true;
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global;
 
 local function GetGuiParent()
@@ -4159,6 +4158,7 @@ do
         local Container = self.Container;
 
         assert(Info.Default, 'AddKeyPicker: Missing default value.');
+        Info.Text = Info.Text or (ParentObj and (ParentObj.Text or (ParentObj.TextLabel and ParentObj.TextLabel.Text))) or tostring(Idx) or '';
 
         local Modes = Info.Modes;
         if type(Modes) ~= 'table' or #Modes == 0 then
@@ -5393,6 +5393,7 @@ do
             BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
+            ClipsDescendants = true;
             Size = UDim2.fromScale(1, 1);
             ZIndex = 6;
             Parent = SliderOuter;
@@ -5412,7 +5413,7 @@ do
 
         local Fill = Library:Create('Frame', {
             BackgroundColor3 = Library.AccentColor;
-            BorderColor3 = Library.BlendShade;
+            BorderSizePixel = 0;
             ClipsDescendants = true;
             Size = UDim2.new(0, 0, 1, 0);
             ZIndex = 7;
@@ -5422,7 +5423,6 @@ do
         Library:AddCorner(Fill, 3);
         Library:AddToRegistry(Fill, {
             BackgroundColor3 = 'AccentColor';
-            BorderColor3 = 'BlendShade';
         });
         local FillShade = Library:Create('Frame', {
             BackgroundColor3 = Library.BlendShade;
@@ -5446,7 +5446,7 @@ do
                 Text = Info.Text;
                 TextSize = 13;
                 TextXAlignment = Enum.TextXAlignment.Left;
-                ZIndex = 8;
+                ZIndex = 12;
                 Parent = SliderInner;
             });
         end;
@@ -5455,6 +5455,8 @@ do
             AnchorPoint = Vector2.new(0.5, 0.5);
             BackgroundColor3 = Library.AccentColor;
             BorderColor3 = Library.BlendShade;
+            BorderMode = Enum.BorderMode.Inset;
+            BorderSizePixel = 1;
             ClipsDescendants = true;
             Position = UDim2.new(0, 20, 0.5, 0);
             Size = UDim2.fromOffset(7, 13);
@@ -5550,7 +5552,6 @@ do
 
         function Slider:UpdateColors()
             Fill.BackgroundColor3 = Library.AccentColor;
-            Fill.BorderColor3 = Library.BlendShade;
             FillShade.BackgroundColor3 = Library.BlendShade;
             Thumb.BackgroundColor3 = Library.AccentColor;
             Thumb.BorderColor3 = Library.BlendShade;
@@ -6117,7 +6118,7 @@ do
 
         local Fill = Library:Create('Frame', {
             BackgroundColor3 = Library.AccentColor;
-            BorderColor3 = Library.BlendShade;
+            BorderSizePixel = 0;
             ClipsDescendants = true;
             Position = UDim2.new(0, 0, 0, 0);
             Size = UDim2.new(0, 0, 1, 0);
@@ -6128,7 +6129,6 @@ do
         Library:AddCorner(Fill, 3);
         Library:AddToRegistry(Fill, {
             BackgroundColor3 = 'AccentColor';
-            BorderColor3 = 'BlendShade';
         });
 
         local FillShade = Library:Create('Frame', {
@@ -6153,7 +6153,7 @@ do
                 Text = Info.Text;
                 TextSize = 13;
                 TextXAlignment = Enum.TextXAlignment.Left;
-                ZIndex = 9;
+                ZIndex = 12;
                 Parent = SliderInner;
             });
 
@@ -6165,7 +6165,7 @@ do
                 Text = '';
                 TextSize = 13;
                 TextXAlignment = Enum.TextXAlignment.Right;
-                ZIndex = 9;
+                ZIndex = 12;
                 Parent = SliderInner;
             });
         end;
@@ -6175,6 +6175,8 @@ do
                 AnchorPoint = Vector2.new(0.5, 0.5);
                 BackgroundColor3 = Library.AccentColor;
                 BorderColor3 = Library.BlendShade;
+                BorderMode = Enum.BorderMode.Inset;
+                BorderSizePixel = 1;
                 ClipsDescendants = true;
                 Position = UDim2.new(0, 0, 0.5, 0);
                 Size = UDim2.fromOffset(7, 13);
@@ -6227,7 +6229,6 @@ do
 
         function RangeSlider:UpdateColors()
             Fill.BackgroundColor3 = Library.AccentColor;
-            Fill.BorderColor3 = Library.BlendShade;
             FillShade.BackgroundColor3 = Library.BlendShade;
             MinThumb.BackgroundColor3 = Library.AccentColor;
             MinThumb.BorderColor3 = Library.BlendShade;
@@ -9903,18 +9904,25 @@ function Library:CreateWindow(...)
             local CursorAssetPath = 'FormaAssets/cursor.png';
             local CursorAssetUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/cursor.png';
             local GetCustomAsset = getcustomasset or getsynasset;
-            local Cursor;
+            local function GetCursorPosition()
+                if ScreenGui.IgnoreGuiInset then
+                    local Loc = InputService:GetMouseLocation();
+                    return UDim2.fromOffset(Loc.X, Loc.Y);
+                end
+                return UDim2.fromOffset(Mouse.X, Mouse.Y);
+            end
 
             if GetCustomAsset and writefile and isfile then
                 pcall(function()
                     if isfolder and makefolder and not isfolder('FormaAssets') then makefolder('FormaAssets'); end
                     if not isfile(CursorAssetPath) then writefile(CursorAssetPath, game:HttpGet(CursorAssetUrl)); end
                     Cursor = Library:Create('ImageLabel', {
+                        Active = false;
                         BackgroundTransparency = 1;
                         BorderSizePixel = 0;
                         Image = GetCustomAsset(CursorAssetPath);
                         ImageColor3 = Library.AccentColor;
-                        Position = UDim2.fromOffset(Mouse.X, Mouse.Y);
+                        Position = GetCursorPosition();
                         Size = UDim2.fromOffset(13, 16);
                         ZIndex = 1000;
                         Visible = true;
@@ -9927,7 +9935,7 @@ function Library:CreateWindow(...)
             if Cursor then
                 while Toggled and CurrentCursorId == CursorAnimationId and ScreenGui.Parent do
                     InputService.MouseIconEnabled = false;
-                    Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y);
+                    Cursor.Position = GetCursorPosition();
                     RenderStepped:Wait();
                 end
                 Cursor:Destroy();
