@@ -316,10 +316,22 @@ function Library:GetMenuTweenInfo(Duration, Context)
         end
     end
 
+    local Style = Enum.EasingStyle.Sine;
+    local Direction = Enum.EasingDirection.Out;
+
+    if Context == 'Picker' or Context == 'Tab' or Context == 'TabIndicator' or Context == 'Dropdown' then
+        Style = Enum.EasingStyle.Quart;
+    elseif Context == 'PopupExit' or Context == 'TabExit' then
+        Style = Enum.EasingStyle.Cubic;
+        Direction = Context == 'PopupExit' and Enum.EasingDirection.In or Enum.EasingDirection.Out;
+    elseif Context == 'DragRelease' or Context == 'Resize' then
+        Style = Enum.EasingStyle.Cubic;
+    end;
+
     return TweenInfo.new(
         math.clamp(tonumber(Duration) or 0.16, 0.035, 1.5),
-        Enum.EasingStyle.Sine,
-        Enum.EasingDirection.Out
+        Style,
+        Direction
     );
 end;
 
@@ -944,6 +956,144 @@ end;
 
 Library:LoadFont('Rubik Light');
 
+--// Icon Module \\--
+local BuiltinIcons = {
+    ['copy'] = {
+        Url = 'rbxassetid://97854828246256',
+        ImageRectOffset = Vector2.new(775, 0),
+        ImageRectSize = Vector2.new(24, 24),
+    },
+    ['clipboard-paste'] = {
+        Url = 'rbxassetid://97854828246256',
+        ImageRectOffset = Vector2.new(450, 250),
+        ImageRectSize = Vector2.new(24, 24),
+    },
+    ['paste'] = {
+        Url = 'rbxassetid://97854828246256',
+        ImageRectOffset = Vector2.new(450, 250),
+        ImageRectSize = Vector2.new(24, 24),
+    },
+    ['clipboard'] = {
+        Url = 'rbxassetid://97854828246256',
+        ImageRectOffset = Vector2.new(300, 400),
+        ImageRectSize = Vector2.new(24, 24),
+    },
+    ['check'] = {
+        Url = 'rbxassetid://97854828246256',
+        ImageRectOffset = Vector2.new(625, 25),
+        ImageRectSize = Vector2.new(24, 24),
+    },
+    ['x'] = {
+        Url = 'rbxassetid://97854828246256',
+        ImageRectOffset = Vector2.new(75, 50),
+        ImageRectSize = Vector2.new(24, 24),
+    },
+};
+
+local FetchIcons = false;
+local IconsModule = nil;
+
+task.spawn(function()
+    local Success, Result = pcall(function()
+        return (loadstring(game:HttpGet('https://raw.githubusercontent.com/mstudio45/lucide-roblox-direct/refs/heads/main/source.lua')) :: () -> any)();
+    end);
+    if Success and Result then
+        FetchIcons = true;
+        IconsModule = Result;
+    else
+        local FallbackSuccess, FallbackResult = pcall(function()
+            return (loadstring(game:HttpGet('https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua')) :: () -> any)();
+        end);
+        if FallbackSuccess and FallbackResult then
+            FetchIcons = true;
+            IconsModule = FallbackResult;
+        end;
+    end;
+end);
+
+local function IsValidCustomIcon(Icon)
+    return typeof(Icon) == 'string'
+        and (Icon:match('rbxasset') or Icon:match('roblox%.com/asset/%?id=') or Icon:match('rbxthumb://type=') or Icon:match('^https?://'));
+end;
+
+function Library:GetIcon(IconName)
+    if typeof(IconName) ~= 'string' then return nil; end;
+    local Normalized = IconName:lower();
+
+    if FetchIcons and IconsModule and type(IconsModule.GetAsset) == 'function' then
+        local Success, Icon = pcall(IconsModule.GetAsset, Normalized);
+        if Success and Icon then
+            return Icon;
+        end;
+    end;
+
+    if BuiltinIcons[Normalized] then
+        local Data = BuiltinIcons[Normalized];
+        return {
+            IconName = Normalized;
+            Url = Data.Url;
+            ImageRectOffset = Data.ImageRectOffset;
+            ImageRectSize = Data.ImageRectSize;
+        };
+    end;
+
+    return nil;
+end;
+
+function Library:GetCustomIcon(IconName)
+    if not IconName then return nil; end;
+    if not IsValidCustomIcon(IconName) then
+        return Library:GetIcon(tostring(IconName));
+    else
+        return {
+            Url = tostring(IconName);
+            ImageRectOffset = Vector2.zero;
+            ImageRectSize = Vector2.zero;
+            Custom = true;
+        };
+    end;
+end;
+
+function Library:ApplyIcon(ImageGui, Icon, Rotation)
+    if not ImageGui or not Icon then return; end;
+    if not (ImageGui:IsA('ImageLabel') or ImageGui:IsA('ImageButton')) then return; end;
+
+    if typeof(Icon) == 'string' then
+        local Parsed = Library:GetCustomIcon(Icon);
+        if Parsed then
+            Icon = Parsed;
+        else
+            ImageGui.Image = Icon;
+            ImageGui.ImageRectOffset = Vector2.zero;
+            ImageGui.ImageRectSize = Vector2.zero;
+            if Rotation then ImageGui.Rotation = Rotation; end;
+            return;
+        end;
+    elseif typeof(Icon) == 'number' then
+        ImageGui.Image = 'rbxassetid://' .. tostring(Icon);
+        ImageGui.ImageRectOffset = Vector2.zero;
+        ImageGui.ImageRectSize = Vector2.zero;
+        if Rotation then ImageGui.Rotation = Rotation; end;
+        return;
+    end;
+
+    if type(Icon) == 'table' then
+        if Icon.Url then ImageGui.Image = Icon.Url; end;
+        if Icon.ImageRectOffset then ImageGui.ImageRectOffset = Icon.ImageRectOffset; end;
+        if Icon.ImageRectSize then ImageGui.ImageRectSize = Icon.ImageRectSize; end;
+        if Rotation then ImageGui.Rotation = Rotation; end;
+    end;
+end;
+
+function Library:ApplyLucideIcon(ImageGui, Icon, Rotation)
+    return Library:ApplyIcon(ImageGui, Icon, Rotation);
+end;
+
+function Library:SetIconModule(Module)
+    FetchIcons = true;
+    IconsModule = Module;
+end;
+
 function Library:TweenProperty(Instance, Property, Value, Duration)
     return Library:Animate(Instance, { [Property] = Value }, Duration or 0.14, nil, 'Property');
 end;
@@ -1382,9 +1532,15 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
             or GeometryChanged(Controller.TargetSize, TargetSize) then
             Controller.TargetPosition = TargetPosition;
             Controller.TargetSize = TargetSize;
-            Library:CancelMotion(Indicator);
-            Indicator.Position = TargetPosition;
-            Indicator.Size = TargetSize;
+            if not Library.PropertyTweens[Indicator] then
+                Indicator.Position = TargetPosition;
+                Indicator.Size = TargetSize;
+            else
+                Library:Animate(Indicator, {
+                    Position = TargetPosition;
+                    Size = TargetSize;
+                }, 0.12, nil, 'TabIndicator');
+            end;
         end;
     end);
     Library:GiveSignal(Controller.FollowConnection);
@@ -1414,7 +1570,7 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         Indicator.Visible = true;
         local Travel = math.abs(NewLeft - Indicator.Position.X.Offset)
             + (math.abs(TargetSize.X.Offset - Indicator.Size.X.Offset) * 0.35);
-        local Duration = 0.13 + math.clamp(Travel / 1800, 0, 0.055);
+        local Duration = 0.20 + math.clamp(Travel / 1200, 0, 0.08);
         Library:Animate(Indicator, {
             Position = TargetPosition;
             Size = TargetSize;
@@ -1493,8 +1649,8 @@ function Library:MakeDraggable(Instance, Cutoff)
         Anchor = nil;
         VisualAnchor = nil;
         TargetAnchor = nil;
-        DragResponse = 120;
-        MaxDragLag = 2.5;
+        DragResponse = 95;
+        MaxDragLag = 28;
     };
     Library.DraggableStates[Instance] = State;
 
@@ -1516,17 +1672,19 @@ function Library:MakeDraggable(Instance, Cutoff)
     local function FinishDrag()
         if not State.Dragging then return; end
 
-        -- Resolve the exact final pointer location before disconnecting. The
-        -- live filter is intentionally limited to a couple of pixels, and the
-        -- release always lands exactly under the pointer without a settle tween.
-        if State.Input and State.ObjectOffset and State.Anchor then
+        if State.Input and State.ObjectOffset and State.Anchor and Instance.Parent then
             local Pointer = GetPointer(State.Input);
-            State.TargetAnchor = Vector2.new(
+            local FinalAnchor = Vector2.new(
                 Pointer.X - State.ObjectOffset.X + (Instance.AbsoluteSize.X * State.Anchor.X),
                 Pointer.Y - State.ObjectOffset.Y + (Instance.AbsoluteSize.Y * State.Anchor.Y)
             );
-            if Instance.Parent then
-                Instance.Position = UDim2.fromOffset(State.TargetAnchor.X, State.TargetAnchor.Y);
+            local Offset = (FinalAnchor - (State.VisualAnchor or FinalAnchor)).Magnitude;
+            if Offset > 0.5 and Offset < 32 then
+                Library:Animate(Instance, {
+                    Position = UDim2.fromOffset(FinalAnchor.X, FinalAnchor.Y);
+                }, 0.09, nil, 'DragRelease');
+            else
+                Instance.Position = UDim2.fromOffset(FinalAnchor.X, FinalAnchor.Y);
             end;
         end
 
@@ -1569,12 +1727,12 @@ function Library:MakeDraggable(Instance, Cutoff)
             Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
         );
         State.TargetAnchor = State.VisualAnchor;
-        State.DragResponse = 120;
+        State.DragResponse = 95;
         local Manager = Library.MenuManager;
         if Manager and Manager.GetDragResponse then
             local Success, Response = pcall(Manager.GetDragResponse, Manager);
             if Success and type(Response) == 'number' then
-                State.DragResponse = math.clamp(Response, 90, 180);
+                State.DragResponse = math.clamp(Response, 60, 150);
             end;
         end;
 
@@ -1590,14 +1748,12 @@ function Library:MakeDraggable(Instance, Cutoff)
                 CurrentPointer.Y - ObjPos.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
             );
 
-            -- A very fast exponential micro-filter removes pointer stair-steps,
-            -- while the maximum error clamp prevents the floaty lag produced by
-            -- the previous unrestricted smoothing pass.
             local SafeDelta = math.min(tonumber(Delta) or (1 / 60), 1 / 20);
-            local FollowAlpha = 1 - math.exp(-(State.DragResponse or 120) * SafeDelta);
+            local Response = State.DragResponse or 95;
+            local FollowAlpha = 1 - math.exp(-Response * SafeDelta);
             State.VisualAnchor = State.VisualAnchor:Lerp(State.TargetAnchor, FollowAlpha);
             local Remaining = State.TargetAnchor - State.VisualAnchor;
-            local MaxLag = State.MaxDragLag or 2.5;
+            local MaxLag = State.MaxDragLag or 28;
             if Remaining.Magnitude > MaxLag then
                 State.VisualAnchor = State.TargetAnchor - Remaining.Unit * MaxLag;
             end;
@@ -1624,7 +1780,7 @@ function Library:MakeResizable(Instance, Config)
 
     local MinSize = ResolveVector(Config.MinSize, Vector2.new(420, 320));
     local MaxSize = ResolveVector(Config.MaxSize, Vector2.new(math.huge, math.huge));
-    local Response = math.clamp(tonumber(Config.Response) or 30, 18, 60);
+    local Response = math.clamp(tonumber(Config.Response) or 80, 25, 150);
     local State = {
         InitialSize = Instance.Size;
         Resizing = false;
@@ -1705,10 +1861,20 @@ function Library:MakeResizable(Instance, Config)
         SetHandleVisible(Handle, Handle and Handle.Hovering);
 
         if not Instance.Parent or not State.TargetPosition or not State.TargetSize then return; end
-        Library:Animate(Instance, {
-            Position = UDim2.fromOffset(State.TargetPosition.X, State.TargetPosition.Y);
-            Size = UDim2.fromOffset(State.TargetSize.X, State.TargetSize.Y);
-        }, 0.13, nil, 'Resize');
+        local CurrentPos = Vector2.new(Instance.Position.X.Offset, Instance.Position.Y.Offset);
+        local CurrentSize = Vector2.new(Instance.Size.X.Offset, Instance.Size.Y.Offset);
+        local PosDelta = (State.TargetPosition - CurrentPos).Magnitude;
+        local SizeDelta = (State.TargetSize - CurrentSize).Magnitude;
+
+        if PosDelta > 0.5 or SizeDelta > 0.5 then
+            Library:Animate(Instance, {
+                Position = UDim2.fromOffset(State.TargetPosition.X, State.TargetPosition.Y);
+                Size = UDim2.fromOffset(State.TargetSize.X, State.TargetSize.Y);
+            }, 0.09, nil, 'Resize');
+        else
+            Instance.Position = UDim2.fromOffset(State.TargetPosition.X, State.TargetPosition.Y);
+            Instance.Size = UDim2.fromOffset(State.TargetSize.X, State.TargetSize.Y);
+        end;
     end
 
     local Corners = {
@@ -2528,14 +2694,21 @@ do
             BorderSizePixel = 0;
             GroupTransparency = 1;
             Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18),
-            Size = UDim2.fromOffset(230, Info.Transparency and 271 or 253);
+            Size = UDim2.fromOffset(230, Info.Transparency and 295 or 276);
             Visible = false;
             ZIndex = 15;
             Parent = ScreenGui,
         });
 
+        local PickerScale = Library:Create('UIScale', {
+            Scale = 1;
+            Parent = PickerFrameOuter;
+        });
+
         DisplayFrame:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()
-            PickerFrameOuter.Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18);
+            if PickerFrameOuter.Visible and PickerFrameOuter.GroupTransparency < 0.95 then
+                PickerFrameOuter.Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18);
+            end;
         end)
 
         local PickerFrameInner = Library:Create('Frame', {
@@ -2735,7 +2908,126 @@ do
             });
         end;
 
-        local ColorControls = { SatVibMapOuter, HueSelectorOuter, HueBoxOuter, RgbBoxBase };
+        local CopyBtnOuter = Library:Create('Frame', {
+            BackgroundColor3 = Color3.new(0, 0, 0);
+            BorderColor3 = Color3.new(0, 0, 0);
+            Position = UDim2.fromOffset(4, Info.Transparency and 270 or 251);
+            Size = UDim2.new(0.5, -6, 0, 20);
+            ZIndex = 18;
+            Parent = PickerFrameInner;
+        });
+
+        local CopyBtnInner = Library:Create('Frame', {
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 19;
+            Parent = CopyBtnOuter;
+        });
+
+        Library:Create('UIGradient', {
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
+            });
+            Rotation = 90;
+            Parent = CopyBtnInner;
+        });
+
+        local CopyIcon = Library:Create('ImageLabel', {
+            BackgroundTransparency = 1;
+            Position = UDim2.new(0, 7, 0.5, 0);
+            AnchorPoint = Vector2.new(0, 0.5);
+            Size = UDim2.fromOffset(13, 13);
+            ImageColor3 = Library.FontColor;
+            ZIndex = 20;
+            Parent = CopyBtnInner;
+        });
+        Library:ApplyIcon(CopyIcon, 'copy');
+
+        local CopyLabel = Library:CreateLabel({
+            Position = UDim2.new(0, 24, 0, 0);
+            Size = UDim2.new(1, -28, 1, 0);
+            Text = 'Copy';
+            TextSize = 13;
+            TextColor3 = Library.FontColor;
+            TextXAlignment = Enum.TextXAlignment.Center;
+            ZIndex = 20;
+            Parent = CopyBtnInner;
+        });
+
+        local PasteBtnOuter = Library:Create('Frame', {
+            BackgroundColor3 = Color3.new(0, 0, 0);
+            BorderColor3 = Color3.new(0, 0, 0);
+            Position = UDim2.new(0.5, 2, 0, Info.Transparency and 270 or 251);
+            Size = UDim2.new(0.5, -6, 0, 20);
+            ZIndex = 18;
+            Parent = PickerFrameInner;
+        });
+
+        local PasteBtnInner = Library:Create('Frame', {
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 19;
+            Parent = PasteBtnOuter;
+        });
+
+        Library:Create('UIGradient', {
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
+            });
+            Rotation = 90;
+            Parent = PasteBtnInner;
+        });
+
+        local PasteIcon = Library:Create('ImageLabel', {
+            BackgroundTransparency = 1;
+            Position = UDim2.new(0, 7, 0.5, 0);
+            AnchorPoint = Vector2.new(0, 0.5);
+            Size = UDim2.fromOffset(13, 13);
+            ImageColor3 = Library.FontColor;
+            ZIndex = 20;
+            Parent = PasteBtnInner;
+        });
+        Library:ApplyIcon(PasteIcon, 'clipboard-paste');
+
+        local PasteLabel = Library:CreateLabel({
+            Position = UDim2.new(0, 24, 0, 0);
+            Size = UDim2.new(1, -28, 1, 0);
+            Text = 'Paste';
+            TextSize = 13;
+            TextColor3 = Library.FontColor;
+            TextXAlignment = Enum.TextXAlignment.Center;
+            ZIndex = 20;
+            Parent = PasteBtnInner;
+        });
+
+        Library:ApplyFont(CopyLabel);
+        Library:ApplyTextStroke(CopyLabel);
+        Library:ApplyFont(PasteLabel);
+        Library:ApplyTextStroke(PasteLabel);
+
+        Library:AddToRegistry(CopyBtnInner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'OutlineColor'; });
+        Library:AddToRegistry(PasteBtnInner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'OutlineColor'; });
+        Library:AddToRegistry(CopyIcon, { ImageColor3 = 'FontColor'; });
+        Library:AddToRegistry(PasteIcon, { ImageColor3 = 'FontColor'; });
+        Library:AddToRegistry(CopyLabel, { TextColor3 = 'FontColor'; });
+        Library:AddToRegistry(PasteLabel, { TextColor3 = 'FontColor'; });
+
+        Library:OnHighlight(CopyBtnOuter, CopyBtnInner,
+            { BorderColor3 = 'AccentColor' },
+            { BorderColor3 = 'OutlineColor' }
+        );
+        Library:OnHighlight(PasteBtnOuter, PasteBtnInner,
+            { BorderColor3 = 'AccentColor' },
+            { BorderColor3 = 'OutlineColor' }
+        );
+
+        local ColorControls = { SatVibMapOuter, HueSelectorOuter, HueBoxOuter, RgbBoxBase, CopyBtnOuter, PasteBtnOuter };
         if TransparencyBoxOuter then table.insert(ColorControls, TransparencyBoxOuter); end;
         local ActiveTab = 'Color';
         local AnimationElapsed = 0;
@@ -2954,6 +3246,115 @@ do
             end;
         end;
 
+        local CopyFeedbackId = 0;
+        local PasteFeedbackId = 0;
+
+        function ColorPicker:CopyColor()
+            Library.ColorClipboard = ColorPicker.Value;
+            Library.CopiedColor = { ColorPicker.Value, ColorPicker.Transparency };
+            pcall(setclipboard, ColorPicker.Value:ToHex());
+
+            if CopyLabel and CopyIcon then
+                CopyFeedbackId = CopyFeedbackId + 1;
+                local ThisFeedbackId = CopyFeedbackId;
+                CopyLabel.Text = 'Copied!';
+                CopyLabel.TextColor3 = Library.AccentColor;
+                CopyIcon.ImageColor3 = Library.AccentColor;
+                Library:ApplyIcon(CopyIcon, 'check');
+
+                task.delay(1.2, function()
+                    if ThisFeedbackId == CopyFeedbackId and CopyLabel and CopyIcon then
+                        CopyLabel.Text = 'Copy';
+                        CopyLabel.TextColor3 = Library.FontColor;
+                        CopyIcon.ImageColor3 = Library.FontColor;
+                        Library:ApplyIcon(CopyIcon, 'copy');
+                    end;
+                end);
+            end;
+
+            Library:Notify('Copied color!', 2);
+        end;
+
+        function ColorPicker:PasteColor()
+            PasteFeedbackId = PasteFeedbackId + 1;
+            local ThisFeedbackId = PasteFeedbackId;
+
+            local TargetColor = Library.ColorClipboard;
+            local TargetTransparency = Library.CopiedColor and Library.CopiedColor[2] or nil;
+
+            if not TargetColor and type(getclipboard) == 'function' then
+                local Success, ClipText = pcall(getclipboard);
+                if Success and type(ClipText) == 'string' then
+                    ClipText = ClipText:gsub('^%s+', ''):gsub('%s+$', '');
+                    local HexSuccess, HexCol = pcall(Color3.fromHex, ClipText);
+                    if HexSuccess and typeof(HexCol) == 'Color3' then
+                        TargetColor = HexCol;
+                    else
+                        local R, G, B = ClipText:match('(%d+)%s*[,%s]%s*(%d+)%s*[,%s]%s*(%d+)');
+                        if R and G and B then
+                            TargetColor = Color3.fromRGB(tonumber(R), tonumber(G), tonumber(B));
+                        end;
+                    end;
+                end;
+            end;
+
+            if not TargetColor then
+                if PasteLabel and PasteIcon then
+                    PasteLabel.Text = 'No color';
+                    PasteLabel.TextColor3 = Library.RiskColor;
+                    PasteIcon.ImageColor3 = Library.RiskColor;
+                    Library:ApplyIcon(PasteIcon, 'x');
+
+                    task.delay(1.2, function()
+                        if ThisFeedbackId == PasteFeedbackId and PasteLabel and PasteIcon then
+                            PasteLabel.Text = 'Paste';
+                            PasteLabel.TextColor3 = Library.FontColor;
+                            PasteIcon.ImageColor3 = Library.FontColor;
+                            Library:ApplyIcon(PasteIcon, 'clipboard-paste');
+                        end;
+                    end);
+                end;
+                Library:Notify('You have not copied a color!', 2);
+                return;
+            end;
+
+            if PrepareManualEdit then
+                PrepareManualEdit();
+            end;
+            ColorPicker:SetValueRGB(TargetColor, TargetTransparency, false);
+            Library:AttemptSave();
+
+            if PasteLabel and PasteIcon then
+                PasteLabel.Text = 'Pasted!';
+                PasteLabel.TextColor3 = Library.AccentColor;
+                PasteIcon.ImageColor3 = Library.AccentColor;
+                Library:ApplyIcon(PasteIcon, 'check');
+
+                task.delay(1.2, function()
+                    if ThisFeedbackId == PasteFeedbackId and PasteLabel and PasteIcon then
+                        PasteLabel.Text = 'Paste';
+                        PasteLabel.TextColor3 = Library.FontColor;
+                        PasteIcon.ImageColor3 = Library.FontColor;
+                        Library:ApplyIcon(PasteIcon, 'clipboard-paste');
+                    end;
+                end);
+            end;
+
+            Library:Notify('Pasted color!', 2);
+        end;
+
+        CopyBtnOuter.InputBegan:Connect(function(Input)
+            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                ColorPicker:CopyColor();
+            end;
+        end);
+
+        PasteBtnOuter.InputBegan:Connect(function(Input)
+            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                ColorPicker:PasteColor();
+            end;
+        end);
+
         local ContextMenu = {}
         do
             ContextMenu.Options = {}
@@ -2987,6 +3388,7 @@ do
             Library:Create('UIPadding', {
                 Name = 'Padding',
                 PaddingLeft = UDim.new(0, 4),
+                PaddingRight = UDim.new(0, 4),
                 Parent = ContextMenu.Inner,
             });
 
@@ -2999,14 +3401,20 @@ do
 
             local function updateMenuSize()
                 local menuWidth = 60
-                for i, label in next, ContextMenu.Inner:GetChildren() do
-                    if label:IsA('TextLabel') then
-                        menuWidth = math.max(menuWidth, label.TextBounds.X)
-                    end
+                for _, item in next, ContextMenu.Inner:GetChildren() do
+                    if item:IsA('Frame') then
+                        local label = item:FindFirstChildOfClass('TextLabel');
+                        if label then
+                            local iconExtra = item:FindFirstChildOfClass('ImageLabel') and 18 or 0;
+                            menuWidth = math.max(menuWidth, label.TextBounds.X + iconExtra);
+                        end;
+                    elseif item:IsA('TextLabel') then
+                        menuWidth = math.max(menuWidth, item.TextBounds.X);
+                    end;
                 end
 
                 ContextMenu.Container.Size = UDim2.fromOffset(
-                    menuWidth + 8,
+                    menuWidth + 14,
                     ContextMenu.Inner.Layout.AbsoluteContentSize.Y + 4
                 )
             end
@@ -3042,27 +3450,59 @@ do
                 end, 'Fade')
             end
 
-            function ContextMenu:AddOption(Str, Callback)
+            function ContextMenu:AddOption(Str, Callback, IconName)
                 if type(Callback) ~= 'function' then
                     Callback = function() end
                 end
 
-                local Button = Library:CreateLabel({
-                    Active = false;
-                    Size = UDim2.new(1, 0, 0, 15);
-                    TextSize = 13;
-                    Text = Str;
+                local Row = Library:Create('Frame', {
+                    BackgroundTransparency = 1;
+                    Size = UDim2.new(1, 0, 0, 16);
                     ZIndex = 16;
                     Parent = self.Inner;
-                    TextXAlignment = Enum.TextXAlignment.Left,
                 });
 
-                Library:OnHighlight(Button, Button, 
+                local OptionIcon;
+                if IconName then
+                    OptionIcon = Library:Create('ImageLabel', {
+                        BackgroundTransparency = 1;
+                        Position = UDim2.new(0, 0, 0.5, 0);
+                        AnchorPoint = Vector2.new(0, 0.5);
+                        Size = UDim2.fromOffset(12, 12);
+                        ImageColor3 = Library.FontColor;
+                        ZIndex = 17;
+                        Parent = Row;
+                    });
+                    Library:ApplyIcon(OptionIcon, IconName);
+                    Library:AddToRegistry(OptionIcon, { ImageColor3 = 'FontColor'; });
+                end;
+
+                local Button = Library:CreateLabel({
+                    Active = false;
+                    Position = UDim2.new(0, IconName and 16 or 0, 0, 0);
+                    Size = UDim2.new(1, IconName and -16 or 0, 1, 0);
+                    TextSize = 13;
+                    Text = Str;
+                    ZIndex = 17;
+                    Parent = Row;
+                    TextXAlignment = Enum.TextXAlignment.Left;
+                });
+
+                Library:OnHighlight(Row, Button,
                     { TextColor3 = 'AccentColor' },
                     { TextColor3 = 'FontColor' }
                 );
 
-                Button.InputBegan:Connect(function(Input)
+                if OptionIcon then
+                    Row.MouseEnter:Connect(function()
+                        OptionIcon.ImageColor3 = Library.AccentColor;
+                    end);
+                    Row.MouseLeave:Connect(function()
+                        OptionIcon.ImageColor3 = Library.FontColor;
+                    end);
+                end;
+
+                Row.InputBegan:Connect(function(Input)
                     if Input.UserInputType ~= Enum.UserInputType.MouseButton1 then
                         return
                     end
@@ -3072,26 +3512,22 @@ do
             end
 
             ContextMenu:AddOption('Copy color', function()
-                Library.ColorClipboard = ColorPicker.Value
-                Library:Notify('Copied color!', 2)
-            end)
+                ColorPicker:CopyColor();
+            end, 'copy')
 
             ContextMenu:AddOption('Paste color', function()
-                if not Library.ColorClipboard then
-                    return Library:Notify('You have not copied a color!', 2)
-                end
-                ColorPicker:SetValueRGB(Library.ColorClipboard)
-            end)
+                ColorPicker:PasteColor();
+            end, 'clipboard-paste')
 
             ContextMenu:AddOption('Copy HEX', function()
                 pcall(setclipboard, ColorPicker.Value:ToHex())
                 Library:Notify('Copied hex code to clipboard!', 2)
-            end)
+            end, 'copy')
 
             ContextMenu:AddOption('Copy RGB', function()
                 pcall(setclipboard, table.concat({ math.floor(ColorPicker.Value.R * 255), math.floor(ColorPicker.Value.G * 255), math.floor(ColorPicker.Value.B * 255) }, ', '))
                 Library:Notify('Copied RGB values to clipboard!', 2)
-            end)
+            end, 'copy')
         end
 
         Library:AddToRegistry(PickerFrameInner, { BackgroundColor3 = 'BackgroundColor'; BorderColor3 = 'OutlineColor'; });
@@ -3474,6 +3910,7 @@ do
             end;
             table.clear(PickerTweens);
             Library:CancelMotion(PickerFrameOuter);
+            if PickerScale then Library:CancelMotion(PickerScale); end;
         end;
 
         local function PlayPickerTween(Instance, InfoValue, Properties)
@@ -3496,17 +3933,22 @@ do
 
             local TargetPosition = GetPickerTargetPosition();
             if not PickerFrameOuter.Visible then
-                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 10);
-                Library:SetUnifiedFadeProgress(PickerFrameOuter, 0);
+                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 6);
+                PickerScale.Scale = 0.94;
+                PickerFrameOuter.GroupTransparency = 1;
             end;
 
             PickerFrameOuter.Visible = true;
             Library.OpenedFrames[PickerFrameOuter] = true;
 
-            PlayPickerTween(PickerFrameOuter, Library:GetMenuTweenInfo(0.21, 'Picker'), {
+            local OpenInfo = Library:GetMenuTweenInfo(0.22, 'Picker');
+            PlayPickerTween(PickerFrameOuter, OpenInfo, {
                 Position = TargetPosition;
+                GroupTransparency = 0;
             });
-            Library:TweenUnifiedFade(PickerFrameOuter, 1, 0.23, nil, 'Fade');
+            PlayPickerTween(PickerScale, OpenInfo, {
+                Scale = 1;
+            });
         end;
 
         function ColorPicker:Hide()
@@ -3521,6 +3963,7 @@ do
             Library.OpenedFrames[PickerFrameOuter] = nil;
 
             local TargetPosition = GetPickerTargetPosition();
+            local ExitPosition = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 4);
             local Finished = false;
             local function FinishHide(State)
                 if Finished or CurrentId ~= PickerAnimationId or State == Enum.PlaybackState.Cancelled then
@@ -3530,12 +3973,25 @@ do
 
                 PickerFrameOuter.Visible = false;
                 PickerFrameOuter.Position = TargetPosition;
+                PickerFrameOuter.GroupTransparency = 1;
+                PickerScale.Scale = 1;
                 table.clear(PickerTweens);
             end
-            PlayPickerTween(PickerFrameOuter, Library:GetMenuTweenInfo(0.16, 'PopupExit'), {
-                Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 7);
+
+            local ExitInfo = Library:GetMenuTweenInfo(0.16, 'PopupExit');
+            PlayPickerTween(PickerFrameOuter, ExitInfo, {
+                Position = ExitPosition;
+                GroupTransparency = 1;
             });
-            Library:TweenUnifiedFade(PickerFrameOuter, 0, 0.18, FinishHide, 'Fade');
+            local ScaleTween = PlayPickerTween(PickerScale, ExitInfo, {
+                Scale = 0.96;
+            });
+
+            if ScaleTween then
+                ScaleTween.Completed:Connect(FinishHide);
+            else
+                FinishHide(Enum.PlaybackState.Completed);
+            end;
         end;
 
         function ColorPicker:SetValue(HSV, Transparency, PreserveMode)
@@ -7797,7 +8253,7 @@ function Library:CreateWindow(...)
         Window.ResizeState = Library:MakeResizable(Outer, {
             MinSize = Config.MinSize or Vector2.new(420, 320);
             MaxSize = Config.MaxSize;
-            Response = Config.ResizeResponse or 30;
+            Response = Config.ResizeResponse or 80;
         });
     end
 
@@ -7951,7 +8407,7 @@ function Library:CreateWindow(...)
         end
     end;
 
-    function Window:AddTab(Name)
+    function Window:AddTab(Name, Icon)
         local Tab = {
             Groupboxes = {};
             Tabboxes = {};
@@ -7959,12 +8415,13 @@ function Library:CreateWindow(...)
         };
 
         local TabButtonWidth = Library:GetTextBounds(Name, Library.Font, 16);
+        local HasIcon = Icon ~= nil;
 
         local TabButton = Library:Create('Frame', {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Library.OutlineColor;
             BorderSizePixel = 0;
-            Size = UDim2.new(0, TabButtonWidth + 8 + 4, 1, 0);
+            Size = UDim2.new(0, TabButtonWidth + (HasIcon and 32 or 12), 1, 0);
             ZIndex = 3;
             Parent = TabArea;
         });
@@ -7976,16 +8433,33 @@ function Library:CreateWindow(...)
             BorderColor3 = 'OutlineColor';
         });
 
+        local TabButtonIcon;
+        if HasIcon then
+            TabButtonIcon = Library:Create('ImageLabel', {
+                BackgroundTransparency = 1;
+                Position = UDim2.new(0, 7, 0.5, -1);
+                AnchorPoint = Vector2.new(0, 0.5);
+                Size = UDim2.fromOffset(14, 14);
+                ImageColor3 = Library.FontColor;
+                ZIndex = 4;
+                Parent = TabButton;
+            });
+            Library:ApplyIcon(TabButtonIcon, Icon);
+            Library:AddToRegistry(TabButtonIcon, {
+                ImageColor3 = 'FontColor';
+            });
+        end;
+
         local TabButtonLabel = Library:CreateLabel({
-            Position = UDim2.new(0, 0, 0, 0);
-            Size = UDim2.new(1, 0, 1, -1);
+            Position = UDim2.new(0, HasIcon and 25 or 0, 0, 0);
+            Size = UDim2.new(1, HasIcon and -27 or 0, 1, -1);
             Text = Name;
             ZIndex = 4;
             Parent = TabButton;
         });
 
         local function UpdateTabButtonWidth()
-            local Width = math.max(TabButtonLabel.TextBounds.X, 1) + 12;
+            local Width = math.max(TabButtonLabel.TextBounds.X, 1) + (HasIcon and 32 or 12);
             TabButton.Size = UDim2.new(0, Width, 1, 0);
 
             if Tab.Active then
@@ -8098,21 +8572,21 @@ function Library:CreateWindow(...)
             Window.ActiveTab = Tab;
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
 
-            Library:TweenProperty(Blocker, 'BackgroundTransparency', 0, 0.10);
-            Library:TweenProperty(TabButton, 'BackgroundColor3', Library.MainColor, 0.10);
+            Library:TweenProperty(Blocker, 'BackgroundTransparency', 0, 0.16);
+            Library:TweenProperty(TabButton, 'BackgroundColor3', Library.MainColor, 0.16);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'MainColor';
             MainTabIndicator:MoveTo(TabButton, not MainTabIndicator.Frame.Visible);
 
             if not TabFrame.Visible then
                 Library:CancelMotion(TabFrame);
-                TabFrame.Position = UDim2.new(0, 0, 0, 6);
+                TabFrame.Position = UDim2.new(0, 0, 0, 4);
                 Library:SetUnifiedFadeProgress(TabFrame, 0);
             end;
             TabFrame.Visible = true;
             Library:Animate(TabFrame, {
                 Position = UDim2.new(0, 0, 0, 0);
-            }, 0.30, nil, 'Tab');
-            Library:TweenUnifiedFade(TabFrame, 1, 0.27, nil, 'Fade');
+            }, 0.24, nil, 'Tab');
+            Library:TweenUnifiedFade(TabFrame, 1, 0.24, nil, 'Fade');
             for _, RevealState in ipairs(Tab.ScrollRevealStates) do
                 if RevealState then RevealState:QueueRefresh(); end
             end
@@ -8127,8 +8601,8 @@ function Library:CreateWindow(...)
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
             local CurrentAnimation = Tab.ContentAnimationId;
 
-            Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.09);
-            Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.12);
+            Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.14);
+            Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.14);
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
 
             if Instant then
@@ -8140,9 +8614,9 @@ function Library:CreateWindow(...)
             end;
 
             Library:Animate(TabFrame, {
-                Position = UDim2.new(0, 0, 0, -2);
-            }, 0.21, nil, 'TabExit');
-            local ExitTween = Library:TweenUnifiedFade(TabFrame, 0, 0.21, function(State)
+                Position = UDim2.new(0, 0, 0, -3);
+            }, 0.14, nil, 'TabExit');
+            local ExitTween = Library:TweenUnifiedFade(TabFrame, 0, 0.14, function(State)
                 if State == Enum.PlaybackState.Cancelled then return; end
                 if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                     TabFrame.Visible = false;
@@ -8417,20 +8891,20 @@ function Library:CreateWindow(...)
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
                     if not Container.Visible then
                         Library:CancelMotion(Container);
-                        Container.Position = UDim2.new(0, 4, 0, 26);
+                        Container.Position = UDim2.new(0, 4, 0, 23);
                         Library:SetUnifiedFadeProgress(Container, 0);
                     end;
                     Container.Visible = true;
                     Block.Visible = true;
                     TabboxIndicator:MoveTo(Button, not TabboxIndicator.Frame.Visible);
 
-                    Library:TweenProperty(Button, 'BackgroundColor3', Library.BackgroundColor, 0.12);
-                    Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.10);
+                    Library:TweenProperty(Button, 'BackgroundColor3', Library.BackgroundColor, 0.16);
+                    Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.14);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
                     Library:Animate(Container, {
                         Position = UDim2.new(0, 4, 0, 20);
-                    }, 0.28, nil, 'Tab');
-                    Library:TweenUnifiedFade(Container, 1, 0.26, nil, 'Fade');
+                    }, 0.24, nil, 'Tab');
+                    Library:TweenUnifiedFade(Container, 1, 0.24, nil, 'Fade');
 
                     Tab:Resize();
                 end;
@@ -8444,8 +8918,8 @@ function Library:CreateWindow(...)
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
                     local CurrentAnimation = Tab.ContentAnimationId;
 
-                    Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.12);
-                    Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.09);
+                    Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.14);
+                    Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.12);
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
 
                     if Instant then
@@ -8459,8 +8933,8 @@ function Library:CreateWindow(...)
 
                     Library:Animate(Container, {
                         Position = UDim2.new(0, 4, 0, 18);
-                    }, 0.20, nil, 'TabExit');
-                    local ExitTween = Library:TweenUnifiedFade(Container, 0, 0.20, function(State)
+                    }, 0.14, nil, 'TabExit');
+                    local ExitTween = Library:TweenUnifiedFade(Container, 0, 0.14, function(State)
                         if State == Enum.PlaybackState.Cancelled then return; end
                         if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                             Container.Visible = false;
