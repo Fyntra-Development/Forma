@@ -5814,6 +5814,817 @@ do
         return Slider;
     end;
 
+    function Funcs:AddRangeSlider(Idx, Info)
+        assert(Info.Default, 'AddRangeSlider: Missing default value.');
+        assert(Info.Text, 'AddRangeSlider: Missing slider text.');
+        assert(Info.Min, 'AddRangeSlider: Missing minimum value.');
+        assert(Info.Max, 'AddRangeSlider: Missing maximum value.');
+        assert(Info.Rounding, 'AddRangeSlider: Missing rounding value.');
+
+        local DefaultMin = Info.Min;
+        local DefaultMax = Info.Max;
+        if type(Info.Default) == 'table' then
+            DefaultMin = Info.Default.Min or Info.Default[1] or Info.Min;
+            DefaultMax = Info.Default.Max or Info.Default[2] or Info.Max;
+        elseif type(Info.Default) == 'number' then
+            DefaultMin = Info.Default;
+            DefaultMax = Info.Max;
+        end;
+
+        local Step = tonumber(Info.Step or Info.Increment);
+        if not Step or Step <= 0 then
+            Step = Info.Rounding == 0 and 1 or (10 ^ -Info.Rounding);
+        end;
+
+        local MinRange = tonumber(Info.MinRange or Info.MinGap or 0) or 0;
+
+        local function Round(Value)
+            if Info.Rounding == 0 then
+                return math.floor(Value + 0.5);
+            end;
+            return tonumber(string.format('%.' .. Info.Rounding .. 'f', Value));
+        end;
+
+        local function FormatValue(nMin, nMax)
+            nMin = Round(math.clamp(nMin, Info.Min, Info.Max));
+            nMax = Round(math.clamp(nMax, Info.Min, Info.Max));
+            if nMin > nMax then
+                nMin, nMax = nMax, nMin;
+            end;
+            if (nMax - nMin) < MinRange then
+                nMax = Round(math.min(Info.Max, nMin + MinRange));
+                if (nMax - nMin) < MinRange then
+                    nMin = Round(math.max(Info.Min, nMax - MinRange));
+                end;
+            end;
+            return {
+                Min = nMin;
+                Max = nMax;
+                [1] = nMin;
+                [2] = nMax;
+            };
+        end;
+
+        local InitialValue = FormatValue(DefaultMin, DefaultMax);
+
+        local RangeSlider = {
+            Value = InitialValue;
+            Min = Info.Min;
+            Max = Info.Max;
+            Rounding = Info.Rounding;
+            Step = Step;
+            MinRange = MinRange;
+            MaxSize = 1;
+            Type = 'RangeSlider';
+            Callback = Info.Callback or function(Value) end;
+        };
+
+        local Groupbox = self;
+        local Container = Groupbox.Container;
+
+        local HeaderRow;
+        local RangeSliderLabel;
+        local MinBadge, MinLabel, MinEditor, MinHitbox;
+        local MaxBadge, MaxLabel, MaxEditor, MaxHitbox;
+        local CompactLabel, CompactValueLabel;
+
+        if not Info.Compact then
+            HeaderRow = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                Size = UDim2.new(1, 0, 0, 14);
+                ZIndex = 5;
+                Parent = Container;
+            });
+
+            RangeSliderLabel = Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(0, 0);
+                Size = UDim2.new(1, -130, 1, 0);
+                TextSize = 14;
+                Text = Info.Text;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                TextYAlignment = Enum.TextYAlignment.Center;
+                ZIndex = 5;
+                Parent = HeaderRow;
+            });
+
+            local BadgesContainer = Library:Create('Frame', {
+                AnchorPoint = Vector2.new(1, 0.5);
+                BackgroundTransparency = 1;
+                Position = UDim2.new(1, 0, 0.5, 0);
+                Size = UDim2.new(0, 130, 1, 0);
+                ZIndex = 6;
+                Parent = HeaderRow;
+            });
+
+            Library:Create('UIListLayout', {
+                FillDirection = Enum.FillDirection.Horizontal;
+                HorizontalAlignment = Enum.HorizontalAlignment.Right;
+                VerticalAlignment = Enum.VerticalAlignment.Center;
+                Padding = UDim.new(0, 4);
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                Parent = BadgesContainer;
+            });
+
+            local function CreateBadge(LayoutOrder)
+                local Badge = Library:Create('Frame', {
+                    Active = true;
+                    BackgroundColor3 = Library.BackgroundColor;
+                    BorderColor3 = Library.OutlineColor;
+                    BorderMode = Enum.BorderMode.Inset;
+                    LayoutOrder = LayoutOrder;
+                    Size = UDim2.fromOffset(36, 14);
+                    ZIndex = 6;
+                    Parent = BadgesContainer;
+                });
+
+                Library:AddCorner(Badge, 3);
+                Library:AddToRegistry(Badge, {
+                    BackgroundColor3 = 'BackgroundColor';
+                    BorderColor3 = 'OutlineColor';
+                });
+
+                local Label = Library:CreateLabel({
+                    BackgroundTransparency = 1;
+                    Size = UDim2.fromScale(1, 1);
+                    Text = '';
+                    TextSize = 13;
+                    ZIndex = 7;
+                    Parent = Badge;
+                });
+
+                local Hitbox = Library:Create('TextButton', {
+                    AutoButtonColor = false;
+                    BackgroundTransparency = 1;
+                    BorderSizePixel = 0;
+                    Size = UDim2.fromScale(1, 1);
+                    Text = '';
+                    ZIndex = 8;
+                    Parent = Badge;
+                });
+
+                local Editor = Library:Create('TextBox', {
+                    BackgroundTransparency = 1;
+                    BorderSizePixel = 0;
+                    ClearTextOnFocus = false;
+                    Size = UDim2.fromScale(1, 1);
+                    Text = '';
+                    TextColor3 = Library.FontColor;
+                    TextSize = 13;
+                    TextStrokeTransparency = 0;
+                    Visible = false;
+                    ZIndex = 9;
+                    Parent = Badge;
+                });
+
+                Library:ApplyFont(Editor);
+                Library:ApplyTextStroke(Editor);
+                Library:AddToRegistry(Editor, {
+                    TextColor3 = 'FontColor';
+                });
+                Library:EnableTypingAnimation(Editor);
+
+                Library:OnHighlight(Badge, Badge,
+                    { BorderColor3 = 'AccentColor' },
+                    { BorderColor3 = 'OutlineColor' }
+                );
+
+                return Badge, Label, Editor, Hitbox;
+            end;
+
+            MinBadge, MinLabel, MinEditor, MinHitbox = CreateBadge(1);
+
+            local DashLabel = Library:CreateLabel({
+                BackgroundTransparency = 1;
+                LayoutOrder = 2;
+                Size = UDim2.fromOffset(8, 14);
+                Text = '–';
+                TextColor3 = Library.DisabledTextColor;
+                TextSize = 13;
+                ZIndex = 6;
+                Parent = BadgesContainer;
+            });
+            Library:AddToRegistry(DashLabel, {
+                TextColor3 = 'DisabledTextColor';
+            });
+
+            MaxBadge, MaxLabel, MaxEditor, MaxHitbox = CreateBadge(3);
+
+            Groupbox:AddBlank(3);
+        end;
+
+        local SliderRow = Library:Create('Frame', {
+            BackgroundTransparency = 1;
+            Size = UDim2.new(1, -4, 0, 13);
+            ZIndex = 5;
+            Parent = Container;
+        });
+
+        local function CreateNudgeButton(Text, Position, AnchorPoint)
+            local Outer = Library:Create('Frame', {
+                AnchorPoint = AnchorPoint;
+                BackgroundColor3 = Color3.new(0, 0, 0);
+                BorderColor3 = Color3.new(0, 0, 0);
+                Position = Position;
+                Size = UDim2.fromOffset(17, 13);
+                ZIndex = 6;
+                Parent = SliderRow;
+            });
+
+            local Inner = Library:Create('Frame', {
+                BackgroundColor3 = Library.MainColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Inset;
+                Size = UDim2.fromScale(1, 1);
+                ZIndex = 7;
+                Parent = Outer;
+            });
+
+            Library:AddCorner(Outer, 3);
+            Library:AddCorner(Inner, 3);
+
+            Library:AddToRegistry(Outer, {
+                BorderColor3 = 'Black';
+            });
+
+            Library:AddToRegistry(Inner, {
+                BackgroundColor3 = 'MainColor';
+                BorderColor3 = 'OutlineColor';
+            });
+
+            Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Size = UDim2.fromScale(1, 1);
+                Text = Text;
+                TextSize = 14;
+                ZIndex = 8;
+                Parent = Inner;
+            });
+
+            Library:OnHighlight(Outer, Outer,
+                { BorderColor3 = 'AccentColor' },
+                { BorderColor3 = 'Black' }
+            );
+
+            return Outer;
+        end;
+
+        local DecreaseOuter;
+        local IncreaseOuter;
+        if not Info.NoNudge then
+            DecreaseOuter = CreateNudgeButton('−', UDim2.new(0, 0, 0.5, 0), Vector2.new(0, 0.5));
+            IncreaseOuter = CreateNudgeButton('+', UDim2.new(1, 0, 0.5, 0), Vector2.new(1, 0.5));
+        end;
+
+        local SliderOuter = Library:Create('Frame', {
+            BackgroundColor3 = Color3.new(0, 0, 0);
+            BorderColor3 = Color3.new(0, 0, 0);
+            Position = Info.NoNudge and UDim2.fromOffset(0, 0) or UDim2.fromOffset(20, 0);
+            Size = Info.NoNudge and UDim2.new(1, 0, 0, 13) or UDim2.new(1, -40, 0, 13);
+            ZIndex = 5;
+            Parent = SliderRow;
+        });
+
+        local SliderInner = Library:Create('Frame', {
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
+            ClipsDescendants = true;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 6;
+            Parent = SliderOuter;
+        });
+
+        Library:AddCorner(SliderOuter, 3);
+        Library:AddCorner(SliderInner, 3);
+
+        Library:AddToRegistry(SliderOuter, {
+            BorderColor3 = 'Black';
+        });
+
+        Library:AddToRegistry(SliderInner, {
+            BackgroundColor3 = 'MainColor';
+            BorderColor3 = 'OutlineColor';
+        });
+
+        local Fill = Library:Create('Frame', {
+            BackgroundColor3 = Library.AccentColor;
+            BorderColor3 = Library.BlendShade;
+            ClipsDescendants = true;
+            Position = UDim2.new(0, 0, 0, 0);
+            Size = UDim2.new(0, 0, 1, 0);
+            ZIndex = 7;
+            Parent = SliderInner;
+        });
+
+        Library:AddCorner(Fill, 3);
+        Library:AddToRegistry(Fill, {
+            BackgroundColor3 = 'AccentColor';
+            BorderColor3 = 'BlendShade';
+        });
+
+        local FillShade = Library:Create('Frame', {
+            BackgroundColor3 = Library.BlendShade;
+            BorderSizePixel = 0;
+            Size = UDim2.fromScale(1, 1);
+            ZIndex = 8;
+            Parent = Fill;
+        });
+        Library:AddToRegistry(FillShade, { BackgroundColor3 = 'BlendShade'; });
+        Library:Create('UIGradient', {
+            Rotation = -90;
+            Transparency = Library:GetBlendShadeTransparency(0.48);
+            Parent = FillShade;
+        });
+
+        if Info.Compact then
+            CompactLabel = Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(5, 0);
+                Size = UDim2.new(0.55, -5, 1, 0);
+                Text = Info.Text;
+                TextSize = 13;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 9;
+                Parent = SliderInner;
+            });
+
+            CompactValueLabel = Library:CreateLabel({
+                AnchorPoint = Vector2.new(1, 0);
+                BackgroundTransparency = 1;
+                Position = UDim2.new(1, -5, 0, 0);
+                Size = UDim2.new(0.45, 0, 1, 0);
+                Text = '';
+                TextSize = 13;
+                TextXAlignment = Enum.TextXAlignment.Right;
+                ZIndex = 9;
+                Parent = SliderInner;
+            });
+        end;
+
+        local function CreateThumb()
+            local Thumb = Library:Create('Frame', {
+                AnchorPoint = Vector2.new(0.5, 0.5);
+                BackgroundColor3 = Library.AccentColor;
+                BorderColor3 = Library.BlendShade;
+                ClipsDescendants = true;
+                Position = UDim2.new(0, 0, 0.5, 0);
+                Size = UDim2.fromOffset(7, 13);
+                ZIndex = 10;
+                Parent = SliderRow;
+            });
+
+            Library:AddCorner(Thumb, 3);
+            Library:AddToRegistry(Thumb, {
+                BackgroundColor3 = 'AccentColor';
+                BorderColor3 = 'BlendShade';
+            });
+
+            local ThumbShade = Library:Create('Frame', {
+                BackgroundColor3 = Library.BlendShade;
+                BorderSizePixel = 0;
+                Size = UDim2.fromScale(1, 1);
+                ZIndex = 11;
+                Parent = Thumb;
+            });
+            Library:AddToRegistry(ThumbShade, { BackgroundColor3 = 'BlendShade'; });
+            Library:Create('UIGradient', {
+                Rotation = -90;
+                Transparency = Library:GetBlendShadeTransparency(0.48);
+                Parent = ThumbShade;
+            });
+
+            Library:OnHighlight(Thumb, Thumb,
+                { BorderColor3 = 'AccentColor' },
+                { BorderColor3 = 'BlendShade' }
+            );
+
+            return Thumb, ThumbShade;
+        end;
+
+        local MinThumb, MinThumbShade = CreateThumb();
+        local MaxThumb, MaxThumbShade = CreateThumb();
+
+        Library:OnHighlight(SliderOuter, SliderOuter,
+            { BorderColor3 = 'AccentColor' },
+            { BorderColor3 = 'Black' }
+        );
+
+        if type(Info.Tooltip) == 'string' or type(Info.Tooltip) == 'table' then
+            Library:AddToolTip(Info.Tooltip, SliderRow);
+            if HeaderRow then
+                Library:AddToolTip(Info.Tooltip, HeaderRow);
+            end;
+        end;
+
+        function RangeSlider:UpdateColors()
+            Fill.BackgroundColor3 = Library.AccentColor;
+            Fill.BorderColor3 = Library.BlendShade;
+            FillShade.BackgroundColor3 = Library.BlendShade;
+            MinThumb.BackgroundColor3 = Library.AccentColor;
+            MinThumb.BorderColor3 = Library.BlendShade;
+            MinThumbShade.BackgroundColor3 = Library.BlendShade;
+            MaxThumb.BackgroundColor3 = Library.AccentColor;
+            MaxThumb.BorderColor3 = Library.BlendShade;
+            MaxThumbShade.BackgroundColor3 = Library.BlendShade;
+        end;
+
+        local IsDragging = false;
+        local DragMode = nil;
+        local DragStartPointerX = 0;
+        local DragStartMin = 0;
+        local DragStartMax = 0;
+
+        local FillTargetPosition;
+        local FillTargetSize;
+        local MinThumbTargetPosition;
+        local MaxThumbTargetPosition;
+
+        local function TrackWidth()
+            local Width = SliderInner.AbsoluteSize.X;
+            if Width <= 0 then
+                local Offset = Info.NoNudge and 0 or 40;
+                Width = math.max(SliderRow.AbsoluteSize.X - Offset, 1);
+            end;
+            RangeSlider.MaxSize = math.max(Width, 1);
+            return RangeSlider.MaxSize;
+        end;
+
+        local function StopVisualAnimation()
+            Library:CancelMotion(Fill, 'Position');
+            Library:CancelMotion(Fill, 'Size');
+            Library:CancelMotion(MinThumb, 'Position');
+            Library:CancelMotion(MaxThumb, 'Position');
+        end;
+
+        function RangeSlider:GetValueFromXOffset(X)
+            local Width = TrackWidth();
+            return Round(Library:MapValue(X, 0, Width, RangeSlider.Min, RangeSlider.Max));
+        end;
+
+        local function GetVisualPositions(nMin, nMax)
+            local Width = TrackWidth();
+            local minTargetX = math.clamp(Library:MapValue(nMin, RangeSlider.Min, RangeSlider.Max, 0, Width), 0, Width);
+            local maxTargetX = math.clamp(Library:MapValue(nMax, RangeSlider.Min, RangeSlider.Max, 0, Width), 0, Width);
+            local trackStartX = SliderOuter.Position.X.Offset;
+
+            local fPos = UDim2.new(0, math.floor(minTargetX), 0, 0);
+            local fSize = UDim2.new(0, math.max(math.floor(maxTargetX - minTargetX), 0), 1, 0);
+            local minPos = UDim2.new(0, trackStartX + minTargetX, 0.5, 0);
+            local maxPos = UDim2.new(0, trackStartX + maxTargetX, 0.5, 0);
+
+            return fPos, fSize, minPos, maxPos;
+        end;
+
+        function RangeSlider:Display(Instant)
+            local Suffix = Info.Suffix or '';
+            local minStr = tostring(RangeSlider.Value.Min);
+            local maxStr = tostring(RangeSlider.Value.Max) .. Suffix;
+
+            if MinLabel then
+                MinLabel.Text = minStr;
+                local MinBadgeWidth = math.clamp(MinLabel.TextBounds.X + 12, 28, 64);
+                MinBadge.Size = UDim2.fromOffset(MinBadgeWidth, 14);
+            end;
+
+            if MaxLabel then
+                MaxLabel.Text = maxStr;
+                local MaxBadgeWidth = math.clamp(MaxLabel.TextBounds.X + 12, 28, 76);
+                MaxBadge.Size = UDim2.fromOffset(MaxBadgeWidth, 14);
+            end;
+
+            if CompactValueLabel then
+                CompactValueLabel.Text = minStr .. ' – ' .. maxStr;
+            end;
+
+            local fPos, fSize, minPos, maxPos = GetVisualPositions(RangeSlider.Value.Min, RangeSlider.Value.Max);
+            FillTargetPosition = fPos;
+            FillTargetSize = fSize;
+            MinThumbTargetPosition = minPos;
+            MaxThumbTargetPosition = maxPos;
+
+            if Instant then
+                StopVisualAnimation();
+                Fill.Position = fPos;
+                Fill.Size = fSize;
+                MinThumb.Position = minPos;
+                MaxThumb.Position = maxPos;
+            elseif IsDragging then
+                -- Dragging follows pointer with micro-filter in RenderStepped
+            else
+                Library:Animate(Fill, { Position = fPos, Size = fSize }, 0.17, nil, 'Slider');
+                Library:Animate(MinThumb, { Position = minPos }, 0.17, nil, 'Slider');
+                Library:Animate(MaxThumb, { Position = maxPos }, 0.17, nil, 'Slider');
+            end;
+        end;
+
+        function RangeSlider:OnChanged(Func)
+            RangeSlider.Changed = Func;
+            Func(RangeSlider.Value);
+        end;
+
+        function RangeSlider:SetValue(NewMin, NewMax)
+            local nMin, nMax;
+            if type(NewMin) == 'table' then
+                nMin = tonumber(NewMin.Min or NewMin[1]);
+                nMax = tonumber(NewMin.Max or NewMin[2]);
+            elseif type(NewMin) == 'string' and not NewMax then
+                local P1, P2 = string.match(NewMin, '([%-%d%.]+)[%s,%-]+([%-%d%.]+)');
+                nMin = tonumber(P1);
+                nMax = tonumber(P2);
+            else
+                nMin = tonumber(NewMin);
+                nMax = tonumber(NewMax);
+            end;
+
+            if not nMin or not nMax then
+                return;
+            end;
+
+            local Formatted = FormatValue(nMin, nMax);
+            RangeSlider.Value = Formatted;
+            RangeSlider:Display(false);
+
+            Library:SafeCallback(RangeSlider.Callback, RangeSlider.Value);
+            Library:SafeCallback(RangeSlider.Changed, RangeSlider.Value);
+            Library:UpdateDependencyBoxes();
+        end;
+
+        function RangeSlider:SetMin(Val)
+            RangeSlider:SetValue(Val, RangeSlider.Value.Max);
+        end;
+
+        function RangeSlider:SetMax(Val)
+            RangeSlider:SetValue(RangeSlider.Value.Min, Val);
+        end;
+
+        -- Direct value badge editing
+        if MinHitbox and MinEditor then
+            local LastMinClick = 0;
+            local function BeginMinEdit()
+                MinEditor.Text = tostring(RangeSlider.Value.Min);
+                MinEditor.Visible = true;
+                MinLabel.Visible = false;
+                task.defer(function()
+                    if not MinEditor.Visible then return; end;
+                    MinEditor:CaptureFocus();
+                    MinEditor.CursorPosition = #MinEditor.Text + 1;
+                    MinEditor.SelectionStart = 1;
+                end);
+            end;
+
+            MinHitbox.MouseButton1Click:Connect(function()
+                local Now = os.clock();
+                if Now - LastMinClick <= 0.35 then
+                    LastMinClick = 0;
+                    BeginMinEdit();
+                else
+                    LastMinClick = Now;
+                end;
+            end);
+
+            MinEditor.FocusLost:Connect(function()
+                local Typed = tonumber(MinEditor.Text);
+                if Typed then
+                    RangeSlider:SetMin(Typed);
+                    Library:AttemptSave();
+                end;
+                MinEditor.Visible = false;
+                MinLabel.Visible = true;
+                MinEditor.Text = tostring(RangeSlider.Value.Min);
+            end);
+        end;
+
+        if MaxHitbox and MaxEditor then
+            local LastMaxClick = 0;
+            local function BeginMaxEdit()
+                MaxEditor.Text = tostring(RangeSlider.Value.Max);
+                MaxEditor.Visible = true;
+                MaxLabel.Visible = false;
+                task.defer(function()
+                    if not MaxEditor.Visible then return; end;
+                    MaxEditor:CaptureFocus();
+                    MaxEditor.CursorPosition = #MaxEditor.Text + 1;
+                    MaxEditor.SelectionStart = 1;
+                end);
+            end;
+
+            MaxHitbox.MouseButton1Click:Connect(function()
+                local Now = os.clock();
+                if Now - LastMaxClick <= 0.35 then
+                    LastMaxClick = 0;
+                    BeginMaxEdit();
+                else
+                    LastMaxClick = Now;
+                end;
+            end);
+
+            MaxEditor.FocusLost:Connect(function()
+                local Typed = tonumber(MaxEditor.Text);
+                if Typed then
+                    RangeSlider:SetMax(Typed);
+                    Library:AttemptSave();
+                end;
+                MaxEditor.Visible = false;
+                MaxLabel.Visible = true;
+                MaxEditor.Text = tostring(RangeSlider.Value.Max);
+            end);
+        end;
+
+        -- Nudge button binding
+        if not Info.NoNudge and DecreaseOuter and IncreaseOuter then
+            local NudgeHoldSequence = 0;
+            local function BindRangeNudge(Button, NudgeFn)
+                Button.InputBegan:Connect(function(Input)
+                    if Input.UserInputType ~= Enum.UserInputType.MouseButton1
+                        or (not Info.AllowOpenedFrameInteraction and Library:MouseIsOverOpenedFrame()) then
+                        return;
+                    end;
+
+                    NudgeHoldSequence = NudgeHoldSequence + 1;
+                    local Sequence = NudgeHoldSequence;
+                    NudgeFn();
+
+                    task.spawn(function()
+                        local Started = os.clock();
+                        while Sequence == NudgeHoldSequence and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                            local Elapsed = os.clock() - Started;
+                            if Elapsed < 0.35 then
+                                task.wait(0.025);
+                            else
+                                local Interval = math.max(0.035, 0.105 - math.min(Elapsed - 0.35, 2.4) * 0.028);
+                                task.wait(Interval);
+                                if Sequence == NudgeHoldSequence and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                                    NudgeFn();
+                                end;
+                            end;
+                        end;
+                    end);
+                end);
+            end;
+
+            BindRangeNudge(DecreaseOuter, function()
+                RangeSlider:SetMin(RangeSlider.Value.Min - RangeSlider.Step);
+                Library:AttemptSave();
+            end);
+
+            BindRangeNudge(IncreaseOuter, function()
+                RangeSlider:SetMax(RangeSlider.Value.Max + RangeSlider.Step);
+                Library:AttemptSave();
+            end);
+        end;
+
+        -- Dragging mechanics
+        local DragRenderConnection;
+        local DragEndedConnection;
+
+        local function StopRangeDrag()
+            if not IsDragging then return; end;
+            IsDragging = false;
+            DragMode = nil;
+            if DragRenderConnection then DragRenderConnection:Disconnect(); DragRenderConnection = nil; end;
+            if DragEndedConnection then DragEndedConnection:Disconnect(); DragEndedConnection = nil; end;
+            RangeSlider:Display(false);
+            Library:AttemptSave();
+        end;
+
+        local function BeginDrag(Input, ForcedMode)
+            if (Input.UserInputType ~= Enum.UserInputType.MouseButton1
+                and Input.UserInputType ~= Enum.UserInputType.Touch)
+                or (not Info.AllowOpenedFrameInteraction and Library:MouseIsOverOpenedFrame()) then
+                return;
+            end;
+
+            StopRangeDrag();
+            IsDragging = true;
+            StopVisualAnimation();
+
+            local PointerX = (Input.UserInputType == Enum.UserInputType.Touch and Input.Position.X or Mouse.X);
+            local Width = TrackWidth();
+            local RelX = math.clamp(PointerX - SliderInner.AbsolutePosition.X, 0, Width);
+            local ClickVal = RangeSlider:GetValueFromXOffset(RelX);
+
+            local MinVal = RangeSlider.Value.Min;
+            local MaxVal = RangeSlider.Value.Max;
+
+            if ForcedMode then
+                DragMode = ForcedMode;
+            else
+                if ClickVal < MinVal then
+                    RangeSlider:SetMin(ClickVal);
+                    DragMode = 'Min';
+                elseif ClickVal > MaxVal then
+                    RangeSlider:SetMax(ClickVal);
+                    DragMode = 'Max';
+                else
+                    local DistMin = math.abs(ClickVal - MinVal);
+                    local DistMax = math.abs(ClickVal - MaxVal);
+                    if DistMin <= (RangeSlider.Step * 1.5) then
+                        DragMode = 'Min';
+                    elseif DistMax <= (RangeSlider.Step * 1.5) then
+                        DragMode = 'Max';
+                    else
+                        DragMode = 'Span';
+                    end;
+                end;
+            end;
+
+            DragStartPointerX = PointerX;
+            DragStartMin = RangeSlider.Value.Min;
+            DragStartMax = RangeSlider.Value.Max;
+
+            local function UpdateDrag(CurrentPointerX)
+                local w = TrackWidth();
+                local curRelX = math.clamp(CurrentPointerX - SliderInner.AbsolutePosition.X, 0, w);
+
+                if DragMode == 'Min' then
+                    local targetMin = RangeSlider:GetValueFromXOffset(curRelX);
+                    targetMin = math.clamp(targetMin, RangeSlider.Min, RangeSlider.Value.Max - MinRange);
+                    if targetMin ~= RangeSlider.Value.Min then
+                        RangeSlider:SetMin(targetMin);
+                    end;
+                elseif DragMode == 'Max' then
+                    local targetMax = RangeSlider:GetValueFromXOffset(curRelX);
+                    targetMax = math.clamp(targetMax, RangeSlider.Value.Min + MinRange, RangeSlider.Max);
+                    if targetMax ~= RangeSlider.Value.Max then
+                        RangeSlider:SetMax(targetMax);
+                    end;
+                elseif DragMode == 'Span' then
+                    local deltaPix = CurrentPointerX - DragStartPointerX;
+                    local deltaVal = Library:MapValue(deltaPix, 0, w, 0, RangeSlider.Max - RangeSlider.Min);
+                    local span = DragStartMax - DragStartMin;
+                    local newMin = Round(math.clamp(DragStartMin + deltaVal, RangeSlider.Min, RangeSlider.Max - span));
+                    local newMax = Round(newMin + span);
+                    if newMin ~= RangeSlider.Value.Min or newMax ~= RangeSlider.Value.Max then
+                        RangeSlider:SetValue(newMin, newMax);
+                    end;
+                end;
+
+                local fPos, fSize, minPos, maxPos = GetVisualPositions(RangeSlider.Value.Min, RangeSlider.Value.Max);
+                FillTargetPosition = fPos;
+                FillTargetSize = fSize;
+                MinThumbTargetPosition = minPos;
+                MaxThumbTargetPosition = maxPos;
+            end;
+
+            UpdateDrag(PointerX);
+
+            DragRenderConnection = RenderStepped:Connect(function(Delta)
+                if not IsDragging then return; end;
+                local CurX = (Input.UserInputType == Enum.UserInputType.Touch and Input.Position.X or Mouse.X);
+                UpdateDrag(CurX);
+
+                local Dt = math.min(math.max(Delta, 0), 1 / 20);
+                local TrackAlpha = 1 - math.exp(-34 * Dt);
+                if FillTargetPosition and FillTargetSize then
+                    Fill.Position = Fill.Position:Lerp(FillTargetPosition, TrackAlpha);
+                    Fill.Size = Fill.Size:Lerp(FillTargetSize, TrackAlpha);
+                end;
+                if MinThumbTargetPosition then
+                    MinThumb.Position = MinThumb.Position:Lerp(MinThumbTargetPosition, TrackAlpha);
+                end;
+                if MaxThumbTargetPosition then
+                    MaxThumb.Position = MaxThumb.Position:Lerp(MaxThumbTargetPosition, TrackAlpha);
+                end;
+            end);
+
+            DragEndedConnection = InputService.InputEnded:Connect(function(EndedInput)
+                if EndedInput == Input
+                    or (Input.UserInputType == Enum.UserInputType.MouseButton1
+                        and EndedInput.UserInputType == Enum.UserInputType.MouseButton1) then
+                    StopRangeDrag();
+                end;
+            end);
+        end;
+
+        SliderInner.InputBegan:Connect(function(Input)
+            BeginDrag(Input, nil);
+        end);
+
+        MinThumb.InputBegan:Connect(function(Input)
+            BeginDrag(Input, 'Min');
+        end);
+
+        MaxThumb.InputBegan:Connect(function(Input)
+            BeginDrag(Input, 'Max');
+        end);
+
+        SliderInner:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()
+            RangeSlider:Display(false);
+        end);
+
+        RangeSlider.TextLabel = RangeSliderLabel;
+        RangeSlider.Container = Container;
+        setmetatable(RangeSlider, BaseAddons);
+
+        RangeSlider:Display(true);
+        Groupbox:AddBlank(Info.BlankSize or 6);
+        Groupbox:Resize();
+
+        if not Info.NoRegister then Options[Idx] = RangeSlider; end;
+        return RangeSlider;
+    end;
+
     function Funcs:AddDropdown(Idx, Info)
         if Info.SpecialType == 'Player' then
             Info.Values = GetPlayersString();
@@ -6727,6 +7538,12 @@ do
                     else
                         Matches = Elem.Value == Value;
                     end
+                elseif Elem.Type == 'RangeSlider' then
+                    if type(Value) == 'table' then
+                        local VMin = Value.Min or Value[1];
+                        local VMax = Value.Max or Value[2];
+                        Matches = (Elem.Value.Min == VMin and Elem.Value.Max == VMax);
+                    end;
                 end
 
                 if not Matches then
@@ -6773,6 +7590,18 @@ function Library:CreateEmbeddedSlider(Container, Info)
     SliderInfo.NoRegister = true;
     if SliderInfo.BlankSize == nil then SliderInfo.BlankSize = 0; end;
     return Host:AddSlider(nil, SliderInfo);
+end;
+
+function Library:CreateEmbeddedRangeSlider(Container, Info)
+    assert(Container and Container:IsA('GuiObject'), 'CreateEmbeddedRangeSlider: invalid container.');
+    local Host = { Container = Container; };
+    function Host:Resize() end;
+    setmetatable(Host, BaseGroupbox);
+
+    local SliderInfo = table.clone(Info or {});
+    SliderInfo.NoRegister = true;
+    if SliderInfo.BlankSize == nil then SliderInfo.BlankSize = 0; end;
+    return Host:AddRangeSlider(nil, SliderInfo);
 end;
 
 do
