@@ -1,7 +1,7 @@
 local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
-	MenuManager.Version = '1.1.0'
+	MenuManager.Version = '1.2.0'
 	MenuManager.Library = nil
 	MenuManager.EasingStyle = 'Sine'
 	MenuManager.EasingDirection = 'Out'
