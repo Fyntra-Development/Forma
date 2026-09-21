@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.7.0+build.1';
+    Version = '1.8.0+build.1';
     Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -303,6 +303,8 @@ local Library = {
     CursorDisplayOrder = 1000000;
     CursorStyle = 'Arrow';
     CursorStyles = { 'Arrow', 'Dot', 'System' };
+    TitleAnimation = 'Shimmer';
+    TitleAnimations = { 'None', 'Shimmer', 'Pulse', 'Wobble' };
 };
 
 local function NormalizeGameName(Value)
@@ -433,6 +435,132 @@ function Library:SetCursorStyle(Style)
     return Resolved;
 end;
 
+function Library:GetTitleAnimations()
+    return table.clone(Library.TitleAnimations or { 'None', 'Shimmer', 'Pulse', 'Wobble' });
+end;
+
+function Library:ResetTitleAnimation(Label)
+    if not Label then return; end;
+
+    local State = Library.TitleAnimationStates and Library.TitleAnimationStates[Label];
+    if State then
+        if State.Tween then pcall(function() State.Tween:Cancel(); end); end;
+        if State.Gradient and State.Gradient.Parent then pcall(function() State.Gradient:Destroy(); end); end;
+        if State.Scale and State.Scale.Parent then pcall(function() State.Scale:Destroy(); end); end;
+    end;
+
+    pcall(function() Label.Rotation = 0; end);
+    if Library.TitleAnimationStates then
+        Library.TitleAnimationStates[Label] = nil;
+    end;
+end;
+
+function Library:ApplyTitleAnimation(Label)
+    if not Label or not Label.Parent then return; end;
+
+    Library:ResetTitleAnimation(Label);
+
+    local Mode = Library.TitleAnimation or 'None';
+    if Mode == 'None' then return; end;
+
+    local State = {};
+    Library.TitleAnimationStates[Label] = State;
+
+    if Mode == 'Shimmer' then
+        local Base = Label.TextColor3;
+        local Highlight = Base:Lerp(Color3.new(1, 1, 1), 0.72);
+        local Gradient = Instance.new('UIGradient');
+        Gradient.Name = 'FormaTitleShimmer';
+        Gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Base);
+            ColorSequenceKeypoint.new(0.42, Base);
+            ColorSequenceKeypoint.new(0.5, Highlight);
+            ColorSequenceKeypoint.new(0.58, Base);
+            ColorSequenceKeypoint.new(1, Base);
+        });
+        Gradient.Offset = Vector2.new(-1, 0);
+        Gradient.Parent = Label;
+
+        local Tween = TweenService:Create(
+            Gradient,
+            TweenInfo.new(1.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false, 0.12),
+            { Offset = Vector2.new(1, 0); }
+        );
+        State.Gradient = Gradient;
+        State.Tween = Tween;
+        Tween:Play();
+    elseif Mode == 'Pulse' then
+        local Scale = Instance.new('UIScale');
+        Scale.Name = 'FormaTitlePulse';
+        Scale.Scale = 1;
+        Scale.Parent = Label;
+
+        local Tween = TweenService:Create(
+            Scale,
+            TweenInfo.new(0.78, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+            { Scale = 1.045; }
+        );
+        State.Scale = Scale;
+        State.Tween = Tween;
+        Tween:Play();
+    elseif Mode == 'Wobble' then
+        Label.Rotation = -1.25;
+        local Tween = TweenService:Create(
+            Label,
+            TweenInfo.new(0.92, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+            { Rotation = 1.25; }
+        );
+        State.Tween = Tween;
+        Tween:Play();
+    end;
+end;
+
+function Library:RegisterTitleAnimationLabel(Label)
+    if not Label then return Label; end;
+
+    Library.TitleAnimationLabels[Label] = true;
+    Library:ApplyTitleAnimation(Label);
+
+    Label.AncestryChanged:Connect(function(_, Parent)
+        if Parent == nil then
+            Library:ResetTitleAnimation(Label);
+            Library.TitleAnimationLabels[Label] = nil;
+        end;
+    end);
+
+    return Label;
+end;
+
+function Library:SetTitleAnimation(Name)
+    local Requested = tostring(Name or 'None');
+    local Resolved = 'None';
+
+    for _, Candidate in ipairs(Library.TitleAnimations or {}) do
+        if string.lower(Candidate) == string.lower(Requested) then
+            Resolved = Candidate;
+            break;
+        end;
+    end;
+
+    Library.TitleAnimation = Resolved;
+
+    for Label in next, Library.TitleAnimationLabels do
+        if Label and Label.Parent then
+            Library:ApplyTitleAnimation(Label);
+        end;
+    end;
+
+    return Resolved;
+end;
+
+function Library:RefreshTitleAnimations()
+    for Label in next, Library.TitleAnimationLabels do
+        if Label and Label.Parent then
+            Library:ApplyTitleAnimation(Label);
+        end;
+    end;
+end;
+
 function Library:RegisterRepoFont(Name, FileName, VisualScale)
     assert(type(Name) == 'string' and Name ~= '', 'RegisterRepoFont: invalid font name');
     assert(type(FileName) == 'string' and FileName ~= '', 'RegisterRepoFont: invalid file name');
@@ -460,6 +588,8 @@ Library.DraggableStates = setmetatable({}, { __mode = 'k' });
 Library.ResizeHitboxes = setmetatable({}, { __mode = 'k' });
 Library.ScrollRevealStates = setmetatable({}, { __mode = 'k' });
 Library.TypingControllers = setmetatable({}, { __mode = 'k' });
+Library.TitleAnimationLabels = setmetatable({}, { __mode = 'k' });
+Library.TitleAnimationStates = setmetatable({}, { __mode = 'k' });
 
 local MotionTransparencyProperties = {
     BackgroundTransparency = true;
@@ -2953,6 +3083,10 @@ function Library:UpdateColorsUsingRegistry()
                 end
             end;
         end;
+    end;
+
+    if Library.RefreshTitleAnimations then
+        Library:RefreshTitleAnimations();
     end;
 end;
 
@@ -10211,6 +10345,7 @@ function Library:CreateUtilityWindow(Config)
         Parent = Header;
     });
     Library.RegistryMap[TitleLabel].Properties.TextColor3 = TitleAccent and 'AccentColor' or 'FontColor';
+    Library:RegisterTitleAnimationLabel(TitleLabel);
 
     local CloseButton;
     if ShowCloseButton then
@@ -10741,6 +10876,7 @@ do
         Parent = InnerFrame;
     });
     Library.RegistryMap[WatermarkTitle].Properties.TextColor3 = 'AccentColor';
+    Library:RegisterTitleAnimationLabel(WatermarkTitle);
 
     local WatermarkStats = Library:CreateLabel({
         Position = UDim2.fromOffset(8, 1);
@@ -10748,17 +10884,6 @@ do
         Text = '';
         TextColor3 = Library.FontColor;
         TextSize = 15;
-        TextXAlignment = Enum.TextXAlignment.Left;
-        ZIndex = 207;
-        Parent = InnerFrame;
-    });
-
-    local WatermarkDetails = Library:CreateLabel({
-        Position = UDim2.fromOffset(8, 19);
-        Size = UDim2.new(0, 0, 0, 15);
-        Text = '';
-        TextColor3 = Library.FontColor;
-        TextSize = 13;
         TextXAlignment = Enum.TextXAlignment.Left;
         ZIndex = 207;
         Parent = InnerFrame;
@@ -10776,41 +10901,22 @@ do
         local Title, Stats = Text:match('^(.-)(%s+%-%s+.+)$');
         if not Title then Title, Stats = Text, ''; end
 
-        local Info = Library.WatermarkInfo or {};
-        local Details = {};
-        if Info.ShowGameName ~= false then
-            table.insert(Details, 'Game: ' .. tostring(Info.GameName or Library.GameName or 'Unknown Game'));
-        end;
-        if Info.ShowUsername ~= false then
-            table.insert(Details, 'Username: ' .. tostring(Info.Username or (LocalPlayer and LocalPlayer.Name) or 'Unknown'));
-        end;
-        if Info.ShowUserId ~= false then
-            table.insert(Details, 'User ID: ' .. tostring(Info.UserId or (LocalPlayer and LocalPlayer.UserId) or 0));
-        end;
-        if Info.ShowDate ~= false then
-            table.insert(Details, 'Date: ' .. tostring(Info.Date or os.date('%Y-%m-%d')));
-        end;
-        local DetailsText = table.concat(Details, '  |  ');
-
         local TitleWidth, TitleHeight = Library:GetTextBounds(Title, Library.Font, 15);
         local StatsWidth, StatsHeight = Library:GetTextBounds(Stats, Library.Font, 15);
-        local DetailsWidth, DetailsHeight = Library:GetTextBounds(DetailsText, Library.Font, 13);
         local TopHeight = math.max(TitleHeight, StatsHeight, 16) + 2;
-        local DetailsY = TopHeight + 1;
-        local OuterHeight = math.max(DetailsY + DetailsHeight + 6, 40);
         local StatsX = 8 + TitleWidth;
+
         WatermarkTitle.Text = Title;
         WatermarkTitle.Position = UDim2.fromOffset(8, 1);
         WatermarkTitle.Size = UDim2.fromOffset(TitleWidth, TopHeight);
+
         WatermarkStats.Text = Stats;
         WatermarkStats.Position = UDim2.fromOffset(StatsX, 1);
         WatermarkStats.Size = UDim2.fromOffset(StatsWidth, TopHeight);
-        WatermarkDetails.Text = DetailsText;
-        WatermarkDetails.Position = UDim2.fromOffset(8, DetailsY);
-        WatermarkDetails.Size = UDim2.fromOffset(DetailsWidth, math.max(DetailsHeight, 14));
+
         WatermarkOuter.Size = UDim2.fromOffset(
-            math.max(StatsX + StatsWidth + 9, DetailsWidth + 17, 230),
-            OuterHeight
+            math.max(StatsX + StatsWidth + 9, 150),
+            26
         );
     end
     LegacyWatermarkText:GetPropertyChangedSignal('Text'):Connect(function()
@@ -10821,7 +10927,7 @@ do
     Library.WatermarkText = LegacyWatermarkText;
     Library.WatermarkTitle = WatermarkTitle;
     Library.WatermarkStats = WatermarkStats;
-    Library.WatermarkDetails = WatermarkDetails;
+    Library.WatermarkDetails = nil;
     Library.UpdateWatermarkText = UpdateWatermarkText;
     Library.WatermarkAnimationId = 0;
     Library:MakeDraggable(Library.Watermark);
@@ -13861,6 +13967,7 @@ function Library:CreateWindow(...)
         Parent = Inner;
     });
     Library.RegistryMap[WindowLabel].Properties.TextColor3 = 'AccentColor';
+    Library:RegisterTitleAnimationLabel(WindowLabel);
 
     local WindowSubtitle = Library:CreateLabel({
         Position = UDim2.new(0, 7, 0, 0);
@@ -14851,8 +14958,6 @@ function Library:CreateWindow(...)
             local Cursor;
             local CursorGui;
             local CursorScale;
-            local Ring;
-            local RingStroke;
             local Pressed = false;
             local PressAnimationId = 0;
             local InputBeganConnection;
@@ -14909,29 +15014,6 @@ function Library:CreateWindow(...)
                     CursorScale.Scale = 1;
                     CursorScale.Parent = Cursor;
 
-                    if IsDot then
-                        Ring = Library:Create('Frame', {
-                            Active = false;
-                            AnchorPoint = Vector2.new(0.5, 0.5);
-                            BackgroundTransparency = 1;
-                            BorderSizePixel = 0;
-                            Position = GetCursorPosition();
-                            Size = UDim2.fromOffset(12, 12);
-                            ZIndex = 1000;
-                            Visible = false;
-                            Parent = CursorGui;
-                        });
-                        Library:AddCorner(Ring, 999);
-
-                        RingStroke = Library:Create('UIStroke', {
-                            Color = Library.AccentColor;
-                            Thickness = 1;
-                            Transparency = 1;
-                            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-                            Parent = Ring;
-                        });
-                    end
-
                     ActiveCursorGui = CursorGui;
                 end);
             end
@@ -14951,14 +15033,6 @@ function Library:CreateWindow(...)
 
                 Library:Animate(CursorScale, { Scale = 0.62; }, 0.075, nil, 'Cursor');
 
-                if Ring and RingStroke then
-                    Ring.Visible = true;
-                    Ring.Size = UDim2.fromOffset(10, 10);
-                    RingStroke.Transparency = 0.08;
-                    Library:Animate(Ring, { Size = UDim2.fromOffset(18, 18); }, 0.14, nil, 'Cursor');
-                    Library:Animate(RingStroke, { Transparency = 0.42; }, 0.14, nil, 'Cursor');
-                end
-
                 task.spawn(function()
                     task.wait(0.14);
                     local Expand = true;
@@ -14967,14 +15041,6 @@ function Library:CreateWindow(...)
                         and Cursor.Parent
                         and CurrentCursorId == CursorAnimationId do
                         Library:Animate(CursorScale, { Scale = Expand and 0.78 or 0.66; }, 0.16, nil, 'Cursor');
-                        if Ring and Ring.Parent and RingStroke then
-                            Library:Animate(Ring, {
-                                Size = Expand and UDim2.fromOffset(20, 20) or UDim2.fromOffset(17, 17);
-                            }, 0.16, nil, 'Cursor');
-                            Library:Animate(RingStroke, {
-                                Transparency = Expand and 0.58 or 0.34;
-                            }, 0.16, nil, 'Cursor');
-                        end
                         Expand = not Expand;
                         task.wait(0.16);
                     end
@@ -14993,14 +15059,6 @@ function Library:CreateWindow(...)
                     Library:Animate(CursorScale, { Scale = 1; }, 0.12, nil, 'Cursor');
                 end, 'Cursor');
 
-                if Ring and RingStroke then
-                    Library:Animate(Ring, { Size = UDim2.fromOffset(28, 28); }, 0.18, nil, 'Cursor');
-                    Library:Animate(RingStroke, { Transparency = 1; }, 0.18, function()
-                        if Ring and Ring.Parent and not Pressed then
-                            Ring.Visible = false;
-                        end
-                    end, 'Cursor');
-                end
             end
 
             if IsDot then
@@ -15030,11 +15088,6 @@ function Library:CreateWindow(...)
                 Cursor.Position = Position;
                 Cursor.ImageColor3 = Library.AccentColor;
 
-                if Ring and Ring.Parent then
-                    Ring.Position = Position;
-                    if RingStroke then RingStroke.Color = Library.AccentColor; end
-                end
-
                 RenderStepped:Wait();
             end
 
@@ -15046,9 +15099,6 @@ function Library:CreateWindow(...)
 
             if Cursor.Parent then
                 pcall(function() Cursor:Destroy(); end);
-            end
-            if Ring and Ring.Parent then
-                pcall(function() Ring:Destroy(); end);
             end
             if CursorGui.Parent then
                 pcall(function() CursorGui:Destroy(); end);
