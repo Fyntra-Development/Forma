@@ -27,6 +27,17 @@ local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
 
+local RuntimeEnvironment = getgenv and getgenv() or _G;
+local PreviousFormaLibrary = RuntimeEnvironment and RuntimeEnvironment.FormaLibrary;
+if type(PreviousFormaLibrary) == 'table'
+    and PreviousFormaLibrary ~= Library
+    and type(PreviousFormaLibrary.Unload) == 'function' then
+    pcall(PreviousFormaLibrary.Unload, PreviousFormaLibrary);
+end;
+pcall(function()
+    InputService.MouseIconEnabled = true;
+end);
+
 local RepoFontBaseUrl = "https://raw.githubusercontent.com/Fyntra-Development/Forma/main/";
 local RepoBaseUrl = RepoFontBaseUrl;
 local UpdateManifestUrl = RepoBaseUrl .. "versions.json";
@@ -174,7 +185,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.2';
+    Version = '1.3.3';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
@@ -2752,16 +2763,42 @@ function Library:GiveSignal(Signal)
 end
 
 function Library:Unload()
+    if Library.Unloaded then
+        pcall(function() InputService.MouseIconEnabled = true; end);
+        return;
+    end
+    Library.Unloaded = true;
+
+    if Library.RestoreCursor then
+        pcall(Library.RestoreCursor);
+    else
+        pcall(function() InputService.MouseIconEnabled = true; end);
+    end
+
+    if Library.OptionWheel and Library.OptionWheel.Destroy then
+        pcall(function() Library.OptionWheel:Destroy(); end);
+    end
+
     for Idx = #Library.Signals, 1, -1 do
         local Connection = table.remove(Library.Signals, Idx)
-        Connection:Disconnect()
+        pcall(function() Connection:Disconnect(); end)
     end
 
     if Library.OnUnload then
-        Library.OnUnload()
+        pcall(Library.OnUnload)
     end
 
-    ScreenGui:Destroy()
+    if ScreenGui and ScreenGui.Parent then
+        pcall(function() ScreenGui:Destroy(); end)
+    end
+
+    local Environment = getgenv and getgenv() or _G;
+    if Environment then
+        if Environment.Library == Library then Environment.Library = nil; end
+        if Environment.FormaLibrary == Library then Environment.FormaLibrary = nil; end
+    end
+
+    pcall(function() InputService.MouseIconEnabled = true; end);
 end
 
 function Library:OnUnload(Callback)
@@ -10541,15 +10578,16 @@ function Library:PromptForUpdate(Info)
     Library.UpdatePrompted[PromptKey] = true;
 
     return Library:Notify({
-        Type = 'Action';
-        Title = 'Forma update available';
+        Type = 'Update';
+        Title = 'Update available';
         Text = Library:BuildUpdateDescription(Info);
         Persistent = true;
         CloseButton = true;
-        Width = 370;
+        Width = 390;
         Button = {
             Text = 'Yes';
-            Primary = true;
+            Primary = false;
+            Style = 'AccentOutline';
             Callback = function()
                 local Success, Error = Library:PerformUpdateRestart(Info.Name, Info);
                 if not Success and Library.ScreenGui and Library.ScreenGui.Parent then
@@ -10570,15 +10608,16 @@ end;
 
 function Library:PreviewUpdateNotification()
     return Library:Notify({
-        Type = 'Action';
-        Title = 'Forma update available';
+        Type = 'Update';
+        Title = 'Update available';
         Text = string.format('Library  v%s  ->  vNEXT\n\nUpdate and restart the UI now?', tostring(Library.Version));
         Persistent = true;
         CloseButton = true;
-        Width = 370;
+        Width = 390;
         Button = {
             Text = 'Yes';
-            Primary = true;
+            Primary = false;
+            Style = 'AccentOutline';
             Callback = function()
                 Library:Notify('Preview only - no update was installed.', 2);
             end;
@@ -10635,6 +10674,7 @@ function Library:Notify(Text, Time, Title)
 
     local Persistent = Info.Persistent == true or Time == false;
     local ShowCloseButton = Info.CloseButton == true or Persistent;
+    local IsUpdateNotification = string.lower(tostring(Info.Type or '')) == 'update';
     local Buttons = {};
 
     local function AddButton(Button, DefaultText)
@@ -10747,7 +10787,7 @@ function Library:Notify(Text, Time, Title)
             Position = UDim2.fromOffset(8, 3);
             Size = UDim2.new(1, ShowCloseButton and -40 or -16, 0, TitleHeight + 2);
             Text = Title;
-            TextColor3 = Library.AccentColor;
+            TextColor3 = IsUpdateNotification and Library.FontColor or Library.AccentColor;
             TextXAlignment = Enum.TextXAlignment.Left;
             TextYAlignment = Enum.TextYAlignment.Top;
             TextSize = TitleSize;
@@ -10755,7 +10795,7 @@ function Library:Notify(Text, Time, Title)
             ZIndex = 104;
             Parent = InnerFrame;
         });
-        Library.RegistryMap[NotifyTitle].Properties.TextColor3 = 'AccentColor';
+        Library.RegistryMap[NotifyTitle].Properties.TextColor3 = IsUpdateNotification and 'FontColor' or 'AccentColor';
     end;
 
     local TextTop = TopPadding + TitleBlock;
@@ -10842,14 +10882,22 @@ function Library:Notify(Text, Time, Title)
         for Index = 1, Count do
             local ButtonInfo = Buttons[Index];
             local Fraction = 1 / Count;
+            local AccentOutline = ButtonInfo.Style == 'AccentOutline'
+                or (IsUpdateNotification and ButtonInfo.Primary == true);
+            local BaseBackground = (IsUpdateNotification or AccentOutline)
+                and Library.Contrast
+                or (ButtonInfo.Primary and Library.AccentColor or Library.Contrast);
+
             local Button = Library:Create('TextButton', {
                 AutoButtonColor = false;
-                BackgroundColor3 = ButtonInfo.Primary and Library.AccentColor or Library.Contrast;
+                BackgroundColor3 = BaseBackground;
                 BorderSizePixel = 0;
                 Position = UDim2.new((Index - 1) * Fraction, Index > 1 and Padding / 2 or 0, 0, 0);
                 Size = UDim2.new(Fraction, -(Padding * (Count - 1) / Count), 1, 0);
                 Text = ButtonInfo.Text;
-                TextColor3 = Library.FontColor;
+                TextColor3 = (IsUpdateNotification and not AccentOutline)
+                    and Library.DisabledTextColor
+                    or Library.FontColor;
                 TextSize = 13;
                 TextStrokeTransparency = 1;
                 ZIndex = 107;
@@ -10858,21 +10906,41 @@ function Library:Notify(Text, Time, Title)
             Library:ApplyFont(Button);
             Library:AddCorner(Button, 3);
             Library:AddToRegistry(Button, {
-                BackgroundColor3 = ButtonInfo.Primary and 'AccentColor' or 'Contrast';
-                TextColor3 = 'FontColor';
+                BackgroundColor3 = (IsUpdateNotification or AccentOutline)
+                    and 'Contrast'
+                    or (ButtonInfo.Primary and 'AccentColor' or 'Contrast');
+                TextColor3 = (IsUpdateNotification and not AccentOutline)
+                    and 'DisabledTextColor'
+                    or 'FontColor';
             }, true);
 
+            if AccentOutline then
+                local Stroke = Library:Create('UIStroke', {
+                    Name = 'ActionAccentOutline';
+                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                    Color = Library.AccentColor;
+                    Transparency = 0.18;
+                    Thickness = 1;
+                    Parent = Button;
+                });
+                Library:AddToRegistry(Stroke, { Color = 'AccentColor'; }, true);
+            end
+
             Library:GiveSignal(Button.MouseEnter:Connect(function()
-                Library:Animate(Button, {
-                    BackgroundColor3 = ButtonInfo.Primary
+                local HoverColor;
+                if AccentOutline then
+                    HoverColor = Library.Contrast:Lerp(Library.AccentColor, 0.13);
+                elseif IsUpdateNotification then
+                    HoverColor = Library.OutlineColor;
+                else
+                    HoverColor = ButtonInfo.Primary
                         and Library.AccentColor:Lerp(Color3.new(1, 1, 1), 0.10)
                         or Library.OutlineColor;
-                }, 0.10, nil, 'Color');
+                end
+                Library:Animate(Button, { BackgroundColor3 = HoverColor; }, 0.10, nil, 'Color');
             end));
             Library:GiveSignal(Button.MouseLeave:Connect(function()
-                Library:Animate(Button, {
-                    BackgroundColor3 = ButtonInfo.Primary and Library.AccentColor or Library.Contrast;
-                }, 0.10, nil, 'Color');
+                Library:Animate(Button, { BackgroundColor3 = BaseBackground; }, 0.10, nil, 'Color');
             end));
             Library:GiveSignal(Button.MouseButton1Click:Connect(function()
                 local Callback = ButtonInfo.Callback or ButtonInfo.Func;
@@ -11891,15 +11959,39 @@ function Library:CreateWindow(...)
     local Toggled = false;
     local ToggleAnimationId = 0;
     local CursorAnimationId = 0;
+    local ActiveCursor = nil;
+    local CursorRestoreState = true;
+
+    local function StopFormaCursor()
+        CursorAnimationId = CursorAnimationId + 1;
+
+        if ActiveCursor then
+            pcall(function() ActiveCursor:Destroy(); end);
+            ActiveCursor = nil;
+        end
+
+        -- Forma owns the hidden native cursor only while its custom cursor is
+        -- alive. Closing/unloading always hands control back immediately.
+        pcall(function()
+            InputService.MouseIconEnabled = true;
+        end);
+    end
+
+    Library.RestoreCursor = StopFormaCursor;
 
     local function StartFormaCursor()
+        StopFormaCursor();
+
         CursorAnimationId = CursorAnimationId + 1;
         local CurrentCursorId = CursorAnimationId;
+        CursorRestoreState = InputService.MouseIconEnabled;
+
         task.spawn(function()
-            local State = InputService.MouseIconEnabled;
+            local Cursor;
             local CursorAssetPath = 'FormaAssets/cursor.png';
             local CursorAssetUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/cursor.png';
             local GetCustomAsset = getcustomasset or getsynasset;
+
             local function GetCursorPosition()
                 if ScreenGui.IgnoreGuiInset then
                     local Loc = InputService:GetMouseLocation();
@@ -11910,8 +12002,13 @@ function Library:CreateWindow(...)
 
             if GetCustomAsset and writefile and isfile then
                 pcall(function()
-                    if isfolder and makefolder and not isfolder('FormaAssets') then makefolder('FormaAssets'); end
-                    if not isfile(CursorAssetPath) then writefile(CursorAssetPath, game:HttpGet(CursorAssetUrl)); end
+                    if isfolder and makefolder and not isfolder('FormaAssets') then
+                        makefolder('FormaAssets');
+                    end
+                    if not isfile(CursorAssetPath) then
+                        writefile(CursorAssetPath, game:HttpGet(CursorAssetUrl));
+                    end
+
                     Cursor = Library:Create('ImageLabel', {
                         Active = false;
                         BackgroundTransparency = 1;
@@ -11928,16 +12025,34 @@ function Library:CreateWindow(...)
                 end);
             end
 
-            if Cursor then
-                while Toggled and CurrentCursorId == CursorAnimationId and ScreenGui.Parent do
-                    InputService.MouseIconEnabled = false;
-                    Cursor.Position = GetCursorPosition();
-                    RenderStepped:Wait();
-                end
-                Cursor:Destroy();
+            if not Cursor then
+                pcall(function() InputService.MouseIconEnabled = true; end);
+                return;
             end
-            if CurrentCursorId == CursorAnimationId then
-                InputService.MouseIconEnabled = State;
+
+            ActiveCursor = Cursor;
+            InputService.MouseIconEnabled = false;
+
+            while Toggled
+                and CurrentCursorId == CursorAnimationId
+                and ScreenGui.Parent
+                and Cursor.Parent do
+                InputService.MouseIconEnabled = false;
+                Cursor.Position = GetCursorPosition();
+                RenderStepped:Wait();
+            end
+
+            if Cursor.Parent then
+                pcall(function() Cursor:Destroy(); end);
+            end
+            if ActiveCursor == Cursor then
+                ActiveCursor = nil;
+            end
+
+            if CurrentCursorId == CursorAnimationId and not Toggled then
+                pcall(function()
+                    InputService.MouseIconEnabled = CursorRestoreState ~= false;
+                end);
             end
         end);
     end
@@ -11961,7 +12076,7 @@ function Library:CreateWindow(...)
             Library:TweenUnifiedFade(Outer, 1, math.max(FadeTime - 0.04, 0.14), nil, 'Fade');
             StartFormaCursor();
         else
-            CursorAnimationId = CursorAnimationId + 1;
+            StopFormaCursor();
             Library:Animate(Inner, { Position = UDim2.fromOffset(1, 8); }, FadeTime, nil, 'MenuExit');
             Library:TweenUnifiedFade(Outer, 0, math.max(FadeTime - 0.05, 0.13), function(State)
                 if CurrentId ~= ToggleAnimationId or Toggled or State == Enum.PlaybackState.Cancelled then
