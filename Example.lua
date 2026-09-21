@@ -622,6 +622,7 @@ ConsoleView:Info('Library initialized')
 ConsoleView:Warn('This is a warning example')
 ConsoleView:Error('Errors use the current Forma risk color')
 
+local PlayerPriorities = {}
 local RefreshPlayerTable
 local PlayerTable = Tabs.Utilities:AddTable({
     Title = 'Players',
@@ -648,7 +649,7 @@ local PlayerTable = Tabs.Utilities:AddTable({
         {
             Text = 'Mark priority',
             Callback = function(Data)
-                Data.Priority = Data.Priority == 'Priority' and 'Neutral' or 'Priority'
+                PlayerPriorities[Data.UserId] = Data.Priority == 'Priority' and 'Neutral' or 'Priority'
                 RefreshPlayerTable()
             end,
         },
@@ -666,7 +667,7 @@ RefreshPlayerTable = function()
         table.insert(Rows, {
             Player = Player.Name,
             Team = Player.Team and Player.Team.Name or 'None',
-            Priority = 'Neutral',
+            Priority = PlayerPriorities[Player.UserId] or 'Neutral',
             UserId = Player.UserId,
         })
     end
