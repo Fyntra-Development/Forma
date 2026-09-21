@@ -1,7 +1,7 @@
 local __FormaBootstrapEnv = getgenv and getgenv() or _G
 if not __FormaBootstrapEnv.__FormaLoaderBooting and type(loadstring) == 'function' then
     local __Success, __Updater = pcall(function()
-        local __LoaderCacheVersion = '1.3.9'
+        local __LoaderCacheVersion = '1.3.9-r2'
         local __LoaderCachePath = 'FormaCache/Loader-' .. __LoaderCacheVersion .. '.lua'
         local __Source
 
@@ -226,15 +226,23 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.9';
+    Version = '1.3.9-r2';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
     UpdateManifestUrl = UpdateManifestUrl;
     UpdateManifestCache = nil;
     UpdateManifestCacheAt = 0;
-    UpdateManifestCacheSeconds = 5;
-    UpdatePollSeconds = 15;
+    UpdateManifestCacheSeconds = 2;
+    UpdatePollSeconds = 12;
+    UpdateHardRefreshSeconds = 60;
+    UpdateLastHardRefreshAt = 0;
+    UpdateFetchSequence = 0;
+    UpdateManifestSources = {
+        RepoBaseUrl .. 'versions.json';
+        'https://raw.githubusercontent.com/Fyntra-Development/Forma/refs/heads/main/versions.json';
+        'https://github.com/Fyntra-Development/Forma/raw/refs/heads/main/versions.json';
+    };
     UpdateChecks = {};
     UpdatePrompted = {};
     Updatables = {};
@@ -244,6 +252,7 @@ local Library = {
     UtilityGuis = {};
     UtilityWindows = {};
     UtilityDisplayOrder = 30;
+    UtilitySerial = 0;
 };
 
 local function NormalizeGameName(Value)
@@ -9725,9 +9734,11 @@ function Library:CreateUtilityWindow(Config)
     if SafeName == '' then SafeName = 'Utility'; end
 
     Library.UtilityDisplayOrder = (Library.UtilityDisplayOrder or 30) + 1;
+    Library.UtilitySerial = (Library.UtilitySerial or 0) + 1;
+    local UtilitySerial = Library.UtilitySerial;
 
     local UtilityGui = Instance.new('ScreenGui');
-    UtilityGui.Name = 'FormaUtility_' .. SafeName;
+    UtilityGui.Name = 'FormaUtility_' .. SafeName .. '_' .. tostring(UtilitySerial);
     UtilityGui.ResetOnSpawn = false;
     UtilityGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
     UtilityGui.DisplayOrder = Library.UtilityDisplayOrder;
@@ -9743,13 +9754,20 @@ function Library:CreateUtilityWindow(Config)
         Gui = UtilityGui;
         Visible = Config.Visible ~= false;
         Destroyed = false;
+        Id = Config.Id or (SafeName .. '_' .. tostring(UtilitySerial));
     };
+
+    local InitialPosition = Config.Position or UDim2.fromOffset(
+        24 + (#Library.UtilityWindows * 26),
+        90 + (#Library.UtilityWindows * 22)
+    );
+    Window.RestingPosition = InitialPosition;
 
     local Outer = Library:Create('Frame', {
         Active = true;
         BackgroundColor3 = Color3.new(0, 0, 0);
         BorderSizePixel = 0;
-        Position = Config.Position or UDim2.fromOffset(24 + (#Library.UtilityWindows * 26), 90 + (#Library.UtilityWindows * 22));
+        Position = InitialPosition;
         Size = UDim2.fromOffset(Width, Height);
         Visible = Window.Visible;
         ZIndex = 1;
@@ -9870,35 +9888,69 @@ function Library:CreateUtilityWindow(Config)
         UtilityGui.DisplayOrder = Library.UtilityDisplayOrder;
     end
 
+    local function OffsetUtilityPosition(Position, YOffset)
+        return UDim2.new(
+            Position.X.Scale,
+            Position.X.Offset,
+            Position.Y.Scale,
+            Position.Y.Offset + YOffset
+        );
+    end
+
     function Window:SetVisible(State, Instant)
         if Window.Destroyed then return; end
         State = State ~= false;
-        Window.Visible = State;
-        Window:BringToFront();
 
         if State then
+            Window.Visible = true;
+            Window:BringToFront();
+
             if not Outer.Visible then
                 Outer.Visible = true;
+                Outer.Position = OffsetUtilityPosition(Window.RestingPosition, 7);
                 Library:SetUnifiedFadeProgress(Outer, 0);
             end
+
             if Instant then
                 Library:CancelMotion(Outer);
+                Outer.Position = Window.RestingPosition;
                 Library:SetUnifiedFadeProgress(Outer, 1);
             else
-                Library:TweenUnifiedFade(Outer, 1, 0.16, nil, 'Fade');
+                Library:Animate(Outer, {
+                    Position = Window.RestingPosition;
+                }, 0.18, nil, 'Menu');
+                Library:TweenUnifiedFade(Outer, 1, 0.17, nil, 'Fade');
             end
-        elseif Outer.Visible then
-            if Instant then
-                Library:CancelMotion(Outer);
-                Library:SetUnifiedFadeProgress(Outer, 0);
-                Outer.Visible = false;
-            else
-                Library:TweenUnifiedFade(Outer, 0, 0.14, function(StateValue)
-                    if not Window.Visible and StateValue ~= Enum.PlaybackState.Cancelled and Outer.Parent then
-                        Outer.Visible = false;
-                    end
-                end, 'Fade');
-            end
+            return;
+        end
+
+        if not Outer.Visible then
+            Window.Visible = false;
+            return;
+        end
+
+        Window.Visible = false;
+        Library:CancelMotion(Outer, 'Position');
+        Window.RestingPosition = Outer.Position;
+        local ExitPosition = OffsetUtilityPosition(Window.RestingPosition, 6);
+
+        if Instant then
+            Library:CancelMotion(Outer);
+            Library:SetUnifiedFadeProgress(Outer, 0);
+            Outer.Visible = false;
+            Outer.Position = Window.RestingPosition;
+        else
+            Library:Animate(Outer, {
+                Position = ExitPosition;
+            }, 0.13, nil, 'MenuExit');
+            Library:TweenUnifiedFade(Outer, 0, 0.13, function(StateValue)
+                if not Window.Visible
+                    and StateValue ~= Enum.PlaybackState.Cancelled
+                    and Outer.Parent then
+                    Outer.Visible = false;
+                    Outer.Position = Window.RestingPosition;
+                end
+            end, 'Fade');
         end
     end
 
@@ -9909,6 +9961,21 @@ function Library:CreateUtilityWindow(Config)
     function Window:SetTitle(NewTitle)
         Window.Title = tostring(NewTitle or '');
         TitleLabel.Text = Window.Title;
+    end
+
+    function Window:SetPosition(NewPosition, Animated)
+        if typeof(NewPosition) ~= 'UDim2' then return; end
+        Window.RestingPosition = NewPosition;
+        if Animated then
+            Library:Animate(Outer, { Position = NewPosition; }, 0.16, nil, 'Layout');
+        else
+            Library:CancelMotion(Outer, 'Position');
+            Outer.Position = NewPosition;
+        end
+    end
+
+    function Window:GetPosition()
+        return Window.RestingPosition;
     end
 
     function Window:SetSize(NewWidth, NewHeight)
@@ -9942,6 +10009,12 @@ function Library:CreateUtilityWindow(Config)
         if Input.UserInputType == Enum.UserInputType.MouseButton1
             or Input.UserInputType == Enum.UserInputType.Touch then
             Window:BringToFront();
+        end
+    end);
+
+    Outer:GetPropertyChangedSignal('Position'):Connect(function()
+        if Window.Visible and not Library.PropertyTweens[Outer] then
+            Window.RestingPosition = Outer.Position;
         end
     end);
 
@@ -12287,19 +12360,27 @@ local function AddUpdateCacheBuster(Url)
     return tostring(Url) .. Separator .. 'forma_update=' .. Token;
 end;
 
-local function FetchFreshUpdateBody(Url)
+local function FetchFreshUpdateBody(Url, ExtraHeaders)
     local FreshUrl = AddUpdateCacheBuster(Url);
     local Request = request or http_request or (syn and syn.request);
 
     if type(Request) == 'function' then
+        local Headers = {
+            ['Cache-Control'] = 'no-cache, no-store, max-age=0';
+            ['Pragma'] = 'no-cache';
+            ['Expires'] = '0';
+            ['User-Agent'] = 'Forma-Updater';
+        };
+        if type(ExtraHeaders) == 'table' then
+            for Key, Value in next, ExtraHeaders do
+                Headers[Key] = Value;
+            end;
+        end;
+
         local Success, Response = pcall(Request, {
             Url = FreshUrl;
             Method = 'GET';
-            Headers = {
-                ['Cache-Control'] = 'no-cache, no-store, max-age=0';
-                ['Pragma'] = 'no-cache';
-                ['Expires'] = '0';
-            };
+            Headers = Headers;
         });
 
         if Success and type(Response) == 'table' then
@@ -12311,6 +12392,10 @@ local function FetchFreshUpdateBody(Url)
         end;
     end;
 
+    if ExtraHeaders and next(ExtraHeaders) then
+        return nil, 'request function unavailable for header-based update fetch';
+    end;
+
     local Success, Body = pcall(function()
         return game:HttpGet(FreshUrl);
     end);
@@ -12318,6 +12403,59 @@ local function FetchFreshUpdateBody(Url)
         return Body;
     end;
     return nil, tostring(Body or 'failed to fetch update manifest');
+end;
+
+local function DecodeUpdateManifest(Body)
+    if type(Body) ~= 'string' or Body == '' then return nil; end;
+    local DecodeSuccess, Manifest = pcall(HttpService.JSONDecode, HttpService, Body);
+    if not DecodeSuccess or type(Manifest) ~= 'table' then return nil; end;
+
+    local Components = Manifest.Components or Manifest.components or Manifest;
+    if type(Components) ~= 'table' or type(Components.Library) ~= 'table' then
+        return nil;
+    end;
+    return Manifest;
+end;
+
+local function MergeFreshestManifest(Current, Candidate)
+    if type(Candidate) ~= 'table' then return Current; end;
+    if type(Current) ~= 'table' then return Candidate; end;
+
+    local CurrentComponents = Current.Components or Current.components or Current;
+    local CandidateComponents = Candidate.Components or Candidate.components or Candidate;
+    if type(CurrentComponents) ~= 'table' or type(CandidateComponents) ~= 'table' then
+        return Candidate;
+    end;
+
+    local Result = table.clone(Current);
+    Result.Components = table.clone(CurrentComponents);
+
+    for Name, Remote in next, CandidateComponents do
+        if type(Remote) == 'table' then
+            local Existing = Result.Components[Name];
+            local RemoteVersion = tostring(Remote.version or Remote.Version or '0');
+            local ExistingVersion = type(Existing) == 'table'
+                and tostring(Existing.version or Existing.Version or '0')
+                or nil;
+
+            if not ExistingVersion
+                or RemoteVersion == ExistingVersion
+                or IsFormaVersionNewer(RemoteVersion, ExistingVersion) then
+                Result.Components[Name] = Remote;
+            end;
+        end;
+    end;
+
+    return Result;
+end;
+
+local function FetchHardRefreshManifest()
+    local ApiUrl = 'https://api.github.com/repos/Fyntra-Development/Forma/contents/versions.json?ref=main';
+    local Body = FetchFreshUpdateBody(ApiUrl, {
+        ['Accept'] = 'application/vnd.github.raw+json';
+        ['X-GitHub-Api-Version'] = '2022-11-28';
+    });
+    return DecodeUpdateManifest(Body);
 end;
 
 function Library:SetAutoUpdateEnabled(State)
@@ -12356,19 +12494,56 @@ function Library:FetchUpdateManifest(Force)
         return Library.UpdateManifestCache;
     end;
 
-    local Body, FetchError = FetchFreshUpdateBody(Library.UpdateManifestUrl);
-    if not Body then
-        return nil, FetchError;
+    Library.UpdateFetchSequence = (Library.UpdateFetchSequence or 0) + 1;
+
+    local Candidate;
+    local SourceName;
+    local LastError;
+
+    local HardRefreshSeconds = math.max(tonumber(Library.UpdateHardRefreshSeconds) or 60, 45);
+    local LastHard = tonumber(Library.UpdateLastHardRefreshAt) or 0;
+    local HardRefreshDue = LastHard <= 0 or (Now - LastHard) >= HardRefreshSeconds;
+
+    if HardRefreshDue then
+        Library.UpdateLastHardRefreshAt = Now;
+        local Success, Manifest = pcall(FetchHardRefreshManifest);
+        if Success and Manifest then
+            Candidate = Manifest;
+            SourceName = 'github-api';
+        end;
     end;
 
-    local DecodeSuccess, Manifest = pcall(HttpService.JSONDecode, HttpService, Body);
-    if not DecodeSuccess or type(Manifest) ~= 'table' then
-        return nil, tostring(Manifest or 'invalid update manifest');
+    if not Candidate then
+        local Sources = Library.UpdateManifestSources or { Library.UpdateManifestUrl };
+        local Count = math.max(#Sources, 1);
+        local StartIndex = ((Library.UpdateFetchSequence - 1) % Count) + 1;
+
+        for Offset = 0, math.min(1, Count - 1) do
+            local Index = ((StartIndex + Offset - 1) % Count) + 1;
+            local Url = Sources[Index] or Library.UpdateManifestUrl;
+            local Body, FetchError = FetchFreshUpdateBody(Url);
+            LastError = FetchError or LastError;
+            local Manifest = DecodeUpdateManifest(Body);
+            if Manifest then
+                Candidate = Manifest;
+                SourceName = Url;
+                break;
+            end;
+        end;
     end;
 
-    Library.UpdateManifestCache = Manifest;
+    if not Candidate then
+        if Library.UpdateManifestCache then
+            return Library.UpdateManifestCache;
+        end;
+        return nil, tostring(LastError or 'failed to fetch update manifest');
+    end;
+
+    Candidate = MergeFreshestManifest(Library.UpdateManifestCache, Candidate);
+    Library.UpdateManifestCache = Candidate;
     Library.UpdateManifestCacheAt = Now;
-    return Manifest;
+    Library.UpdateLastManifestSource = SourceName;
+    return Candidate;
 end;
 
 function Library:GetRemoteUpdateInfo(ComponentName, Force)
