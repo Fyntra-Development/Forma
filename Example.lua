@@ -624,12 +624,33 @@ ConsoleView:Error('Errors use the current Forma risk color')
 
 local PlayerTable = Tabs.Utilities:AddTable({
     Title = 'Players',
-    Height = 250,
+    Height = 320,
     SearchPlaceholder = 'Search players...',
     Columns = {
         { Name = 'Player', Key = 'Player', Width = 0.46 },
         { Name = 'Team', Key = 'Team', Width = 0.30 },
         { Name = 'Priority', Key = 'Priority', Width = 0.24 },
+    },
+    DetailFields = {
+        { Name = 'Name', Key = 'Player' },
+        { Name = 'Priority', Key = 'Priority' },
+        { Name = 'Team', Key = 'Team' },
+        { Name = 'UserId', Key = 'UserId' },
+    },
+    DetailActions = {
+        {
+            Text = 'Print selected',
+            Callback = function(Data)
+                print('Selected player row:', Data.Player, Data.UserId)
+            end,
+        },
+        {
+            Text = 'Mark priority',
+            Callback = function(Data)
+                Data.Priority = Data.Priority == 'Priority' and 'Neutral' or 'Priority'
+                RefreshPlayerTable()
+            end,
+        },
     },
     OnSelected = function(Data)
         if Data then
