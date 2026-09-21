@@ -1021,7 +1021,31 @@ function Library:LoadFont(Name)
         end;
 
         if not HasFile then
-            local LocalFallback = isfile and (isfile('Forma/' .. RepoPath) and ('Forma/' .. RepoPath) or (isfile(RepoPath) and RepoPath));
+            local Candidates = {
+                'Forma/' .. RepoPath;
+                RepoPath;
+                'FormaAssets/Fonts/' .. Info.Ttf;
+            };
+
+            if type(Info.LocalAliases) == 'table' then
+                for _, Alias in ipairs(Info.LocalAliases) do
+                    table.insert(Candidates, Alias);
+                    table.insert(Candidates, 'fonts/' .. Alias);
+                    table.insert(Candidates, 'Forma/' .. Alias);
+                    table.insert(Candidates, 'Forma/fonts/' .. Alias);
+                end;
+            end;
+
+            local LocalFallback;
+            if isfile then
+                for _, Candidate in ipairs(Candidates) do
+                    if isfile(Candidate) then
+                        LocalFallback = Candidate;
+                        break;
+                    end;
+                end;
+            end;
+
             if LocalFallback and readfile then
                 local FallbackContent = readfile(LocalFallback);
                 if FallbackContent and (#FallbackContent >= 18000 or Info.Ttf ~= 'ComicMono.ttf') then
