@@ -226,8 +226,11 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.11';
-    AutoUpdateVersion = 1;
+    Version = '1.4.0+build.1';
+    Release = 'GA';
+    Build = 1;
+    VersionStandard = 'SemVer 2.0.0';
+    AutoUpdateVersion = 2;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
     UpdateManifestUrl = UpdateManifestUrl;
@@ -12642,28 +12645,264 @@ function Library:CreateOptionWheel(Config)
 end;
 
 
-local function ParseFormaVersion(Value)
-    local Parts = {};
-    for Number in tostring(Value or '0'):gmatch('%d+') do
-        table.insert(Parts, tonumber(Number) or 0);
-    end;
-    if #Parts == 0 then Parts[1] = 0; end;
-    return Parts;
+local function TrimVersion(Value)
+    return tostring(Value or ''):match('^%s*(.-)%s*$') or '';
 end;
 
-local function IsFormaVersionNewer(Remote, Current)
-    local A = ParseFormaVersion(Remote);
-    local B = ParseFormaVersion(Current);
+local function SplitVersionIdentifiers(Value)
+    local Result = {};
+    if not Value or Value == '' then return Result; end;
+    for Identifier in tostring(Value):gmatch('[^.]+') do
+        table.insert(Result, Identifier);
+    end;
+    return Result;
+end;
+
+local function IsValidVersionIdentifier(Value)
+    return type(Value) == 'string'
+        and Value ~= ''
+        and Value:match('^[0-9A-Za-z%-]+$') ~= nil;
+end;
+
+local function HasInvalidNumericLeadingZero(Value)
+    return type(Value) == 'string'
+        and #Value > 1
+        and Value:match('^%d+$') ~= nil
+        and Value:sub(1, 1) == '0';
+end;
+
+local function ParseFormaVersion(Value)
+    local Raw = TrimVersion(Value);
+    local Original = Raw;
+
+    if Raw:sub(1, 1) == 'v' or Raw:sub(1, 1) == 'V' then
+        Raw = Raw:sub(2);
+    end;
+
+    local MainAndPrerelease = Raw;
+    local BuildText;
+    local PlusIndex = Raw:find('+', 1, true);
+    if PlusIndex then
+        MainAndPrerelease = Raw:sub(1, PlusIndex - 1);
+        BuildText = Raw:sub(PlusIndex + 1);
+    end;
+
+    local CoreText = MainAndPrerelease;
+    local PrereleaseText;
+    local DashIndex = MainAndPrerelease:find('-', 1, true);
+    if DashIndex then
+        CoreText = MainAndPrerelease:sub(1, DashIndex - 1);
+        PrereleaseText = MainAndPrerelease:sub(DashIndex + 1);
+    end;
+
+    local MajorText, MinorText, PatchText = CoreText:match('^(%d+)%.(%d+)%.(%d+)$');
+    local Valid = MajorText ~= nil;
+
+    if Valid then
+        Valid = not HasInvalidNumericLeadingZero(MajorText)
+            and not HasInvalidNumericLeadingZero(MinorText)
+            and not HasInvalidNumericLeadingZero(PatchText);
+    end;
+
+    local Prerelease = SplitVersionIdentifiers(PrereleaseText);
+    if PrereleaseText ~= nil and (#Prerelease == 0 or PrereleaseText == '') then
+        Valid = false;
+    end;
+    for _, Identifier in ipairs(Prerelease) do
+        if not IsValidVersionIdentifier(Identifier)
+            or HasInvalidNumericLeadingZero(Identifier) then
+            Valid = false;
+            break;
+        end;
+    end;
+
+    local BuildIdentifiers = SplitVersionIdentifiers(BuildText);
+    if BuildText ~= nil and (#BuildIdentifiers == 0 or BuildText == '') then
+        Valid = false;
+    end;
+    for _, Identifier in ipairs(BuildIdentifiers) do
+        if not IsValidVersionIdentifier(Identifier) then
+            Valid = false;
+            break;
+        end;
+    end;
+
+    local LegacyParts = {};
+    for Number in Original:gmatch('%d+') do
+        table.insert(LegacyParts, tonumber(Number) or 0);
+    end;
+    if #LegacyParts == 0 then LegacyParts[1] = 0; end;
+
+    local Release = 'GA';
+    if #Prerelease > 0 then
+        local First = string.lower(Prerelease[1]);
+        if First == 'rc' or First:match('^rc%d+$') then
+            Release = 'RC';
+        else
+            Release = 'PRERELEASE';
+        end;
+    end;
+
+    local BuildNumber;
+    for Index, Identifier in ipairs(BuildIdentifiers) do
+        local Lower = string.lower(Identifier);
+        if Lower == 'build' and BuildIdentifiers[Index + 1]
+            and BuildIdentifiers[Index + 1]:match('^%d+$') then
+            BuildNumber = tonumber(BuildIdentifiers[Index + 1]);
+            break;
+        end;
+
+        local Inline = Lower:match('^build(%d+)$');
+        if Inline then
+            BuildNumber = tonumber(Inline);
+            break;
+        end;
+    end;
+
+    return {
+        Raw = Original;
+        Valid = Valid;
+        Major = tonumber(MajorText) or 0;
+        Minor = tonumber(MinorText) or 0;
+        Patch = tonumber(PatchText) or 0;
+        Prerelease = Prerelease;
+        BuildIdentifiers = BuildIdentifiers;
+        Build = BuildNumber;
+        Release = Release;
+        LegacyParts = LegacyParts;
+    };
+end;
+
+local function ComparePrereleaseIdentifiers(A, B)
+    local Count = math.max(#A, #B);
+    for Index = 1, Count do
+        local Left = A[Index];
+        local Right = B[Index];
+
+        if Left == nil then return -1; end;
+        if Right == nil then return 1; end;
+        if Left ~= Right then
+            local LeftNumeric = Left:match('^%d+$') ~= nil;
+            local RightNumeric = Right:match('^%d+$') ~= nil;
+
+            if LeftNumeric and RightNumeric then
+                local LeftNumber = tonumber(Left) or 0;
+                local RightNumber = tonumber(Right) or 0;
+                if LeftNumber < RightNumber then return -1; end;
+                if LeftNumber > RightNumber then return 1; end;
+            elseif LeftNumeric ~= RightNumeric then
+                return LeftNumeric and -1 or 1;
+            else
+                return Left < Right and -1 or 1;
+            end;
+        end;
+    end;
+    return 0;
+end;
+
+local function CompareLegacyVersions(A, B)
     local Count = math.max(#A, #B);
     for Index = 1, Count do
         local Left = A[Index] or 0;
         local Right = B[Index] or 0;
-        if Left ~= Right then
-            return Left > Right;
+        if Left < Right then return -1; end;
+        if Left > Right then return 1; end;
+    end;
+    return 0;
+end;
+
+local function CompareFormaVersions(LeftValue, RightValue)
+    local Left = ParseFormaVersion(LeftValue);
+    local Right = ParseFormaVersion(RightValue);
+
+    if not Left.Valid or not Right.Valid then
+        return CompareLegacyVersions(Left.LegacyParts, Right.LegacyParts);
+    end;
+
+    for _, Key in ipairs({ 'Major', 'Minor', 'Patch' }) do
+        if Left[Key] < Right[Key] then return -1; end;
+        if Left[Key] > Right[Key] then return 1; end;
+    end;
+
+    local LeftHasPrerelease = #Left.Prerelease > 0;
+    local RightHasPrerelease = #Right.Prerelease > 0;
+
+    if LeftHasPrerelease ~= RightHasPrerelease then
+        return LeftHasPrerelease and -1 or 1;
+    end;
+
+    if LeftHasPrerelease then
+        local PrereleaseComparison = ComparePrereleaseIdentifiers(Left.Prerelease, Right.Prerelease);
+        if PrereleaseComparison ~= 0 then return PrereleaseComparison; end;
+    end;
+
+    -- SemVer 2.0.0 explicitly ignores build metadata for precedence.
+    return 0;
+end;
+
+local function IsFormaVersionNewer(Remote, Current)
+    return CompareFormaVersions(Remote, Current) > 0;
+end;
+
+local function NormalizeReleaseType(Value, Parsed)
+    local Release = string.upper(tostring(Value or ''));
+    if Release == 'RC' or Release == 'GA' or Release == 'HF' then
+        return Release;
+    end;
+    return Parsed and Parsed.Release or 'GA';
+end;
+
+local function ResolveBuildNumber(Value, Parsed)
+    local Number = tonumber(Value);
+    if Number then return math.max(0, math.floor(Number)); end;
+    return Parsed and Parsed.Build or nil;
+end;
+
+function Library:ParseVersion(Value)
+    return ParseFormaVersion(Value);
+end;
+
+function Library:CompareVersions(Left, Right)
+    return CompareFormaVersions(Left, Right);
+end;
+
+function Library:IsVersionNewer(Remote, Current)
+    return IsFormaVersionNewer(Remote, Current);
+end;
+
+function Library:FormatVersion(Info)
+    Info = type(Info) == 'table' and Info or {};
+
+    local Major = math.max(0, math.floor(tonumber(Info.Major or Info.major) or 0));
+    local Minor = math.max(0, math.floor(tonumber(Info.Minor or Info.minor) or 0));
+    local Patch = math.max(0, math.floor(tonumber(Info.Patch or Info.patch) or 0));
+    local Release = string.upper(tostring(Info.Release or Info.release or 'GA'));
+    local Version = string.format('%d.%d.%d', Major, Minor, Patch);
+
+    if Release == 'RC' then
+        local RC = math.max(1, math.floor(tonumber(Info.RC or Info.rc or Info.Iteration or Info.iteration) or 1));
+        Version = Version .. '-rc.' .. tostring(RC);
+    elseif Release ~= 'GA' and Release ~= 'HF' then
+        local Prerelease = Info.Prerelease or Info.prerelease;
+        if type(Prerelease) == 'string' and Prerelease ~= '' then
+            Version = Version .. '-' .. Prerelease;
         end;
     end;
-    return false;
+
+    local Build = tonumber(Info.Build or Info.build);
+    if Build then
+        Version = Version .. '+build.' .. tostring(math.max(0, math.floor(Build)));
+    elseif type(Info.BuildMetadata or Info.buildMetadata) == 'string'
+        and (Info.BuildMetadata or Info.buildMetadata) ~= '' then
+        Version = Version .. '+' .. tostring(Info.BuildMetadata or Info.buildMetadata);
+    end;
+
+    return Version;
 end;
+
+Library.VersionInfo = ParseFormaVersion(Library.Version);
+Library.VersionInfo.Release = NormalizeReleaseType(Library.Release, Library.VersionInfo);
+Library.VersionInfo.Build = ResolveBuildNumber(Library.Build, Library.VersionInfo);
 
 local function AddUpdateCacheBuster(Url)
     local Separator = tostring(Url):find('?', 1, true) and '&' or '?';
@@ -12879,6 +13118,7 @@ function Library:GetRemoteUpdateInfo(ComponentName, Force)
     end;
 
     local RemoteVersion = tostring(Remote.version or Remote.Version or '0.0.0');
+    local ParsedRemote = ParseFormaVersion(RemoteVersion);
     if not IsFormaVersionNewer(RemoteVersion, Component.Version) then
         return nil;
     end;
@@ -12887,6 +13127,9 @@ function Library:GetRemoteUpdateInfo(ComponentName, Force)
         Name = ComponentName;
         CurrentVersion = Component.Version;
         Version = RemoteVersion;
+        Release = NormalizeReleaseType(Remote.release or Remote.Release, ParsedRemote);
+        Build = ResolveBuildNumber(Remote.build or Remote.Build, ParsedRemote);
+        VersionInfo = ParsedRemote;
         Path = tostring(Remote.path or Remote.Path or Component.Path or '');
         Changes = Remote.changes or Remote.Changes or {};
         Notes = Remote.notes or Remote.Notes;
@@ -12894,8 +13137,17 @@ function Library:GetRemoteUpdateInfo(ComponentName, Force)
 end;
 
 function Library:BuildUpdateDescription(Info)
+    local Release = NormalizeReleaseType(Info.Release, Info.VersionInfo);
+    local Build = ResolveBuildNumber(Info.Build, Info.VersionInfo);
+    local Meta = Release;
+
+    if Build ~= nil then
+        Meta = Meta .. '  •  Build ' .. tostring(Build);
+    end;
+
     return table.concat({
         string.format('%s  v%s  ->  v%s', tostring(Info.Name), tostring(Info.CurrentVersion), tostring(Info.Version));
+        Meta;
         '';
         'Update and restart the UI now?';
     }, '\n');
