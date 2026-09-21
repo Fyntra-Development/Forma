@@ -9146,11 +9146,15 @@ do
                 Row.Label = ButtonLabel;
                 Row.Value = Value;
 
-                function Row:UpdateButton()
+                local function ResolveRowTextColor()
                     local Selected = Info.Multi and Dropdown.Value[Value] or Dropdown.Value == Value;
-                    local TextColorKey = Selected and 'AccentColor' or 'DisabledTextColor';
-                    Library:TweenProperty(ButtonLabel, 'TextColor3', Library[TextColorKey], 0.10);
-                    Library.RegistryMap[ButtonLabel].Properties.TextColor3 = TextColorKey;
+                    return Selected and Library.AccentColor or Library.DisabledTextColor;
+                end;
+
+                Library.RegistryMap[ButtonLabel].Properties.TextColor3 = ResolveRowTextColor;
+
+                function Row:UpdateButton()
+                    Library:TweenProperty(ButtonLabel, 'TextColor3', ResolveRowTextColor(), 0.10);
                 end;
 
                 Button.InputBegan:Connect(function(Input)
