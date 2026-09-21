@@ -1,8 +1,31 @@
 local __FormaBootstrapEnv = getgenv and getgenv() or _G
 if not __FormaBootstrapEnv.__FormaLoaderBooting and type(loadstring) == 'function' then
     local __Success, __Updater = pcall(function()
-        local __Url = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/Loader.lua?forma_boot=' .. tostring(math.floor(os.clock() * 100000))
-        local __Source = game:HttpGet(__Url)
+        local __LoaderCacheVersion = '1.3.4'
+        local __LoaderCachePath = 'FormaCache/Loader-' .. __LoaderCacheVersion .. '.lua'
+        local __Source
+
+        if isfile and readfile and isfile(__LoaderCachePath) then
+            local __ReadSuccess, __Cached = pcall(readfile, __LoaderCachePath)
+            if __ReadSuccess and type(__Cached) == 'string' and __Cached ~= '' then
+                __Source = __Cached
+            end
+        end
+
+        if not __Source then
+            local __Url = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/Loader.lua?forma_boot=' .. tostring(math.floor(os.clock() * 100000))
+            __Source = game:HttpGet(__Url)
+
+            if writefile then
+                pcall(function()
+                    if makefolder and (not isfolder or not isfolder('FormaCache')) then
+                        makefolder('FormaCache')
+                    end
+                    writefile(__LoaderCachePath, __Source)
+                end)
+            end
+        end
+
         local __Chunk, __CompileError = loadstring(__Source)
         if not __Chunk then error(__CompileError) end
         return __Chunk()
