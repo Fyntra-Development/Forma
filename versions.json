@@ -2,7 +2,7 @@
   "schema": 1,
   "Components": {
     "Library": {
-      "version": "1.3.9",
+      "version": "1.3.9-r2",
       "path": "Library.lua"
     },
     "MenuManager": {
