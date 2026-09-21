@@ -226,7 +226,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.9-r2';
+    Version = '1.3.10';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
@@ -5204,28 +5204,38 @@ do
         });
     end;
 
+    local UtilityStyle = {
+        Padding = 5;
+        SearchHeight = 20;
+        HeaderHeight = 18;
+        RowHeight = 20;
+        CornerRadius = 2;
+        DetailTitleHeight = 20;
+        ButtonHeight = 20;
+    };
+
     local function CreateUtilityRoot(Groupbox, Height)
         local Root = Library:Create('Frame', {
-            BackgroundColor3 = Library.MainColor;
+            BackgroundColor3 = Library.BackgroundColor;
             BorderSizePixel = 0;
             ClipsDescendants = true;
-            Size = UDim2.new(1, -4, 0, math.max(tonumber(Height) or 260, 80));
+            Size = UDim2.new(1, -2, 0, math.max(tonumber(Height) or 260, 80));
             ZIndex = 5;
             Parent = Groupbox.Container;
         });
 
-        Library:AddCorner(Root, 3);
+        Library:AddCorner(Root, UtilityStyle.CornerRadius);
         local Stroke = Library:Create('UIStroke', {
             Color = Library.OutlineColor;
             Thickness = 1;
-            LineJoinMode = Enum.LineJoinMode.Round;
+            LineJoinMode = Enum.LineJoinMode.Miter;
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Parent = Root;
         });
-        Library:AddToRegistry(Root, { BackgroundColor3 = 'MainColor'; });
+        Library:AddToRegistry(Root, { BackgroundColor3 = 'BackgroundColor'; });
         Library:AddToRegistry(Stroke, { Color = 'OutlineColor'; });
 
-        Groupbox:AddBlank(5);
+        Groupbox:AddBlank(3);
         Groupbox:Resize();
         return Root;
     end;
@@ -5234,29 +5244,24 @@ do
         local Outer = Library:Create('Frame', {
             BackgroundColor3 = Library.OutlineColor;
             BorderSizePixel = 0;
-            Position = Position or UDim2.fromOffset(6, 6);
-            Size = Size or UDim2.new(1, -12, 0, 22);
+            Position = Position or UDim2.fromOffset(UtilityStyle.Padding, UtilityStyle.Padding);
+            Size = Size or UDim2.new(1, -(UtilityStyle.Padding * 2), 0, UtilityStyle.SearchHeight);
             ZIndex = 8;
             Parent = Parent;
         });
-        Library:AddCorner(Outer, 3);
+        Library:AddCorner(Outer, UtilityStyle.CornerRadius);
         Library:AddToRegistry(Outer, { BackgroundColor3 = 'OutlineColor'; });
 
         local Inner = Library:Create('Frame', {
-            BackgroundColor3 = Library.Contrast;
-            BorderColor3 = Library.OutlineColor;
-            BorderMode = Enum.BorderMode.Inset;
-            BorderSizePixel = 1;
+            BackgroundColor3 = Library.MainColor;
+            BorderSizePixel = 0;
             Position = UDim2.fromOffset(1, 1);
             Size = UDim2.new(1, -2, 1, -2);
             ZIndex = 9;
             Parent = Outer;
         });
-        Library:AddCorner(Inner, 3);
-        Library:AddToRegistry(Inner, {
-            BackgroundColor3 = 'Contrast';
-            BorderColor3 = 'OutlineColor';
-        });
+        Library:AddCorner(Inner, UtilityStyle.CornerRadius);
+        Library:AddToRegistry(Inner, { BackgroundColor3 = 'MainColor'; });
 
         local Box = Library:Create('TextBox', {
             BackgroundTransparency = 1;
@@ -5268,14 +5273,13 @@ do
             Size = UDim2.new(1, -12, 1, 0);
             Text = '';
             TextColor3 = Library.FontColor;
-            TextSize = 13;
-            TextStrokeTransparency = 0;
+            TextSize = 12;
+            TextStrokeTransparency = 1;
             TextXAlignment = Enum.TextXAlignment.Left;
             ZIndex = 10;
             Parent = Inner;
         });
         Library:ApplyFont(Box);
-        Library:ApplyTextStroke(Box);
         Library:AddToRegistry(Box, {
             TextColor3 = 'FontColor';
             PlaceholderColor3 = 'DisabledTextColor';
@@ -5291,27 +5295,28 @@ do
             CanvasSize = UDim2.fromOffset(0, 0);
             Position = Position;
             Size = Size;
-            ScrollBarThickness = 2;
-            ScrollBarImageColor3 = Library.AccentColor;
-            ScrollBarImageTransparency = 0.25;
+            ScrollBarThickness = 1;
+            ScrollBarImageColor3 = Library.DisabledTextColor;
+            ScrollBarImageTransparency = 0.45;
             ZIndex = 7;
             Parent = Parent;
         });
-        Library:AddCorner(Scrolling, 3);
+        Library:AddCorner(Scrolling, UtilityStyle.CornerRadius);
         Library:AddToRegistry(Scrolling, {
             BackgroundColor3 = 'Inline';
-            ScrollBarImageColor3 = 'AccentColor';
+            ScrollBarImageColor3 = 'DisabledTextColor';
         });
 
         local Stroke = Library:Create('UIStroke', {
             Color = Library.OutlineColor;
             Thickness = 1;
+            LineJoinMode = Enum.LineJoinMode.Miter;
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Parent = Scrolling;
         });
         Library:AddToRegistry(Stroke, { Color = 'OutlineColor'; });
 
-        if Padding then
+        if Padding and Padding > 0 then
             Library:Create('UIPadding', {
                 PaddingTop = UDim.new(0, Padding);
                 PaddingBottom = UDim.new(0, Padding);
@@ -5329,7 +5334,7 @@ do
     local function CreateUtilityButton(Parent, Text, Position, Size, ActiveResolver)
         local Button = Library:Create('TextButton', {
             AutoButtonColor = false;
-            BackgroundColor3 = Library.Contrast;
+            BackgroundColor3 = Library.MainColor;
             BorderSizePixel = 0;
             Position = Position;
             Size = Size;
@@ -5341,38 +5346,51 @@ do
             Parent = Parent;
         });
         Library:ApplyFont(Button);
-        Library:AddCorner(Button, 3);
+        Library:AddCorner(Button, UtilityStyle.CornerRadius);
 
+        local Stroke = Library:Create('UIStroke', {
+            Color = Library.OutlineColor;
+            Thickness = 1;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            LineJoinMode = Enum.LineJoinMode.Miter;
+            Parent = Button;
+        });
+
+        local function IsActive()
+            return type(ActiveResolver) == 'function' and ActiveResolver() == true;
+        end;
         local function ResolveBackground()
-            if type(ActiveResolver) == 'function' and ActiveResolver() then
-                return Library.AccentColor:Lerp(Library.MainColor, 0.78);
-            end;
-            return Library.Contrast;
+            return IsActive() and Library.AccentColor:Lerp(Library.MainColor, 0.88) or Library.MainColor;
         end;
         local function ResolveText()
-            if type(ActiveResolver) == 'function' and ActiveResolver() then
-                return Library.FontColor;
-            end;
-            return Library.DisabledTextColor;
+            return IsActive() and Library.FontColor or Library.DisabledTextColor;
+        end;
+        local function ResolveStroke()
+            return IsActive() and Library.AccentColor or Library.OutlineColor;
         end;
 
         Library:AddToRegistry(Button, {
             BackgroundColor3 = ResolveBackground;
             TextColor3 = ResolveText;
         });
+        Library:AddToRegistry(Stroke, { Color = ResolveStroke; });
 
         UtilityButtonRefresh[Button] = function(Animated)
             local Background = ResolveBackground();
             local Foreground = ResolveText();
+            local Outline = ResolveStroke();
             if Animated then
                 Library:Animate(Button, {
                     BackgroundColor3 = Background;
                     TextColor3 = Foreground;
-                }, 0.12, nil, 'Color');
+                }, 0.10, nil, 'Color');
+                Library:Animate(Stroke, { Color = Outline; }, 0.10, nil, 'Color');
             else
                 Library:CancelMotion(Button);
+                Library:CancelMotion(Stroke);
                 Button.BackgroundColor3 = Background;
                 Button.TextColor3 = Foreground;
+                Stroke.Color = Outline;
             end;
         end;
 
@@ -5384,10 +5402,45 @@ do
         if Refresh then Refresh(Animated); end
     end;
 
+    local function CreateUtilitySectionTitle(Parent, Text, Position, Size)
+        local Bar = Library:Create('Frame', {
+            BackgroundColor3 = Library.MainColor;
+            BorderSizePixel = 0;
+            Position = Position;
+            Size = Size;
+            ZIndex = 9;
+            Parent = Parent;
+        });
+        Library:AddToRegistry(Bar, { BackgroundColor3 = 'MainColor'; });
+
+        local Line = Library:Create('Frame', {
+            BackgroundColor3 = Library.OutlineColor;
+            BorderSizePixel = 0;
+            Position = UDim2.new(0, 0, 1, -1);
+            Size = UDim2.new(1, 0, 0, 1);
+            ZIndex = 10;
+            Parent = Bar;
+        });
+        Library:AddToRegistry(Line, { BackgroundColor3 = 'OutlineColor'; });
+
+        local Label = Library:CreateLabel({
+            BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(6, 0);
+            Size = UDim2.new(1, -12, 1, 0);
+            Text = tostring(Text or '');
+            TextColor3 = Library.FontColor;
+            TextSize = 12;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            ZIndex = 10;
+            Parent = Bar;
+        });
+        return Bar, Label;
+    end;
+
     function Funcs:AddConsole(Info)
         Info = type(Info) == 'table' and Info or {};
         local Groupbox = self;
-        local Height = tonumber(Info.Height) or 300;
+        local Height = tonumber(Info.Height) or 320;
         local Root = CreateUtilityRoot(Groupbox, Height);
         local Console = {
             Type = 'Console';
@@ -5398,11 +5451,11 @@ do
             AutoScroll = Info.AutoScroll ~= false;
         };
 
-        local Levels = Info.Levels or { 'Output', 'Info', 'Warning', 'Error' };
+        local Levels = Info.Levels or { 'Output', 'Info', 'Warning' };
         local Toolbar = Library:Create('Frame', {
             BackgroundTransparency = 1;
-            Position = UDim2.fromOffset(6, 6);
-            Size = UDim2.new(1, -12, 0, 22);
+            Position = UDim2.fromOffset(UtilityStyle.Padding, UtilityStyle.Padding);
+            Size = UDim2.new(1, -(UtilityStyle.Padding * 2), 0, UtilityStyle.SearchHeight);
             ZIndex = 8;
             Parent = Root;
         });
@@ -5411,48 +5464,105 @@ do
             Toolbar,
             Info.SearchPlaceholder or 'Search...',
             UDim2.fromOffset(0, 0),
-            UDim2.new(0.42, -3, 1, 0)
+            UDim2.new(0.46, -3, 1, 0)
         );
 
         local FilterHolder = Library:Create('Frame', {
             BackgroundTransparency = 1;
-            Position = UDim2.new(0.42, 3, 0, 0);
-            Size = UDim2.new(0.58, -3, 1, 0);
-            ZIndex = 8;
+            Position = UDim2.new(0.46, 5, 0, 0);
+            Size = UDim2.new(0.54, -5, 1, 0);
+            ZIndex = 9;
             Parent = Toolbar;
         });
 
         local FilterLayout = Library:Create('UIListLayout', {
             FillDirection = Enum.FillDirection.Horizontal;
             HorizontalAlignment = Enum.HorizontalAlignment.Right;
-            Padding = UDim.new(0, 4);
+            VerticalAlignment = Enum.VerticalAlignment.Center;
+            Padding = UDim.new(0, 7);
             SortOrder = Enum.SortOrder.LayoutOrder;
             Parent = FilterHolder;
         });
 
         local FilterButtons = {};
+        local function FilterColor(Level)
+            if Level == 'Info' then
+                return Library.AccentColor;
+            elseif Level == 'Warning' then
+                return Color3.fromRGB(235, 214, 91);
+            elseif Level == 'Error' then
+                return Library.RiskColor;
+            end;
+            return Library.FontColor;
+        end;
+
         for Index, Level in ipairs(Levels) do
             Console.Filters[Level] = true;
-            local Button = CreateUtilityButton(
-                FilterHolder,
-                Level,
-                UDim2.fromOffset(0, 0),
-                UDim2.new(1 / math.max(#Levels, 1), -3, 1, 0),
-                function() return Console.Filters[Level] == true; end
-            );
-            Button.LayoutOrder = Index;
-            FilterButtons[Level] = Button;
+            local TextWidth = select(1, Library:GetTextBounds(tostring(Level), Library.Font, 12));
+            local Button = Library:Create('TextButton', {
+                AutoButtonColor = false;
+                BackgroundTransparency = 1;
+                LayoutOrder = Index;
+                Size = UDim2.fromOffset(math.ceil(TextWidth) + 18, UtilityStyle.SearchHeight);
+                Text = '';
+                ZIndex = 10;
+                Parent = FilterHolder;
+            });
+
+            local Box = Library:Create('Frame', {
+                BackgroundColor3 = FilterColor(Level);
+                BorderSizePixel = 0;
+                Position = UDim2.fromOffset(1, 5);
+                Size = UDim2.fromOffset(9, 9);
+                ZIndex = 11;
+                Parent = Button;
+            });
+            local BoxStroke = Library:Create('UIStroke', {
+                Color = Library.OutlineColor;
+                Thickness = 1;
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                Parent = Box;
+            });
+            Library:AddToRegistry(BoxStroke, { Color = 'OutlineColor'; });
+            Library:AddToRegistry(Box, {
+                BackgroundColor3 = function()
+                    return Console.Filters[Level] and FilterColor(Level) or Library.MainColor;
+                end;
+            });
+
+            local Label = Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(14, 0);
+                Size = UDim2.new(1, -14, 1, 0);
+                Text = tostring(Level);
+                TextColor3 = Library.FontColor;
+                TextSize = 12;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 11;
+                Parent = Button;
+            });
+
+            Button.MouseButton1Click:Connect(function()
+                Console.Filters[Level] = not Console.Filters[Level];
+                Console:Refresh();
+            end);
+
+            FilterButtons[Level] = {
+                Button = Button;
+                Box = Box;
+                Label = Label;
+            };
         end;
 
         local Viewport = CreateUtilityScroller(
             Root,
-            UDim2.fromOffset(6, 34),
-            UDim2.new(1, -12, 1, -40),
-            5
+            UDim2.fromOffset(UtilityStyle.Padding, 31),
+            UDim2.new(1, -(UtilityStyle.Padding * 2), 1, -36),
+            6
         );
         local Layout = Library:Create('UIListLayout', {
             FillDirection = Enum.FillDirection.Vertical;
-            Padding = UDim.new(0, 2);
+            Padding = UDim.new(0, 1);
             SortOrder = Enum.SortOrder.LayoutOrder;
             Parent = Viewport;
         });
@@ -5461,7 +5571,7 @@ do
             if Level == 'Info' then
                 return Library.AccentColor;
             elseif Level == 'Warning' then
-                return Color3.fromRGB(235, 196, 82);
+                return Color3.fromRGB(235, 214, 91);
             elseif Level == 'Error' then
                 return Library.RiskColor;
             end;
@@ -5469,7 +5579,7 @@ do
         end;
 
         local function UpdateCanvas()
-            Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 10);
+            Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 12);
             if Console.AutoScroll then
                 task.defer(function()
                     local MaxY = math.max(Viewport.AbsoluteCanvasSize.Y - Viewport.AbsoluteSize.Y, 0);
@@ -5494,8 +5604,11 @@ do
                     Entry.Category.TextColor3 = CategoryColor(Entry.Level);
                 end;
             end;
-            for _, Button in next, FilterButtons do
-                RefreshUtilityButton(Button, false);
+            for Level, Filter in next, FilterButtons do
+                local Registry = Library.RegistryMap[Filter.Box];
+                if Registry and Registry.Properties and type(Registry.Properties.BackgroundColor3) == 'function' then
+                    Filter.Box.BackgroundColor3 = Registry.Properties.BackgroundColor3();
+                end;
             end;
             task.defer(UpdateCanvas);
         end;
@@ -5535,19 +5648,18 @@ do
 
             local TimeLabel = Library:CreateLabel({
                 Position = UDim2.fromOffset(0, 0);
-                Size = UDim2.fromOffset(68, 18);
+                Size = UDim2.fromOffset(66, 18);
                 Text = '[' .. tostring(Clock) .. ']';
-                TextColor3 = Library.DisabledTextColor;
+                TextColor3 = Library.FontColor;
                 TextSize = 12;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 ZIndex = 9;
                 Parent = Row;
             });
-            Library.RegistryMap[TimeLabel].Properties.TextColor3 = 'DisabledTextColor';
 
             local Category = Library:CreateLabel({
-                Position = UDim2.fromOffset(70, 0);
-                Size = UDim2.fromOffset(64, 18);
+                Position = UDim2.fromOffset(66, 0);
+                Size = UDim2.fromOffset(72, 18);
                 Text = '[' .. string.upper(Level) .. ']';
                 TextColor3 = CategoryColor(Level);
                 TextSize = 12;
@@ -5560,9 +5672,10 @@ do
             end;
 
             local MessageLabel = Library:CreateLabel({
-                Position = UDim2.fromOffset(136, 0);
-                Size = UDim2.new(1, -138, 0, 18);
+                Position = UDim2.fromOffset(138, 0);
+                Size = UDim2.new(1, -140, 0, 18);
                 Text = tostring(Message or '');
+                TextColor3 = Library.FontColor;
                 TextSize = 12;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 TextTruncate = Enum.TextTruncate.AtEnd;
@@ -5611,12 +5724,6 @@ do
         SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
             Console:Refresh();
         end);
-        for Level, Button in next, FilterButtons do
-            Button.MouseButton1Click:Connect(function()
-                Console.Filters[Level] = not Console.Filters[Level];
-                Console:Refresh();
-            end);
-        end;
 
         Console.SearchBox = SearchBox;
         Console.Viewport = Viewport;
@@ -5637,7 +5744,7 @@ do
     function Funcs:AddTable(Info)
         Info = type(Info) == 'table' and Info or {};
         local Groupbox = self;
-        local Height = tonumber(Info.Height) or 300;
+        local Height = tonumber(Info.Height) or 420;
         local Root = CreateUtilityRoot(Groupbox, Height);
         local DataTable = {
             Type = 'Table';
@@ -5656,65 +5763,95 @@ do
             };
         end;
 
+        local HasFilterLabel = type(Info.FilterLabel) == 'string' and Info.FilterLabel ~= '';
+        local FilterLabelHeight = HasFilterLabel and 20 or 0;
+        if HasFilterLabel then
+            local FilterBar = Library:Create('Frame', {
+                BackgroundColor3 = Library.MainColor;
+                BorderSizePixel = 0;
+                Position = UDim2.fromOffset(UtilityStyle.Padding, UtilityStyle.Padding);
+                Size = UDim2.new(1, -(UtilityStyle.Padding * 2), 0, 20);
+                ZIndex = 8;
+                Parent = Root;
+            });
+            local FilterStroke = Library:Create('UIStroke', {
+                Color = Library.OutlineColor;
+                Thickness = 1;
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                Parent = FilterBar;
+            });
+            Library:AddToRegistry(FilterBar, { BackgroundColor3 = 'MainColor'; });
+            Library:AddToRegistry(FilterStroke, { Color = 'OutlineColor'; });
+            local FilterLabel = Library:CreateLabel({
+                Position = UDim2.fromOffset(6, 0);
+                Size = UDim2.new(1, -12, 1, 0);
+                Text = Info.FilterLabel;
+                TextColor3 = Library.FontColor;
+                TextSize = 12;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 9;
+                Parent = FilterBar;
+            });
+        end;
+
+        local SearchY = UtilityStyle.Padding + FilterLabelHeight + (HasFilterLabel and 4 or 0);
         local SearchBox = CreateUtilitySearch(
             Root,
             Info.SearchPlaceholder or 'Search...',
-            UDim2.fromOffset(6, 6),
-            UDim2.new(1, -12, 0, 22)
+            UDim2.fromOffset(UtilityStyle.Padding, SearchY),
+            UDim2.new(1, -(UtilityStyle.Padding * 2), 0, UtilityStyle.SearchHeight)
         );
 
+        local HeaderY = SearchY + UtilityStyle.SearchHeight + 5;
         local Header = Library:Create('Frame', {
-            BackgroundColor3 = Library.Contrast;
+            BackgroundColor3 = Library.MainColor;
             BorderSizePixel = 0;
-            Position = UDim2.fromOffset(6, 34);
-            Size = UDim2.new(1, -12, 0, 22);
+            Position = UDim2.fromOffset(UtilityStyle.Padding, HeaderY);
+            Size = UDim2.new(1, -(UtilityStyle.Padding * 2), 0, UtilityStyle.HeaderHeight);
             ZIndex = 8;
             Parent = Root;
         });
-        Library:AddCorner(Header, 3);
-        Library:AddToRegistry(Header, { BackgroundColor3 = 'Contrast'; });
+        Library:AddToRegistry(Header, { BackgroundColor3 = 'MainColor'; });
 
-        local HeaderLayout = Library:Create('UIListLayout', {
-            FillDirection = Enum.FillDirection.Horizontal;
-            SortOrder = Enum.SortOrder.LayoutOrder;
+        local HeaderStroke = Library:Create('UIStroke', {
+            Color = Library.OutlineColor;
+            Thickness = 1;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Parent = Header;
         });
+        Library:AddToRegistry(HeaderStroke, { Color = 'OutlineColor'; });
 
-        local DetailHeight = math.max(tonumber(Info.DetailHeight) or (Info.DetailFields and 78 or 0), 0);
-        local DetailGap = DetailHeight > 0 and 6 or 0;
-        local Viewport = CreateUtilityScroller(
-            Root,
-            UDim2.fromOffset(6, 60),
-            UDim2.new(1, -12, 1, -(66 + DetailHeight + DetailGap)),
-            3
-        );
-        local Layout = Library:Create('UIListLayout', {
-            FillDirection = Enum.FillDirection.Vertical;
-            Padding = UDim.new(0, 1);
-            SortOrder = Enum.SortOrder.LayoutOrder;
-            Parent = Viewport;
-        });
-
-        local function ColumnWidth(Column)
-            local Width = tonumber(Column.Width);
-            if not Width or Width <= 0 then return 1 / #DataTable.Columns; end
-            if Width <= 1 then return Width; end
-            return Width / math.max(Root.AbsoluteSize.X - 18, 1);
+        local ColumnSpans = {};
+        do
+            local Total = 0;
+            for _, Column in ipairs(DataTable.Columns) do
+                Total = Total + math.max(tonumber(Column.Width) or 1, 0.001);
+            end;
+            local Cursor = 0;
+            for Index, Column in ipairs(DataTable.Columns) do
+                local Width = math.max(tonumber(Column.Width) or 1, 0.001);
+                ColumnSpans[Index] = {
+                    X = Cursor / Total;
+                    Width = Width / Total;
+                };
+                Cursor = Cursor + Width;
+            end;
         end;
 
         local HeaderButtons = {};
         for Index, Column in ipairs(DataTable.Columns) do
             local Key = Column.Key or Column.Name or Index;
+            local Span = ColumnSpans[Index];
             local Button = Library:Create('TextButton', {
                 AutoButtonColor = false;
                 BackgroundTransparency = 1;
-                LayoutOrder = Index;
-                Size = UDim2.new(ColumnWidth(Column), 0, 1, 0);
+                Position = UDim2.new(Span.X, 4, 0, 0);
+                Size = UDim2.new(Span.Width, -8, 1, 0);
                 Text = tostring(Column.Name or Key);
-                TextColor3 = Library.DisabledTextColor;
+                TextColor3 = Library.FontColor;
                 TextSize = 12;
                 TextStrokeTransparency = 1;
-                TextXAlignment = Column.Align == 'Center' and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left;
+                TextXAlignment = Column.Align == 'Left' and Enum.TextXAlignment.Left or (Column.Align == 'Right' and Enum.TextXAlignment.Right or Enum.TextXAlignment.Center);
                 ZIndex = 9;
                 Parent = Header;
             });
@@ -5722,7 +5859,7 @@ do
             Library:AddToRegistry(Button, {
                 TextColor3 = function()
                     if DataTable.SortKey == Key then return Library.AccentColor; end
-                    return Library.DisabledTextColor;
+                    return Library.FontColor;
                 end;
             });
             HeaderButtons[Key] = Button;
@@ -5740,63 +5877,36 @@ do
             end;
         end;
 
-        local function UpdateCanvas()
-            Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 6);
-        end;
-        Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(UpdateCanvas);
+        local DetailHeight = math.max(tonumber(Info.DetailHeight) or (Info.DetailFields and 122 or 0), 0);
+        local DetailGap = DetailHeight > 0 and 7 or 0;
+        local ListY = HeaderY + UtilityStyle.HeaderHeight + 4;
+        local Viewport = CreateUtilityScroller(
+            Root,
+            UDim2.fromOffset(UtilityStyle.Padding, ListY),
+            UDim2.new(1, -(UtilityStyle.Padding * 2), 1, -(ListY + UtilityStyle.Padding + DetailHeight + DetailGap)),
+            2
+        );
+        local Layout = Library:Create('UIListLayout', {
+            FillDirection = Enum.FillDirection.Vertical;
+            Padding = UDim.new(0, 0);
+            SortOrder = Enum.SortOrder.LayoutOrder;
+            Parent = Viewport;
+        });
 
-        local DetailPane;
-        local DetailContent;
-        local DetailActions;
-        local DetailActionButtons = {};
-        if DetailHeight > 0 then
-            DetailPane = Library:Create('Frame', {
-                BackgroundColor3 = Library.Contrast;
-                BorderSizePixel = 0;
-                Position = UDim2.new(0, 6, 1, -(DetailHeight + 6));
-                Size = UDim2.new(1, -12, 0, DetailHeight);
-                ZIndex = 8;
-                Parent = Root;
-            });
-            Library:AddCorner(DetailPane, 3);
-            Library:AddToRegistry(DetailPane, { BackgroundColor3 = 'Contrast'; });
-
-            local DetailStroke = Library:Create('UIStroke', {
-                Color = Library.OutlineColor;
-                Thickness = 1;
-                ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-                Parent = DetailPane;
-            });
-            Library:AddToRegistry(DetailStroke, { Color = 'OutlineColor'; });
-
-            DetailContent = Library:Create('Frame', {
-                BackgroundTransparency = 1;
-                Position = UDim2.fromOffset(7, 5);
-                Size = UDim2.new(0.62, -10, 1, -10);
-                ZIndex = 9;
-                Parent = DetailPane;
-            });
-            Library:Create('UIListLayout', {
-                FillDirection = Enum.FillDirection.Vertical;
-                Padding = UDim.new(0, 1);
-                SortOrder = Enum.SortOrder.LayoutOrder;
-                Parent = DetailContent;
-            });
-
-            DetailActions = Library:Create('Frame', {
-                BackgroundTransparency = 1;
-                Position = UDim2.new(0.62, 2, 0, 5);
-                Size = UDim2.new(0.38, -9, 1, -10);
-                ZIndex = 9;
-                Parent = DetailPane;
-            });
-            Library:Create('UIListLayout', {
-                FillDirection = Enum.FillDirection.Vertical;
-                Padding = UDim.new(0, 4);
-                SortOrder = Enum.SortOrder.LayoutOrder;
-                Parent = DetailActions;
-            });
-        end;
+        local EmptyState = Library:CreateLabel({
+            BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(UtilityStyle.Padding + 4, ListY + 4);
+            Size = UDim2.new(1, -((UtilityStyle.Padding + 4) * 2), 1, -(ListY + DetailHeight + DetailGap + 13));
+            Text = tostring(Info.EmptyText or 'No rows');
+            TextColor3 = Library.DisabledTextColor;
+            TextSize = 12;
+            TextXAlignment = Enum.TextXAlignment.Center;
+            TextYAlignment = Enum.TextYAlignment.Center;
+            Visible = false;
+            ZIndex = 9;
+            Parent = Root;
+        });
+        Library.RegistryMap[EmptyState].Properties.TextColor3 = 'DisabledTextColor';
 
         local function GetCellValue(RowData, Column, Index)
             local Key = Column.Key or Column.Name or Index;
@@ -5823,24 +5933,131 @@ do
 
         local function ResolveRowColor(Row)
             if DataTable.Selected == Row then
-                return Library.AccentColor:Lerp(Library.MainColor, 0.82);
+                return Library.AccentColor:Lerp(Library.Inline, 0.84);
             elseif Row.Hovered then
-                return Library.Contrast;
+                return Library.MainColor;
             end;
-            return Library.MainColor;
+            return Library.Inline;
         end;
+
+        local DetailPane;
+        local DetailContent;
+        local DetailActions;
+        local DetailAvatar;
+        local DetailAvatarStroke;
+        local DetailActionButtons = {};
+        local DetailSelectors = {};
+
+        if DetailHeight > 0 then
+            DetailPane = Library:Create('Frame', {
+                BackgroundColor3 = Library.Inline;
+                BorderSizePixel = 0;
+                Position = UDim2.new(0, UtilityStyle.Padding, 1, -(DetailHeight + UtilityStyle.Padding));
+                Size = UDim2.new(1, -(UtilityStyle.Padding * 2), 0, DetailHeight);
+                ZIndex = 8;
+                Parent = Root;
+            });
+            Library:AddToRegistry(DetailPane, { BackgroundColor3 = 'Inline'; });
+
+            local DetailStroke = Library:Create('UIStroke', {
+                Color = Library.OutlineColor;
+                Thickness = 1;
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                Parent = DetailPane;
+            });
+            Library:AddToRegistry(DetailStroke, { Color = 'OutlineColor'; });
+
+            CreateUtilitySectionTitle(
+                DetailPane,
+                Info.DetailTitle or 'Settings',
+                UDim2.fromOffset(0, 0),
+                UDim2.new(1, 0, 0, UtilityStyle.DetailTitleHeight)
+            );
+
+            local BodyY = UtilityStyle.DetailTitleHeight + 5;
+
+            local AvatarHolder = Library:Create('Frame', {
+                BackgroundColor3 = Library.MainColor;
+                BorderSizePixel = 0;
+                Position = UDim2.fromOffset(6, BodyY);
+                Size = UDim2.fromOffset(62, math.max(DetailHeight - BodyY - 6, 52));
+                ZIndex = 9;
+                Parent = DetailPane;
+            });
+            Library:AddToRegistry(AvatarHolder, { BackgroundColor3 = 'MainColor'; });
+            local AvatarHolderStroke = Library:Create('UIStroke', {
+                Color = Library.OutlineColor;
+                Thickness = 1;
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                Parent = AvatarHolder;
+            });
+            Library:AddToRegistry(AvatarHolderStroke, { Color = 'OutlineColor'; });
+
+            DetailAvatar = Library:Create('ImageLabel', {
+                BackgroundTransparency = 1;
+                BorderSizePixel = 0;
+                Image = '';
+                Position = UDim2.fromOffset(3, 3);
+                Size = UDim2.new(1, -6, 1, -6);
+                ScaleType = Enum.ScaleType.Fit;
+                Visible = false;
+                ZIndex = 10;
+                Parent = AvatarHolder;
+            });
+
+            DetailContent = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(75, BodyY);
+                Size = UDim2.new(0.47, -75, 1, -(BodyY + 6));
+                ZIndex = 9;
+                Parent = DetailPane;
+            });
+            Library:Create('UIListLayout', {
+                FillDirection = Enum.FillDirection.Vertical;
+                Padding = UDim.new(0, 0);
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                Parent = DetailContent;
+            });
+
+            DetailActions = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                Position = UDim2.new(0.64, 0, 0, BodyY);
+                Size = UDim2.new(0.36, -6, 1, -(BodyY + 6));
+                ZIndex = 9;
+                Parent = DetailPane;
+            });
+            Library:Create('UIListLayout', {
+                FillDirection = Enum.FillDirection.Vertical;
+                Padding = UDim.new(0, 4);
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                Parent = DetailActions;
+            });
+        end;
+
+        local function UpdateCanvas()
+            Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 4);
+        end;
+        Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(UpdateCanvas);
 
         function DataTable:RefreshDetails()
             for _, Button in ipairs(DetailActionButtons) do
                 RefreshUtilityButton(Button, false);
             end;
+
+            local Data = DataTable.Selected and DataTable.Selected.Data or nil;
+
+            if DetailAvatar then
+                local UserId = Data and tonumber(Data.UserId or Data.userId or Data.UserID);
+                DetailAvatar.Visible = UserId ~= nil and UserId > 0;
+                DetailAvatar.Image = UserId and ('rbxthumb://type=AvatarHeadShot&id=' .. tostring(UserId) .. '&w=150&h=150') or '';
+            end;
+
             if not DetailContent then return; end
 
             for _, Child in ipairs(DetailContent:GetChildren()) do
                 if Child:IsA('GuiObject') then Child:Destroy(); end
             end;
 
-            local Data = DataTable.Selected and DataTable.Selected.Data or nil;
             local Fields = Info.DetailFields or {};
             if not Data then
                 local Empty = Library:CreateLabel({
@@ -5854,43 +6071,60 @@ do
                     Parent = DetailContent;
                 });
                 Library.RegistryMap[Empty].Properties.TextColor3 = 'DisabledTextColor';
-                return;
+            else
+                for Index, Field in ipairs(Fields) do
+                    local Key;
+                    local Name;
+                    if type(Field) == 'table' then
+                        Key = Field.Key or Field.Name or Index;
+                        Name = Field.Name or tostring(Key);
+                    else
+                        Key = Field;
+                        Name = tostring(Field);
+                    end;
+
+                    local Value = Data[Key];
+                    if Value == nil then Value = '--'; end
+                    local Line = Library:CreateLabel({
+                        BackgroundTransparency = 1;
+                        LayoutOrder = Index;
+                        Size = UDim2.new(1, 0, 0, 15);
+                        Text = tostring(Name) .. ':  ' .. tostring(Value);
+                        TextColor3 = Library.FontColor;
+                        TextSize = 12;
+                        TextXAlignment = Enum.TextXAlignment.Left;
+                        TextTruncate = Enum.TextTruncate.AtEnd;
+                        ZIndex = 10;
+                        Parent = DetailContent;
+                    });
+                end;
             end;
 
-            for Index, Field in ipairs(Fields) do
-                local Key;
-                local Name;
-                if type(Field) == 'table' then
-                    Key = Field.Key or Field.Name or Index;
-                    Name = Field.Name or tostring(Key);
-                else
-                    Key = Field;
-                    Name = tostring(Field);
-                end;
-
-                local Value = Data[Key];
-                if Value == nil then Value = '--'; end
-                local Line = Library:CreateLabel({
-                    BackgroundTransparency = 1;
-                    LayoutOrder = Index;
-                    Size = UDim2.new(1, 0, 0, 15);
-                    Text = tostring(Name) .. ':  ' .. tostring(Value);
-                    TextColor3 = Library.DisabledTextColor;
-                    TextSize = 12;
-                    TextXAlignment = Enum.TextXAlignment.Left;
-                    TextTruncate = Enum.TextTruncate.AtEnd;
-                    ZIndex = 10;
-                    Parent = DetailContent;
-                });
-                Library.RegistryMap[Line].Properties.TextColor3 = 'DisabledTextColor';
+            for _, Selector in ipairs(DetailSelectors) do
+                local Value = Selector.Values[1];
+                if Data then
+                    if type(Selector.GetValue) == 'function' then
+                        local Success, Result = pcall(Selector.GetValue, Data, DataTable);
+                        if Success and Result ~= nil then Value = Result; end
+                    elseif Selector.Key and Data[Selector.Key] ~= nil then
+                        Value = Data[Selector.Key];
+                    end
+                end
+                Selector.Value = tostring(Value or '');
+                Selector.Button.Text = Selector.Value .. '  ▾';
+                Selector.Button.TextColor3 = Data and Library.FontColor or Library.DisabledTextColor;
             end;
         end;
 
         function DataTable:Refresh()
+            local VisibleCount = 0;
             for _, Row in ipairs(DataTable.Rows) do
+                Row:RefreshData();
                 Row.Frame.Visible = RowMatches(Row);
+                if Row.Frame.Visible then VisibleCount = VisibleCount + 1; end
                 Row:RefreshStyle(false);
             end;
+            EmptyState.Visible = VisibleCount == 0;
             for _, Button in next, HeaderButtons do
                 local Entry = Library.RegistryMap[Button];
                 if Entry and Entry.Properties and type(Entry.Properties.TextColor3) == 'function' then
@@ -5908,41 +6142,41 @@ do
             };
 
             local Frame = Library:Create('Frame', {
-                BackgroundColor3 = Library.MainColor;
+                BackgroundColor3 = Library.Inline;
                 BorderSizePixel = 0;
-                Size = UDim2.new(1, -2, 0, tonumber(Info.RowHeight) or 22);
+                Size = UDim2.new(1, -2, 0, tonumber(Info.RowHeight) or UtilityStyle.RowHeight);
                 ZIndex = 8;
                 Parent = Viewport;
             });
-            Library:AddCorner(Frame, 2);
             Row.Frame = Frame;
 
             Library:AddToRegistry(Frame, {
                 BackgroundColor3 = function() return ResolveRowColor(Row); end;
             });
 
-            local CellLayout = Library:Create('UIListLayout', {
-                FillDirection = Enum.FillDirection.Horizontal;
-                SortOrder = Enum.SortOrder.LayoutOrder;
-                Parent = Frame;
-            });
-
             Row.Labels = {};
             for Index, Column in ipairs(DataTable.Columns) do
+                local Span = ColumnSpans[Index];
                 local Label = Library:CreateLabel({
                     BackgroundTransparency = 1;
-                    LayoutOrder = Index;
-                    Position = UDim2.fromOffset(4, 0);
-                    Size = UDim2.new(ColumnWidth(Column), -4, 1, 0);
-                    Text = GetCellValue(RowData, Column, Index);
+                    Position = UDim2.new(Span.X, 4, 0, 0);
+                    Size = UDim2.new(Span.Width, -8, 1, 0);
+                    Text = '';
                     TextColor3 = Library.FontColor;
                     TextSize = 12;
-                    TextXAlignment = Column.Align == 'Center' and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left;
+                    TextXAlignment = Column.Align == 'Left' and Enum.TextXAlignment.Left or (Column.Align == 'Right' and Enum.TextXAlignment.Right or Enum.TextXAlignment.Center);
                     TextTruncate = Enum.TextTruncate.AtEnd;
                     ZIndex = 9;
                     Parent = Frame;
                 });
-                table.insert(Row.Labels, Label);
+                Row.Labels[Index] = Label;
+            end;
+
+            function Row:RefreshData()
+                for Index, Column in ipairs(DataTable.Columns) do
+                    local Label = Row.Labels[Index];
+                    if Label then Label.Text = GetCellValue(Row.Data, Column, Index); end
+                end
             end;
 
             local Hitbox = Library:Create('TextButton', {
@@ -5958,7 +6192,7 @@ do
             function Row:RefreshStyle(Animated)
                 local Target = ResolveRowColor(Row);
                 if Animated then
-                    Library:Animate(Frame, { BackgroundColor3 = Target; }, 0.10, nil, 'Color');
+                    Library:Animate(Frame, { BackgroundColor3 = Target; }, 0.08, nil, 'Color');
                 else
                     Library:CancelMotion(Frame, 'BackgroundColor3');
                     Frame.BackgroundColor3 = Target;
@@ -5979,8 +6213,9 @@ do
 
             table.insert(DataTable.Rows, Row);
             Frame.LayoutOrder = #DataTable.Rows;
+            Row:RefreshData();
             Frame.Visible = RowMatches(Row);
-            task.defer(UpdateCanvas);
+            DataTable:Refresh();
             return Row;
         end;
 
@@ -6045,7 +6280,7 @@ do
             end;
             if Row and Row.Frame then Row.Frame:Destroy(); end
             for Order, Existing in ipairs(DataTable.Rows) do Existing.Frame.LayoutOrder = Order; end
-            UpdateCanvas();
+            DataTable:Refresh();
         end;
 
         function DataTable:Clear()
@@ -6055,12 +6290,13 @@ do
             table.clear(DataTable.Rows);
             DataTable.Selected = nil;
             DataTable:RefreshDetails();
-            UpdateCanvas();
+            DataTable:Refresh();
         end;
 
         function DataTable:SetRows(Rows)
             DataTable:Clear();
             for _, RowData in ipairs(Rows or {}) do DataTable:AddRow(RowData); end
+            DataTable:Refresh();
         end;
 
         function DataTable:SetSearch(Query)
@@ -6080,22 +6316,79 @@ do
         if DetailActions and type(Info.DetailActions) == 'table' then
             for Index, Action in ipairs(Info.DetailActions) do
                 if type(Action) == 'table' and Action.Text then
-                    local ActionButton = CreateUtilityButton(
-                        DetailActions,
-                        Action.Text,
-                        UDim2.fromOffset(0, 0),
-                        UDim2.new(1, 0, 0, 20),
-                        function() return DataTable.Selected ~= nil; end
-                    );
-                    ActionButton.LayoutOrder = Index;
-                    table.insert(DetailActionButtons, ActionButton);
-                    ActionButton.MouseButton1Click:Connect(function()
-                        if DataTable.Selected and type(Action.Callback or Action.Func) == 'function' then
-                            Library:SafeCallback(Action.Callback or Action.Func, DataTable.Selected.Data, DataTable.Selected, DataTable);
-                        end
-                    end);
-                end
-            end
+                    if type(Action.Values) == 'table' and #Action.Values > 0 then
+                        local Holder = Library:Create('Frame', {
+                            BackgroundTransparency = 1;
+                            LayoutOrder = Index;
+                            Size = UDim2.new(1, 0, 0, Action.Label and 37 or 20);
+                            ZIndex = 10;
+                            Parent = DetailActions;
+                        });
+
+                        if Action.Label then
+                            local ActionLabel = Library:CreateLabel({
+                                BackgroundTransparency = 1;
+                                Size = UDim2.new(1, 0, 0, 14);
+                                Text = tostring(Action.Label);
+                                TextColor3 = Library.FontColor;
+                                TextSize = 12;
+                                TextXAlignment = Enum.TextXAlignment.Left;
+                                ZIndex = 11;
+                                Parent = Holder;
+                            });
+                        end;
+
+                        local SelectorButton = CreateUtilityButton(
+                            Holder,
+                            tostring(Action.Values[1]) .. '  ▾',
+                            UDim2.new(0, 0, 0, Action.Label and 16 or 0),
+                            UDim2.new(1, 0, 0, UtilityStyle.ButtonHeight),
+                            function() return DataTable.Selected ~= nil; end
+                        );
+                        SelectorButton.TextXAlignment = Enum.TextXAlignment.Left;
+
+                        local Selector = {
+                            Button = SelectorButton;
+                            Values = Action.Values;
+                            Key = Action.Key;
+                            GetValue = Action.GetValue;
+                            Callback = Action.Callback or Action.Func;
+                            Value = tostring(Action.Values[1]);
+                        };
+                        table.insert(DetailSelectors, Selector);
+
+                        SelectorButton.MouseButton1Click:Connect(function()
+                            local Data = DataTable.Selected and DataTable.Selected.Data;
+                            if not Data then return; end
+
+                            local CurrentIndex = table.find(Selector.Values, Selector.Value) or 0;
+                            local NextValue = Selector.Values[(CurrentIndex % #Selector.Values) + 1];
+                            Selector.Value = tostring(NextValue);
+                            if Selector.Key then Data[Selector.Key] = NextValue; end
+                            if type(Selector.Callback) == 'function' then
+                                Library:SafeCallback(Selector.Callback, Data, NextValue, DataTable.Selected, DataTable);
+                            end
+                            DataTable:Refresh();
+                            DataTable:RefreshDetails();
+                        end);
+                    else
+                        local ActionButton = CreateUtilityButton(
+                            DetailActions,
+                            Action.Text,
+                            UDim2.fromOffset(0, 0),
+                            UDim2.new(1, 0, 0, UtilityStyle.ButtonHeight),
+                            function() return DataTable.Selected ~= nil; end
+                        );
+                        ActionButton.LayoutOrder = Index;
+                        table.insert(DetailActionButtons, ActionButton);
+                        ActionButton.MouseButton1Click:Connect(function()
+                            if DataTable.Selected and type(Action.Callback or Action.Func) == 'function' then
+                                Library:SafeCallback(Action.Callback or Action.Func, DataTable.Selected.Data, DataTable.Selected, DataTable);
+                            end
+                        end);
+                    end;
+                end;
+            end;
         end;
 
         SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
@@ -6106,6 +6399,7 @@ do
         DataTable.SearchBox = SearchBox;
         DataTable.Viewport = Viewport;
         DataTable.Header = Header;
+        DataTable.DetailPane = DetailPane;
 
         if type(Info.Rows) == 'table' then DataTable:SetRows(Info.Rows); end
         return DataTable;
@@ -6118,7 +6412,7 @@ do
     function Funcs:AddChat(Info)
         Info = type(Info) == 'table' and Info or {};
         local Groupbox = self;
-        local Height = tonumber(Info.Height) or 320;
+        local Height = tonumber(Info.Height) or 400;
         local Root = CreateUtilityRoot(Groupbox, Height);
         local Chat = {
             Type = 'Chat';
@@ -6128,23 +6422,23 @@ do
             OnSend = Info.OnSend or Info.Callback;
         };
 
-        local ComposerHeight = Info.Composer == false and 0 or 30;
+        local ComposerHeight = Info.Composer == false and 0 or 34;
         local Viewport = CreateUtilityScroller(
             Root,
-            UDim2.fromOffset(6, 6),
-            UDim2.new(1, -12, 1, -(12 + ComposerHeight)),
-            6
+            UDim2.fromOffset(UtilityStyle.Padding, UtilityStyle.Padding),
+            UDim2.new(1, -(UtilityStyle.Padding * 2), 1, -(UtilityStyle.Padding * 2 + ComposerHeight)),
+            8
         );
         local Layout = Library:Create('UIListLayout', {
             FillDirection = Enum.FillDirection.Vertical;
-            Padding = UDim.new(0, 6);
+            Padding = UDim.new(0, 8);
             SortOrder = Enum.SortOrder.LayoutOrder;
             Parent = Viewport;
         });
 
         local function ScrollBottom()
             task.defer(function()
-                Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 12);
+                Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 16);
                 local MaxY = math.max(Viewport.AbsoluteCanvasSize.Y - Viewport.AbsoluteSize.Y, 0);
                 Viewport.CanvasPosition = Vector2.new(0, MaxY);
             end);
@@ -6160,10 +6454,10 @@ do
 
             local Side = tostring(MessageInfo.Side or 'Left');
             local IsRight = string.lower(Side) == 'right';
-            local AvatarSize = (MessageInfo.Avatar or MessageInfo.UserId) and 34 or 0;
+            local AvatarSize = (MessageInfo.Avatar or MessageInfo.UserId) and 36 or 0;
             local Row = Library:Create('Frame', {
                 BackgroundTransparency = 1;
-                Size = UDim2.new(1, -2, 0, 48);
+                Size = UDim2.new(1, -2, 0, 52);
                 ZIndex = 8;
                 Parent = Viewport;
             });
@@ -6175,28 +6469,36 @@ do
                     Image = 'rbxthumb://type=AvatarHeadShot&id=' .. tostring(MessageInfo.UserId) .. '&w=100&h=100';
                 end;
                 Avatar = Library:Create('ImageLabel', {
-                    BackgroundColor3 = Library.Contrast;
+                    BackgroundColor3 = Library.MainColor;
                     BorderSizePixel = 0;
                     Image = tostring(Image or '');
                     Position = IsRight and UDim2.new(1, -AvatarSize, 0, 2) or UDim2.fromOffset(0, 2);
                     Size = UDim2.fromOffset(AvatarSize, AvatarSize);
+                    ScaleType = Enum.ScaleType.Crop;
                     ZIndex = 9;
                     Parent = Row;
                 });
                 Library:AddCorner(Avatar, math.floor(AvatarSize / 2));
-                Library:AddToRegistry(Avatar, { BackgroundColor3 = 'Contrast'; });
+                Library:AddToRegistry(Avatar, { BackgroundColor3 = 'MainColor'; });
+                local AvatarStroke = Library:Create('UIStroke', {
+                    Color = Library.OutlineColor;
+                    Thickness = 1;
+                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                    Parent = Avatar;
+                });
+                Library:AddToRegistry(AvatarStroke, { Color = 'OutlineColor'; });
             end;
 
-            local LeftPad = not IsRight and AvatarSize > 0 and AvatarSize + 8 or 0;
-            local RightPad = IsRight and AvatarSize > 0 and AvatarSize + 8 or 0;
+            local LeftPad = not IsRight and AvatarSize > 0 and AvatarSize + 9 or 0;
+            local RightPad = IsRight and AvatarSize > 0 and AvatarSize + 9 or 0;
             local NameText = tostring(MessageInfo.Name or MessageInfo.DisplayName or 'User');
             local Username = MessageInfo.Username and tostring(MessageInfo.Username) or '';
-            if Username ~= '' then NameText = NameText .. '  ' .. Username; end;
+            if Username ~= '' then NameText = NameText .. ' (' .. Username .. ')'; end;
 
             local NameLabel = Library:CreateLabel({
                 BackgroundTransparency = 1;
                 Position = UDim2.fromOffset(LeftPad, 0);
-                Size = UDim2.new(1, -(LeftPad + RightPad), 0, 16);
+                Size = UDim2.new(1, -(LeftPad + RightPad), 0, 17);
                 Text = NameText;
                 TextColor3 = Library.FontColor;
                 TextSize = 12;
@@ -6207,10 +6509,10 @@ do
 
             local Body = Library:CreateLabel({
                 BackgroundTransparency = 1;
-                Position = UDim2.fromOffset(LeftPad, 17);
+                Position = UDim2.fromOffset(LeftPad, 18);
                 Size = UDim2.new(1, -(LeftPad + RightPad), 0, 28);
                 Text = tostring(MessageInfo.Text or MessageInfo.Message or '');
-                TextColor3 = Library.DisabledTextColor;
+                TextColor3 = Library.FontColor;
                 TextSize = 12;
                 TextWrapped = true;
                 TextXAlignment = IsRight and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left;
@@ -6218,7 +6520,6 @@ do
                 ZIndex = 9;
                 Parent = Row;
             });
-            Library.RegistryMap[Body].Properties.TextColor3 = 'DisabledTextColor';
 
             local Message = {
                 Frame = Row;
@@ -6238,8 +6539,8 @@ do
                     Library.BaseTextSizes[Body] or 12,
                     Vector2.new(Available, 10000)
                 );
-                local ContentHeight = math.max(AvatarSize + 4, 20 + TextHeight);
-                Row.Size = UDim2.new(1, -2, 0, math.max(ContentHeight, 42));
+                local ContentHeight = math.max(AvatarSize + 4, 21 + TextHeight);
+                Row.Size = UDim2.new(1, -2, 0, math.max(ContentHeight, 44));
                 Body.Size = UDim2.new(1, -(LeftPad + RightPad), 0, math.max(TextHeight + 2, 20));
                 ScrollBottom();
             end);
@@ -6265,47 +6566,39 @@ do
             local Composer = Library:Create('Frame', {
                 BackgroundColor3 = Library.OutlineColor;
                 BorderSizePixel = 0;
-                Position = UDim2.new(0, 6, 1, -30);
-                Size = UDim2.new(1, -42, 0, 24);
+                Position = UDim2.new(0, UtilityStyle.Padding + 7, 1, -34);
+                Size = UDim2.new(1, -52, 0, 28);
                 ZIndex = 8;
                 Parent = Root;
             });
-            Library:AddCorner(Composer, 3);
             Library:AddToRegistry(Composer, { BackgroundColor3 = 'OutlineColor'; });
 
             local ComposerInner = Library:Create('Frame', {
-                BackgroundColor3 = Library.Contrast;
-                BorderColor3 = Library.OutlineColor;
-                BorderMode = Enum.BorderMode.Inset;
-                BorderSizePixel = 1;
+                BackgroundColor3 = Library.MainColor;
+                BorderSizePixel = 0;
                 Position = UDim2.fromOffset(1, 1);
                 Size = UDim2.new(1, -2, 1, -2);
                 ZIndex = 9;
                 Parent = Composer;
             });
-            Library:AddCorner(ComposerInner, 3);
-            Library:AddToRegistry(ComposerInner, {
-                BackgroundColor3 = 'Contrast';
-                BorderColor3 = 'OutlineColor';
-            });
+            Library:AddToRegistry(ComposerInner, { BackgroundColor3 = 'MainColor'; });
 
             ComposerBox = Library:Create('TextBox', {
                 BackgroundTransparency = 1;
                 ClearTextOnFocus = false;
                 PlaceholderColor3 = Library.DisabledTextColor;
                 PlaceholderText = Info.Placeholder or 'Type here...';
-                Position = UDim2.fromOffset(6, 0);
-                Size = UDim2.new(1, -12, 1, 0);
+                Position = UDim2.fromOffset(7, 0);
+                Size = UDim2.new(1, -14, 1, 0);
                 Text = '';
                 TextColor3 = Library.FontColor;
                 TextSize = 12;
-                TextStrokeTransparency = 0;
+                TextStrokeTransparency = 1;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 ZIndex = 10;
                 Parent = ComposerInner;
             });
             Library:ApplyFont(ComposerBox);
-            Library:ApplyTextStroke(ComposerBox);
             Library:AddToRegistry(ComposerBox, {
                 TextColor3 = 'FontColor';
                 PlaceholderColor3 = 'DisabledTextColor';
@@ -6315,11 +6608,11 @@ do
             local SendButton = CreateUtilityButton(
                 Root,
                 '↗',
-                UDim2.new(1, -32, 1, -30),
-                UDim2.fromOffset(26, 24),
+                UDim2.new(1, -36, 1, -34),
+                UDim2.fromOffset(30, 28),
                 function() return ComposerBox:IsFocused(); end
             );
-            SendButton.TextSize = 16;
+            SendButton.TextSize = 18;
 
             local function Submit()
                 local Text = ComposerBox.Text;
@@ -6369,7 +6662,7 @@ do
     function Funcs:AddCardGrid(Info)
         Info = type(Info) == 'table' and Info or {};
         local Groupbox = self;
-        local Height = tonumber(Info.Height) or 300;
+        local Height = tonumber(Info.Height) or 380;
         local Root = CreateUtilityRoot(Groupbox, Height);
         local CardGrid = {
             Type = 'CardGrid';
@@ -6380,27 +6673,27 @@ do
             Callback = Info.Callback or Info.OnSelected;
         };
 
-        local HasSearch = Info.Searchable ~= false;
-        local TopOffset = HasSearch and 34 or 6;
+        local HasSearch = Info.Searchable == true;
+        local TopOffset = HasSearch and 31 or UtilityStyle.Padding;
         local SearchBox;
         if HasSearch then
             SearchBox = CreateUtilitySearch(
                 Root,
                 Info.SearchPlaceholder or 'Search...',
-                UDim2.fromOffset(6, 6),
-                UDim2.new(1, -12, 0, 22)
+                UDim2.fromOffset(UtilityStyle.Padding, UtilityStyle.Padding),
+                UDim2.new(1, -(UtilityStyle.Padding * 2), 0, UtilityStyle.SearchHeight)
             );
         end;
 
         local Viewport = CreateUtilityScroller(
             Root,
-            UDim2.fromOffset(6, TopOffset),
-            UDim2.new(1, -12, 1, -(TopOffset + 6)),
-            6
+            UDim2.fromOffset(UtilityStyle.Padding, TopOffset),
+            UDim2.new(1, -(UtilityStyle.Padding * 2), 1, -(TopOffset + UtilityStyle.Padding)),
+            7
         );
 
-        local CardSize = typeof(Info.CardSize) == 'Vector2' and Info.CardSize or Vector2.new(96, 104);
-        local Spacing = tonumber(Info.Spacing) or 7;
+        local CardSize = typeof(Info.CardSize) == 'Vector2' and Info.CardSize or Vector2.new(105, 105);
+        local Spacing = tonumber(Info.Spacing) or 6;
         local GridLayout = Library:Create('UIGridLayout', {
             CellPadding = UDim2.fromOffset(Spacing, Spacing);
             CellSize = UDim2.fromOffset(CardSize.X, CardSize.Y);
@@ -6412,17 +6705,17 @@ do
         });
 
         local function UpdateCanvas()
-            Viewport.CanvasSize = UDim2.fromOffset(0, GridLayout.AbsoluteContentSize.Y + 12);
+            Viewport.CanvasSize = UDim2.fromOffset(0, GridLayout.AbsoluteContentSize.Y + 14);
         end;
         GridLayout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(UpdateCanvas);
 
         local function ResolveCardBackground(Card)
             if CardGrid.Selected == Card then
-                return Library.AccentColor:Lerp(Library.MainColor, 0.84);
+                return Library.AccentColor:Lerp(Library.MainColor, 0.90);
             elseif Card.Hovered then
-                return Library.Contrast;
+                return Library.MainColor;
             end
-            return Library.MainColor;
+            return Library.Inline;
         end;
 
         function CardGrid:Refresh()
@@ -6444,19 +6737,19 @@ do
             };
 
             local Frame = Library:Create('Frame', {
-                BackgroundColor3 = Library.MainColor;
+                BackgroundColor3 = Library.Inline;
                 BorderSizePixel = 0;
                 Size = UDim2.fromOffset(CardSize.X, CardSize.Y);
                 ZIndex = 8;
                 Parent = Viewport;
             });
-            Library:AddCorner(Frame, 4);
             Card.Frame = Frame;
 
             local Stroke = Library:Create('UIStroke', {
                 Color = Library.OutlineColor;
                 Thickness = 1;
                 ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                LineJoinMode = Enum.LineJoinMode.Miter;
                 Parent = Frame;
             });
             Card.Stroke = Stroke;
@@ -6474,20 +6767,43 @@ do
             local PreviewHeight = math.max(CardSize.Y - 28, 36);
             if Data.Image then
                 local Preview = Library:Create('ImageLabel', {
-                    BackgroundColor3 = Library.Inline;
+                    BackgroundColor3 = Library.MainColor;
                     BorderSizePixel = 0;
                     Image = tostring(Data.Image);
-                    Position = UDim2.fromOffset(6, 6);
-                    Size = UDim2.new(1, -12, 0, PreviewHeight - 8);
+                    Position = UDim2.fromOffset(7, 7);
+                    Size = UDim2.new(1, -14, 0, PreviewHeight - 10);
                     ScaleType = Enum.ScaleType.Fit;
                     ZIndex = 9;
                     Parent = Frame;
                 });
-                Library:AddCorner(Preview, 3);
-                Library:AddToRegistry(Preview, { BackgroundColor3 = 'Inline'; });
+                Library:AddToRegistry(Preview, { BackgroundColor3 = 'MainColor'; });
                 Card.Preview = Preview;
+            elseif Data.Icon == 'plus' then
+                local Circle = Library:Create('Frame', {
+                    BackgroundColor3 = Library.FontColor;
+                    BorderSizePixel = 0;
+                    AnchorPoint = Vector2.new(0.5, 0.5);
+                    Position = UDim2.new(0.5, 0, 0, math.floor(PreviewHeight * 0.52));
+                    Size = UDim2.fromOffset(24, 24);
+                    ZIndex = 9;
+                    Parent = Frame;
+                });
+                Library:AddCorner(Circle, 12);
+                Library:AddToRegistry(Circle, { BackgroundColor3 = 'FontColor'; });
+
+                local Plus = Library:CreateLabel({
+                    BackgroundTransparency = 1;
+                    Size = UDim2.fromScale(1, 1);
+                    Text = '+';
+                    TextColor3 = Library.BackgroundColor;
+                    TextSize = 20;
+                    ZIndex = 10;
+                    Parent = Circle;
+                });
+                Library.RegistryMap[Plus].Properties.TextColor3 = 'BackgroundColor';
+                Card.IconLabel = Plus;
             else
-                local IconText = tostring(Data.IconText or (Data.Icon == 'plus' and '+' or Data.Icon or ''));
+                local IconText = tostring(Data.IconText or Data.Icon or '');
                 local IconLabel = Library:CreateLabel({
                     BackgroundTransparency = 1;
                     Position = UDim2.fromOffset(6, 6);
@@ -6506,10 +6822,12 @@ do
 
             local Title = Library:CreateLabel({
                 BackgroundTransparency = 1;
-                Position = UDim2.new(0, 5, 1, -22);
+                Position = UDim2.new(0, 5, 1, -25);
                 Size = UDim2.new(1, -10, 0, 18);
                 Text = tostring(Data.Title or '');
+                TextColor3 = Library.FontColor;
                 TextSize = 12;
+                TextXAlignment = Enum.TextXAlignment.Center;
                 TextTruncate = Enum.TextTruncate.AtEnd;
                 ZIndex = 9;
                 Parent = Frame;
@@ -6530,8 +6848,8 @@ do
                 local Background = ResolveCardBackground(Card);
                 local Outline = CardGrid.Selected == Card and Library.AccentColor or Library.OutlineColor;
                 if Animated then
-                    Library:Animate(Frame, { BackgroundColor3 = Background; }, 0.12, nil, 'Color');
-                    Library:Animate(Stroke, { Color = Outline; }, 0.12, nil, 'Color');
+                    Library:Animate(Frame, { BackgroundColor3 = Background; }, 0.10, nil, 'Color');
+                    Library:Animate(Stroke, { Color = Outline; }, 0.10, nil, 'Color');
                 else
                     Library:CancelMotion(Frame, 'BackgroundColor3');
                     Library:CancelMotion(Stroke, 'Color');
@@ -9732,6 +10050,8 @@ function Library:CreateUtilityWindow(Config)
     local Title = tostring(Config.Title or 'Utility');
     local SafeName = Title:gsub('[^%w_%-]', ''):sub(1, 36);
     if SafeName == '' then SafeName = 'Utility'; end
+    local ShowCloseButton = Config.CloseButton == true;
+    local TitleAccent = Config.TitleAccent == true;
 
     Library.UtilityDisplayOrder = (Library.UtilityDisplayOrder or 30) + 1;
     Library.UtilitySerial = (Library.UtilitySerial or 0) + 1;
@@ -9765,7 +10085,7 @@ function Library:CreateUtilityWindow(Config)
 
     local Outer = Library:Create('Frame', {
         Active = true;
-        BackgroundColor3 = Color3.new(0, 0, 0);
+        BackgroundColor3 = Library.OutlineColor;
         BorderSizePixel = 0;
         Position = InitialPosition;
         Size = UDim2.fromOffset(Width, Height);
@@ -9773,71 +10093,62 @@ function Library:CreateUtilityWindow(Config)
         ZIndex = 1;
         Parent = UtilityGui;
     });
-    Library:AddCorner(Outer, 4);
+    Library:AddToRegistry(Outer, { BackgroundColor3 = 'OutlineColor'; });
 
     local Inner = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
-        BorderColor3 = Library.AccentColor;
-        BorderMode = Enum.BorderMode.Inset;
-        BorderSizePixel = 1;
+        BorderSizePixel = 0;
         Position = UDim2.fromOffset(1, 1);
         Size = UDim2.new(1, -2, 1, -2);
         ZIndex = 2;
         Parent = Outer;
     });
-    Library:AddCorner(Inner, 3);
-    Library:AddToRegistry(Inner, {
-        BackgroundColor3 = 'MainColor';
-        BorderColor3 = 'AccentColor';
-    }, true);
-    Library:AddAccentGlow(Inner, 0.94);
-    Library:AddAccentOutline(Inner, 1);
+    Library:AddToRegistry(Inner, { BackgroundColor3 = 'MainColor'; }, true);
 
     local AccentBar = Library:Create('Frame', {
         BackgroundColor3 = Library.AccentColor;
         BorderSizePixel = 0;
         Position = UDim2.fromOffset(0, 0);
-        Size = UDim2.new(1, 0, 0, 2);
-        ZIndex = 4;
+        Size = UDim2.new(1, 0, 0, 1);
+        ZIndex = 5;
         Parent = Inner;
     });
-    Library:AddCorner(AccentBar, 1);
     Library:AddToRegistry(AccentBar, { BackgroundColor3 = 'AccentColor'; }, true);
-    Library:AddMovingAccentGradient(AccentBar, 2.2);
 
     local Header = Library:Create('Frame', {
         Active = true;
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.fromOffset(0, 2);
-        Size = UDim2.new(1, 0, 0, 24);
+        Position = UDim2.fromOffset(0, 1);
+        Size = UDim2.new(1, 0, 0, 22);
         ZIndex = 3;
         Parent = Inner;
     });
 
     local TitleLabel = Library:CreateLabel({
         BackgroundTransparency = 1;
-        Position = UDim2.fromOffset(8, 0);
-        Size = UDim2.new(1, Config.CloseButton == false and -12 or -38, 1, 0);
+        Position = UDim2.fromOffset(7, 0);
+        Size = UDim2.new(1, ShowCloseButton and -34 or -12, 1, 0);
         Text = Title;
-        TextColor3 = Library.FontColor;
-        TextSize = 14;
+        TextColor3 = TitleAccent and Library.AccentColor or Library.FontColor;
+        TextSize = 13;
         TextXAlignment = Enum.TextXAlignment.Left;
         ZIndex = 4;
         Parent = Header;
     });
+    Library.RegistryMap[TitleLabel].Properties.TextColor3 = TitleAccent and 'AccentColor' or 'FontColor';
 
     local CloseButton;
-    if Config.CloseButton ~= false then
+    if ShowCloseButton then
         CloseButton = Library:Create('TextButton', {
             AutoButtonColor = false;
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Position = UDim2.new(1, -26, 0, 0);
-            Size = UDim2.fromOffset(24, 24);
+            Position = UDim2.new(1, -22, 0, 0);
+            Size = UDim2.fromOffset(20, 20);
             Text = '×';
             TextColor3 = Library.DisabledTextColor;
-            TextSize = 16;
+            TextSize = 15;
             TextStrokeTransparency = 1;
             ZIndex = 5;
             Parent = Header;
@@ -9845,18 +10156,18 @@ function Library:CreateUtilityWindow(Config)
         Library:ApplyFont(CloseButton);
         Library:AddToRegistry(CloseButton, { TextColor3 = 'DisabledTextColor'; }, true);
         CloseButton.MouseEnter:Connect(function()
-            Library:Animate(CloseButton, { TextColor3 = Library.FontColor; }, 0.10, nil, 'Color');
+            Library:Animate(CloseButton, { TextColor3 = Library.FontColor; }, 0.08, nil, 'Color');
         end);
         CloseButton.MouseLeave:Connect(function()
-            Library:Animate(CloseButton, { TextColor3 = Library.DisabledTextColor; }, 0.10, nil, 'Color');
+            Library:Animate(CloseButton, { TextColor3 = Library.DisabledTextColor; }, 0.08, nil, 'Color');
         end);
     end
 
     local Divider = Library:Create('Frame', {
         BackgroundColor3 = Library.OutlineColor;
         BorderSizePixel = 0;
-        Position = UDim2.fromOffset(6, 26);
-        Size = UDim2.new(1, -12, 0, 1);
+        Position = UDim2.fromOffset(5, 23);
+        Size = UDim2.new(1, -10, 0, 1);
         ZIndex = 3;
         Parent = Inner;
     });
@@ -9866,8 +10177,8 @@ function Library:CreateUtilityWindow(Config)
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
         ClipsDescendants = true;
-        Position = UDim2.fromOffset(6, 30);
-        Size = UDim2.new(1, -12, 1, -36);
+        Position = UDim2.fromOffset(5, 28);
+        Size = UDim2.new(1, -10, 1, -33);
         ZIndex = 3;
         Parent = Inner;
     });
@@ -9907,7 +10218,7 @@ function Library:CreateUtilityWindow(Config)
 
             if not Outer.Visible then
                 Outer.Visible = true;
-                Outer.Position = OffsetUtilityPosition(Window.RestingPosition, 7);
+                Outer.Position = OffsetUtilityPosition(Window.RestingPosition, 5);
                 Library:SetUnifiedFadeProgress(Outer, 0);
             end
 
@@ -9916,10 +10227,8 @@ function Library:CreateUtilityWindow(Config)
                 Outer.Position = Window.RestingPosition;
                 Library:SetUnifiedFadeProgress(Outer, 1);
             else
-                Library:Animate(Outer, {
-                    Position = Window.RestingPosition;
-                }, 0.18, nil, 'Menu');
-                Library:TweenUnifiedFade(Outer, 1, 0.17, nil, 'Fade');
+                Library:Animate(Outer, { Position = Window.RestingPosition; }, 0.16, nil, 'Menu');
+                Library:TweenUnifiedFade(Outer, 1, 0.15, nil, 'Fade');
             end
             return;
         end
@@ -9932,7 +10241,7 @@ function Library:CreateUtilityWindow(Config)
         Window.Visible = false;
         Library:CancelMotion(Outer, 'Position');
         Window.RestingPosition = Outer.Position;
-        local ExitPosition = OffsetUtilityPosition(Window.RestingPosition, 6);
+        local ExitPosition = OffsetUtilityPosition(Window.RestingPosition, 5);
 
         if Instant then
             Library:CancelMotion(Outer);
@@ -9940,10 +10249,8 @@ function Library:CreateUtilityWindow(Config)
             Outer.Visible = false;
             Outer.Position = Window.RestingPosition;
         else
-            Library:Animate(Outer, {
-                Position = ExitPosition;
-            }, 0.13, nil, 'MenuExit');
-            Library:TweenUnifiedFade(Outer, 0, 0.13, function(StateValue)
+            Library:Animate(Outer, { Position = ExitPosition; }, 0.12, nil, 'MenuExit');
+            Library:TweenUnifiedFade(Outer, 0, 0.12, function(StateValue)
                 if not Window.Visible
                     and StateValue ~= Enum.PlaybackState.Cancelled
                     and Outer.Parent then
@@ -9967,7 +10274,7 @@ function Library:CreateUtilityWindow(Config)
         if typeof(NewPosition) ~= 'UDim2' then return; end
         Window.RestingPosition = NewPosition;
         if Animated then
-            Library:Animate(Outer, { Position = NewPosition; }, 0.16, nil, 'Layout');
+            Library:Animate(Outer, { Position = NewPosition; }, 0.14, nil, 'Layout');
         else
             Library:CancelMotion(Outer, 'Position');
             Outer.Position = NewPosition;
@@ -9985,9 +10292,9 @@ function Library:CreateUtilityWindow(Config)
         end
         NewWidth = math.max(tonumber(NewWidth) or Outer.AbsoluteSize.X, 240);
         NewHeight = math.max(tonumber(NewHeight) or Outer.AbsoluteSize.Y, 150);
-        Library:Animate(Outer, { Size = UDim2.fromOffset(NewWidth, NewHeight); }, 0.16, nil, 'Resize');
+        Library:Animate(Outer, { Size = UDim2.fromOffset(NewWidth, NewHeight); }, 0.14, nil, 'Resize');
         if Window.Component and Window.Component.Root then
-            Window.Component.Root.Size = UDim2.new(1, -4, 0, math.max(NewHeight - 42, 80));
+            Window.Component.Root.Size = UDim2.new(1, -2, 0, math.max(NewHeight - 36, 80));
         end
     end
 
@@ -10030,14 +10337,14 @@ function Library:CreateUtilityWindow(Config)
     Window.TitleLabel = TitleLabel;
     Window.Content = Content;
     Window.Host = Host;
-    Window.ContentHeight = math.max(Height - 42, 80);
+    Window.ContentHeight = math.max(Height - 36, 80);
 
     table.insert(Library.UtilityWindows, Window);
-    Library:MakeDraggable(Outer, 28);
+    Library:MakeDraggable(Outer, 24);
     return Window;
 end;
 
-local function CreateStandaloneUtility(ComponentName, Config, DefaultTitle, DefaultWidth, DefaultHeight)
+    local function CreateStandaloneUtility(ComponentName, Config, DefaultTitle, DefaultWidth, DefaultHeight)
     Config = type(Config) == 'table' and table.clone(Config) or {};
     local Window = Library:CreateUtilityWindow({
         Title = Config.Title or DefaultTitle;
@@ -10093,11 +10400,15 @@ local function CreateStandaloneUtility(ComponentName, Config, DefaultTitle, Defa
 end;
 
 function Library:CreateConsole(Config)
-    return CreateStandaloneUtility('Console', Config, 'Console', 390, 320);
+    Config = type(Config) == 'table' and table.clone(Config) or {};
+    if Config.TitleAccent == nil then Config.TitleAccent = true; end
+    return CreateStandaloneUtility('Console', Config, 'Console', 380, 366);
 end;
 
 function Library:CreateTable(Config)
-    return CreateStandaloneUtility('Table', Config, 'Table', 430, 370);
+    Config = type(Config) == 'table' and table.clone(Config) or {};
+    if Config.TitleAccent == nil then Config.TitleAccent = true; end
+    return CreateStandaloneUtility('Table', Config, 'Table', 456, 500);
 end;
 
 function Library:CreateDataTable(Config)
@@ -10105,11 +10416,15 @@ function Library:CreateDataTable(Config)
 end;
 
 function Library:CreateChat(Config)
-    return CreateStandaloneUtility('Chat', Config, 'Chat', 390, 340);
+    Config = type(Config) == 'table' and table.clone(Config) or {};
+    if Config.TitleAccent == nil then Config.TitleAccent = false; end
+    return CreateStandaloneUtility('Chat', Config, 'Chat', 438, 475);
 end;
 
 function Library:CreateCardGrid(Config)
-    return CreateStandaloneUtility('CardGrid', Config, 'Cards', 440, 330);
+    Config = type(Config) == 'table' and table.clone(Config) or {};
+    if Config.TitleAccent == nil then Config.TitleAccent = false; end
+    return CreateStandaloneUtility('CardGrid', Config, 'Cards', 584, 451);
 end;
 
 function Library:CreateEmbeddedSlider(Container, Info)
