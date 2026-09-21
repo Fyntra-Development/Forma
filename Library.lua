@@ -84,6 +84,16 @@ local Fonts = {
         VisualScale = 1.000,
         LocalAliases = { "SF-Pro.ttf", "SF Pro.ttf", "SFPro.ttf" },
     },
+    ["Space Grotesk"] = {
+        Ttf = "SpaceGrotesk-Regular.ttf",
+        RepoPath = "fonts/SpaceGrotesk-Regular.ttf",
+        Url = RepoFontBaseUrl .. "fonts/SpaceGrotesk-Regular.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+        VisualScale = 1.000,
+        LocalAliases = { "SpaceGrotesk-Regular.ttf", "Space Grotesk.ttf", "SpaceGrotesk.ttf" },
+    },
     Miracode = {
         Ttf = "Miracode.ttf",
         RepoPath = "fonts/Miracode.ttf",
@@ -152,6 +162,7 @@ local Fonts = {
 local FontOrder = {
     "Rubik Light",
     "SF Pro",
+    "Space Grotesk",
     "Miracode",
     "Monocraft",
     "ProggyClean",
@@ -226,8 +237,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.5.2+build.1';
-    Release = 'HF';
+    Version = '1.6.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -256,6 +267,7 @@ local Library = {
     UtilityWindows = {};
     UtilityDisplayOrder = 30;
     UtilitySerial = 0;
+    CursorDisplayOrder = 1000000;
 };
 
 local function NormalizeGameName(Value)
@@ -14738,6 +14750,7 @@ function Library:CreateWindow(...)
     local ToggleAnimationId = 0;
     local CursorAnimationId = 0;
     local ActiveCursor = nil;
+    local ActiveCursorGui = nil;
     local CursorRestoreState = true;
 
     local function StopFormaCursor()
@@ -14746,6 +14759,11 @@ function Library:CreateWindow(...)
         if ActiveCursor then
             pcall(function() ActiveCursor:Destroy(); end);
             ActiveCursor = nil;
+        end
+
+        if ActiveCursorGui then
+            pcall(function() ActiveCursorGui:Destroy(); end);
+            ActiveCursorGui = nil;
         end
 
         -- Forma owns the hidden native cursor only while its custom cursor is
@@ -14787,6 +14805,17 @@ function Library:CreateWindow(...)
                         writefile(CursorAssetPath, game:HttpGet(CursorAssetUrl));
                     end
 
+                    local CursorGui = Instance.new('ScreenGui');
+                    CursorGui.Name = 'FormaCursorGui';
+                    CursorGui.ResetOnSpawn = false;
+                    CursorGui.IgnoreGuiInset = ScreenGui.IgnoreGuiInset;
+                    CursorGui.ZIndexBehavior = Enum.ZIndexBehavior.Global;
+                    CursorGui.DisplayOrder = Library.CursorDisplayOrder or 1000000;
+                    pcall(function()
+                        ProtectGui(CursorGui);
+                    end);
+                    CursorGui.Parent = ParentGui;
+
                     Cursor = Library:Create('ImageLabel', {
                         Active = false;
                         BackgroundTransparency = 1;
@@ -14797,9 +14826,10 @@ function Library:CreateWindow(...)
                         Size = UDim2.fromOffset(13, 16);
                         ZIndex = 1000;
                         Visible = true;
-                        Parent = ScreenGui;
+                        Parent = CursorGui;
                     });
                     Library:AddToRegistry(Cursor, { ImageColor3 = 'AccentColor'; });
+                    ActiveCursorGui = CursorGui;
                 end);
             end
 
@@ -14825,6 +14855,10 @@ function Library:CreateWindow(...)
             end
             if ActiveCursor == Cursor then
                 ActiveCursor = nil;
+            end
+            if ActiveCursorGui then
+                pcall(function() ActiveCursorGui:Destroy(); end);
+                ActiveCursorGui = nil;
             end
 
             if CurrentCursorId == CursorAnimationId and not Toggled then
