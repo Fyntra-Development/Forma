@@ -4,6 +4,7 @@
 local repo = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/'
 
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+Library:SetUpdateRestartSource(repo .. 'Example.lua')
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
