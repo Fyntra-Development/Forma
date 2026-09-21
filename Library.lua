@@ -159,7 +159,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.2.0';
+    Version = '1.3.0';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
@@ -10460,6 +10460,25 @@ function Library:PerformUpdateRestart(ComponentName, RemoteInfo)
         return true;
     end;
 
+    -- When Forma is started through Loader.lua, install the new release into
+    -- the persistent cache before restarting the user's UI. This is what makes
+    -- Yes/No meaningful instead of silently loading main before the check.
+    local Updater = Environment and Environment.FormaUpdater;
+    if Updater and type(Updater.InstallUpdate) == 'function' then
+        local CallSuccess, InstallSuccess, InstallError = pcall(
+            Updater.InstallUpdate,
+            Updater,
+            ComponentName,
+            RemoteInfo
+        );
+        if not CallSuccess then
+            return false, tostring(InstallSuccess);
+        end;
+        if InstallSuccess == false then
+            return false, tostring(InstallError or 'failed to install update');
+        end;
+    end;
+
     local RestartSource = Library.UpdateRestartSource;
     if (not RestartSource or RestartSource == '') and Environment and type(Environment.FormaLoaderUrl) == 'string' then
         RestartSource = Environment.FormaLoaderUrl;
@@ -10524,6 +10543,28 @@ function Library:PromptForUpdate(Info)
                         Duration = 5;
                     });
                 end;
+            end;
+        };
+        SubButton = {
+            Text = 'No';
+            Callback = function() end;
+        };
+    });
+end;
+
+function Library:PreviewUpdateNotification()
+    return Library:Notify({
+        Type = 'Action';
+        Title = 'Forma update available';
+        Text = string.format('Library  v%s  ->  vNEXT\n\nUpdate and restart the UI now?', tostring(Library.Version));
+        Persistent = true;
+        CloseButton = true;
+        Width = 370;
+        Button = {
+            Text = 'Yes';
+            Primary = true;
+            Callback = function()
+                Library:Notify('Preview only - no update was installed.', 2);
             end;
         };
         SubButton = {
