@@ -94,6 +94,36 @@ local Fonts = {
         VisualScale = 1.000,
         LocalAliases = { "SpaceGrotesk-Regular.ttf", "Space Grotesk.ttf", "SpaceGrotesk.ttf" },
     },
+    Oxanium = {
+        Ttf = "Oxanium.ttf",
+        RepoPath = "fonts/Oxanium.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Oxanium.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+        VisualScale = 0.970,
+        LocalAliases = { "Oxanium.ttf", "Oxanium-Regular.ttf" },
+    },
+    Sora = {
+        Ttf = "Sora.ttf",
+        RepoPath = "fonts/Sora.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Sora.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+        VisualScale = 0.980,
+        LocalAliases = { "Sora.ttf", "Sora-Regular.ttf" },
+    },
+    Orbitron = {
+        Ttf = "Orbitron.ttf",
+        RepoPath = "fonts/Orbitron.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Orbitron.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+        VisualScale = 0.930,
+        LocalAliases = { "Orbitron.ttf", "Orbitron-Regular.ttf" },
+    },
     Miracode = {
         Ttf = "Miracode.ttf",
         RepoPath = "fonts/Miracode.ttf",
@@ -163,6 +193,9 @@ local FontOrder = {
     "Rubik Light",
     "SF Pro",
     "Space Grotesk",
+    "Oxanium",
+    "Sora",
+    "Orbitron",
     "Miracode",
     "Monocraft",
     "ProggyClean",
@@ -237,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.6.0+build.1';
+    Version = '1.7.0+build.1';
     Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -268,6 +301,8 @@ local Library = {
     UtilityDisplayOrder = 30;
     UtilitySerial = 0;
     CursorDisplayOrder = 1000000;
+    CursorStyle = 'Arrow';
+    CursorStyles = { 'Arrow', 'Dot', 'System' };
 };
 
 local function NormalizeGameName(Value)
@@ -373,6 +408,30 @@ end;
 
 Library.Fonts = Fonts;
 Library.FontOrder = FontOrder;
+
+function Library:GetCursorStyles()
+    return table.clone(Library.CursorStyles or { 'Arrow', 'Dot', 'System' });
+end;
+
+function Library:SetCursorStyle(Style)
+    local Requested = tostring(Style or 'Arrow');
+    local Resolved = 'Arrow';
+
+    for _, Candidate in ipairs(Library.CursorStyles or {}) do
+        if string.lower(Candidate) == string.lower(Requested) then
+            Resolved = Candidate;
+            break;
+        end;
+    end;
+
+    Library.CursorStyle = Resolved;
+
+    if Library.RefreshCursor then
+        pcall(Library.RefreshCursor);
+    end;
+
+    return Resolved;
+end;
 
 function Library:RegisterRepoFont(Name, FileName, VisualScale)
     assert(type(Name) == 'string' and Name ~= '', 'RegisterRepoFont: invalid font name');
@@ -14766,8 +14825,6 @@ function Library:CreateWindow(...)
             ActiveCursorGui = nil;
         end
 
-        -- Forma owns the hidden native cursor only while its custom cursor is
-        -- alive. Closing/unloading always hands control back immediately.
         pcall(function()
             InputService.MouseIconEnabled = true;
         end);
@@ -14778,14 +14835,32 @@ function Library:CreateWindow(...)
     local function StartFormaCursor()
         StopFormaCursor();
 
+        local CursorStyle = Library.CursorStyle or 'Arrow';
+        if CursorStyle == 'System' then
+            pcall(function()
+                InputService.MouseIconEnabled = true;
+            end);
+            return;
+        end
+
         CursorAnimationId = CursorAnimationId + 1;
         local CurrentCursorId = CursorAnimationId;
         CursorRestoreState = InputService.MouseIconEnabled;
 
         task.spawn(function()
             local Cursor;
-            local CursorAssetPath = 'FormaAssets/cursor.png';
-            local CursorAssetUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/cursor.png';
+            local CursorGui;
+            local CursorScale;
+            local Ring;
+            local RingStroke;
+            local Pressed = false;
+            local PressAnimationId = 0;
+            local InputBeganConnection;
+            local InputEndedConnection;
+            local IsDot = CursorStyle == 'Dot';
+            local CursorFile = IsDot and 'cursordot.png' or 'cursor.png';
+            local CursorAssetPath = 'FormaAssets/' .. CursorFile;
+            local CursorAssetUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/' .. CursorFile;
             local GetCustomAsset = getcustomasset or getsynasset;
 
             local function GetCursorPosition()
@@ -14802,10 +14877,10 @@ function Library:CreateWindow(...)
                         makefolder('FormaAssets');
                     end
                     if not isfile(CursorAssetPath) then
-                        writefile(CursorAssetPath, game:HttpGet(CursorAssetUrl));
+                        writefile(CursorAssetPath, game:HttpGet(CursorAssetUrl .. '?v=' .. tostring(Library.Version)));
                     end
 
-                    local CursorGui = Instance.new('ScreenGui');
+                    CursorGui = Instance.new('ScreenGui');
                     CursorGui.Name = 'FormaCursorGui';
                     CursorGui.ResetOnSpawn = false;
                     CursorGui.IgnoreGuiInset = ScreenGui.IgnoreGuiInset;
@@ -14818,24 +14893,128 @@ function Library:CreateWindow(...)
 
                     Cursor = Library:Create('ImageLabel', {
                         Active = false;
+                        AnchorPoint = IsDot and Vector2.new(0.5, 0.5) or Vector2.new(0, 0);
                         BackgroundTransparency = 1;
                         BorderSizePixel = 0;
                         Image = GetCustomAsset(CursorAssetPath);
                         ImageColor3 = Library.AccentColor;
                         Position = GetCursorPosition();
-                        Size = UDim2.fromOffset(13, 16);
-                        ZIndex = 1000;
+                        Size = IsDot and UDim2.fromOffset(12, 12) or UDim2.fromOffset(13, 16);
+                        ZIndex = 1001;
                         Visible = true;
                         Parent = CursorGui;
                     });
-                    Library:AddToRegistry(Cursor, { ImageColor3 = 'AccentColor'; });
+
+                    CursorScale = Instance.new('UIScale');
+                    CursorScale.Scale = 1;
+                    CursorScale.Parent = Cursor;
+
+                    if IsDot then
+                        Ring = Library:Create('Frame', {
+                            Active = false;
+                            AnchorPoint = Vector2.new(0.5, 0.5);
+                            BackgroundTransparency = 1;
+                            BorderSizePixel = 0;
+                            Position = GetCursorPosition();
+                            Size = UDim2.fromOffset(12, 12);
+                            ZIndex = 1000;
+                            Visible = false;
+                            Parent = CursorGui;
+                        });
+                        Library:AddCorner(Ring, 999);
+
+                        RingStroke = Library:Create('UIStroke', {
+                            Color = Library.AccentColor;
+                            Thickness = 1;
+                            Transparency = 1;
+                            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                            Parent = Ring;
+                        });
+                    end
+
                     ActiveCursorGui = CursorGui;
                 end);
             end
 
-            if not Cursor then
+            if not Cursor or not CursorGui then
+                if CursorGui then pcall(function() CursorGui:Destroy(); end); end
                 pcall(function() InputService.MouseIconEnabled = true; end);
                 return;
+            end
+
+            local function BeginDotPress()
+                if not IsDot or not CursorScale then return; end
+
+                Pressed = true;
+                PressAnimationId = PressAnimationId + 1;
+                local CurrentPressId = PressAnimationId;
+
+                Library:Animate(CursorScale, { Scale = 0.62; }, 0.075, nil, 'Cursor');
+
+                if Ring and RingStroke then
+                    Ring.Visible = true;
+                    Ring.Size = UDim2.fromOffset(10, 10);
+                    RingStroke.Transparency = 0.08;
+                    Library:Animate(Ring, { Size = UDim2.fromOffset(18, 18); }, 0.14, nil, 'Cursor');
+                    Library:Animate(RingStroke, { Transparency = 0.42; }, 0.14, nil, 'Cursor');
+                end
+
+                task.spawn(function()
+                    task.wait(0.14);
+                    local Expand = true;
+                    while Pressed
+                        and CurrentPressId == PressAnimationId
+                        and Cursor.Parent
+                        and CurrentCursorId == CursorAnimationId do
+                        Library:Animate(CursorScale, { Scale = Expand and 0.78 or 0.66; }, 0.16, nil, 'Cursor');
+                        if Ring and Ring.Parent and RingStroke then
+                            Library:Animate(Ring, {
+                                Size = Expand and UDim2.fromOffset(20, 20) or UDim2.fromOffset(17, 17);
+                            }, 0.16, nil, 'Cursor');
+                            Library:Animate(RingStroke, {
+                                Transparency = Expand and 0.58 or 0.34;
+                            }, 0.16, nil, 'Cursor');
+                        end
+                        Expand = not Expand;
+                        task.wait(0.16);
+                    end
+                end);
+            end
+
+            local function EndDotPress()
+                if not IsDot or not CursorScale then return; end
+
+                Pressed = false;
+                PressAnimationId = PressAnimationId + 1;
+                local ReleaseId = PressAnimationId;
+
+                Library:Animate(CursorScale, { Scale = 1.18; }, 0.09, function()
+                    if ReleaseId ~= PressAnimationId or not CursorScale.Parent then return; end
+                    Library:Animate(CursorScale, { Scale = 1; }, 0.12, nil, 'Cursor');
+                end, 'Cursor');
+
+                if Ring and RingStroke then
+                    Library:Animate(Ring, { Size = UDim2.fromOffset(28, 28); }, 0.18, nil, 'Cursor');
+                    Library:Animate(RingStroke, { Transparency = 1; }, 0.18, function()
+                        if Ring and Ring.Parent and not Pressed then
+                            Ring.Visible = false;
+                        end
+                    end, 'Cursor');
+                end
+            end
+
+            if IsDot then
+                InputBeganConnection = InputService.InputBegan:Connect(function(Input)
+                    if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        BeginDotPress();
+                    end
+                end);
+
+                InputEndedConnection = InputService.InputEnded:Connect(function(Input)
+                    if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        EndDotPress();
+                    end
+                end);
             end
 
             ActiveCursor = Cursor;
@@ -14846,18 +15025,39 @@ function Library:CreateWindow(...)
                 and ScreenGui.Parent
                 and Cursor.Parent do
                 InputService.MouseIconEnabled = false;
-                Cursor.Position = GetCursorPosition();
+
+                local Position = GetCursorPosition();
+                Cursor.Position = Position;
+                Cursor.ImageColor3 = Library.AccentColor;
+
+                if Ring and Ring.Parent then
+                    Ring.Position = Position;
+                    if RingStroke then RingStroke.Color = Library.AccentColor; end
+                end
+
                 RenderStepped:Wait();
             end
+
+            Pressed = false;
+            PressAnimationId = PressAnimationId + 1;
+
+            if InputBeganConnection then pcall(function() InputBeganConnection:Disconnect(); end); end
+            if InputEndedConnection then pcall(function() InputEndedConnection:Disconnect(); end); end
 
             if Cursor.Parent then
                 pcall(function() Cursor:Destroy(); end);
             end
+            if Ring and Ring.Parent then
+                pcall(function() Ring:Destroy(); end);
+            end
+            if CursorGui.Parent then
+                pcall(function() CursorGui:Destroy(); end);
+            end
+
             if ActiveCursor == Cursor then
                 ActiveCursor = nil;
             end
-            if ActiveCursorGui then
-                pcall(function() ActiveCursorGui:Destroy(); end);
+            if ActiveCursorGui == CursorGui then
                 ActiveCursorGui = nil;
             end
 
@@ -14867,6 +15067,12 @@ function Library:CreateWindow(...)
                 end);
             end
         end);
+    end
+
+    Library.RefreshCursor = function()
+        if Toggled then
+            StartFormaCursor();
+        end
     end
 
     function Library:Toggle()
