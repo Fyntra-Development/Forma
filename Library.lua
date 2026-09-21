@@ -81,7 +81,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
-        VisualScale = 0.994,
+        VisualScale = 1.000,
         LocalAliases = { "SF-Pro.ttf", "SF Pro.ttf", "SFPro.ttf" },
     },
     Miracode = {
@@ -91,7 +91,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
-        VisualScale = 0.933,
+        VisualScale = 0.957,
     },
     Monocraft = {
         Ttf = "Monocraft.ttf",
@@ -100,7 +100,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
-        VisualScale = 0.900,
+        VisualScale = 1.014,
     },
     ProggyClean = {
         Ttf = "ProggyClean.ttf",
@@ -109,7 +109,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
-        VisualScale = 1.400,
+        VisualScale = 0.961,
     },
     ProggyTiny = {
         Ttf = "ProggyTiny.ttf",
@@ -118,7 +118,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
-        VisualScale = 1.600,
+        VisualScale = 0.844,
     },
     ["XP Tahoma"] = {
         Ttf = "XP-Tahoma.ttf",
@@ -127,7 +127,7 @@ local Fonts = {
         FaceName = "Bold",
         Weight = Enum.FontWeight.Bold,
         WeightValue = 700,
-        VisualScale = 0.963,
+        VisualScale = 0.961,
     },
     ["Smallest Pixel"] = {
         Ttf = "Smallest-Pixel.ttf",
@@ -136,7 +136,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
-        VisualScale = 1.400,
+        VisualScale = 1.000,
     },
     ["Comic Mono"] = {
         Ttf = "ComicMono.ttf",
@@ -145,7 +145,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
-        VisualScale = 1.215,
+        VisualScale = 1.000,
     },
 };
 
@@ -226,7 +226,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.6';
+    Version = '1.3.7';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
@@ -939,7 +939,7 @@ end;
 
 function Library:GetFontVisualScale(Name)
     local Info = Fonts[Name or Library.FontName];
-    return math.clamp(tonumber(Info and Info.VisualScale) or 1, 0.6, 1.8);
+    return math.clamp(tonumber(Info and Info.VisualScale) or 1, 0.75, 1.25);
 end;
 
 function Library:RefreshTextSizes()
