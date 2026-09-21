@@ -346,7 +346,7 @@ end;
 Library.Fonts = Fonts;
 Library.FontOrder = FontOrder;
 
-function Library:RegisterRepoFont(Name, FileName)
+function Library:RegisterRepoFont(Name, FileName, VisualScale)
     assert(type(Name) == 'string' and Name ~= '', 'RegisterRepoFont: invalid font name');
     assert(type(FileName) == 'string' and FileName ~= '', 'RegisterRepoFont: invalid file name');
 
@@ -357,6 +357,7 @@ function Library:RegisterRepoFont(Name, FileName)
         Ttf = CleanFileName;
         RepoPath = 'fonts/' .. CleanFileName;
         Url = RepoFontBaseUrl .. 'fonts/' .. CleanFileName;
+        VisualScale = math.clamp(tonumber(VisualScale) or 1, 0.6, 1.8);
     };
 
     if not table.find(FontOrder, Name) then
@@ -936,6 +937,15 @@ function Library:GetFontNames()
     return Result;
 end;
 
+function Library:GetFontVisualScale(Name)
+    local Info = Fonts[Name or Library.FontName];
+    return math.clamp(tonumber(Info and Info.VisualScale) or 1, 0.6, 1.8);
+end;
+
+function Library:RefreshTextSizes()
+    Library:RefreshTextSizes();
+end;
+
 function Library:ApplyFont(Instance)
     if not Instance then
         return;
@@ -958,6 +968,7 @@ function Library:UpdateFont()
             Library:ApplyFont(Descendant);
         end;
     end;
+    Library:RefreshTextSizes();
     task.defer(function()
         for _, Controller in next, Library.TypingControllers do
             if Controller.Refresh then Controller.Refresh(); end
@@ -981,6 +992,7 @@ function Library:LoadFont(Name)
     if Library.LoadedFontsCache[Name] then
         Library.Font = Library.LoadedFontsCache[Name];
         Library.FontName = Name;
+        Library.FontVisualScale = Library:GetFontVisualScale(Name);
         Library:UpdateFont();
         return true;
     end;
@@ -1065,6 +1077,7 @@ function Library:LoadFont(Name)
     Library.LoadedFontsCache[Name] = LoadedFont;
     Library.Font = LoadedFont;
     Library.FontName = Name;
+    Library.FontVisualScale = Library:GetFontVisualScale(Name);
     Library:UpdateFont();
     return true;
 end;
@@ -1075,8 +1088,9 @@ end;
 
 function Library:GetScaledTextSize(BaseSize)
     BaseSize = tonumber(BaseSize) or 14;
-    local Scale = (Library.TextSize or 14) / 14;
-    return math.max(6, math.floor((BaseSize * Scale) + 0.5));
+    local UserScale = (Library.TextSize or 14) / 14;
+    local FontScale = Library:GetFontVisualScale();
+    return math.max(6, math.floor((BaseSize * UserScale * FontScale) + 0.5));
 end;
 
 function Library:SetTextSize(Size)
