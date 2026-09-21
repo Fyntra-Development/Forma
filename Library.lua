@@ -14296,7 +14296,7 @@ end);
 -- without requiring them to reopen the whole interface first.
 task.spawn(function()
     while ScreenGui.Parent do
-        task.wait(math.max(tonumber(Library.UpdatePollSeconds) or 60, 15));
+        task.wait(math.max(tonumber(Library.UpdatePollSeconds) or 12, 8));
         if not ScreenGui.Parent then break; end
         Library:CheckAllUpdates(true);
     end
