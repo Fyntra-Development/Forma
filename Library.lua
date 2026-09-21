@@ -5510,7 +5510,7 @@ do
             });
 
             local Box = Library:Create('Frame', {
-                BackgroundColor3 = FilterColor(Level);
+                BackgroundColor3 = Library.AccentColor;
                 BorderSizePixel = 0;
                 Position = UDim2.fromOffset(1, 5);
                 Size = UDim2.fromOffset(9, 9);
@@ -5526,7 +5526,7 @@ do
             Library:AddToRegistry(BoxStroke, { Color = 'OutlineColor'; });
             Library:AddToRegistry(Box, {
                 BackgroundColor3 = function()
-                    return Console.Filters[Level] and FilterColor(Level) or Library.MainColor;
+                    return Console.Filters[Level] and Library.AccentColor or Library.MainColor;
                 end;
             });
 
@@ -5980,7 +5980,7 @@ do
                 BackgroundColor3 = Library.MainColor;
                 BorderSizePixel = 0;
                 Position = UDim2.fromOffset(6, BodyY);
-                Size = UDim2.fromOffset(62, math.max(DetailHeight - BodyY - 6, 52));
+                Size = UDim2.fromOffset(62, 62);
                 ZIndex = 9;
                 Parent = DetailPane;
             });
@@ -10353,6 +10353,7 @@ end;
         Position = Config.Position;
         Visible = Config.Visible;
         CloseButton = Config.CloseButton;
+        TitleAccent = Config.TitleAccent;
     });
 
     local ComponentInfo = table.clone(Config);
@@ -10361,6 +10362,7 @@ end;
     ComponentInfo.Position = nil;
     ComponentInfo.Visible = nil;
     ComponentInfo.CloseButton = nil;
+    ComponentInfo.TitleAccent = nil;
     ComponentInfo.Size = nil;
     ComponentInfo.Height = Window.ContentHeight;
 
