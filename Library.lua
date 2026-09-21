@@ -973,9 +973,16 @@ function Library:ApplyFont(Instance)
 end;
 
 function Library:UpdateFont()
-    for _, Descendant in ipairs(ScreenGui:GetDescendants()) do
-        if Descendant:IsA('TextLabel') or Descendant:IsA('TextBox') or Descendant:IsA('TextButton') then
-            Library:ApplyFont(Descendant);
+    local Roots = { ScreenGui };
+    for _, Gui in ipairs(Library.UtilityGuis or {}) do
+        if Gui and Gui.Parent then table.insert(Roots, Gui); end
+    end;
+
+    for _, Root in ipairs(Roots) do
+        for _, Descendant in ipairs(Root:GetDescendants()) do
+            if Descendant:IsA('TextLabel') or Descendant:IsA('TextBox') or Descendant:IsA('TextButton') then
+                Library:ApplyFont(Descendant);
+            end;
         end;
     end;
     Library:RefreshTextSizes();
@@ -13624,31 +13631,23 @@ function Library:CreateWindow(...)
         end;
 
         function Tab:AddConsole(Info)
-            Info = type(Info) == 'table' and Info or {};
-            local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Console');
-            return Groupbox:AddConsole(Info);
+            return Library:CreateConsole(Info);
         end;
 
         function Tab:AddTable(Info)
-            Info = type(Info) == 'table' and Info or {};
-            local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Table');
-            return Groupbox:AddTable(Info);
+            return Library:CreateTable(Info);
         end;
 
         function Tab:AddDataTable(Info)
-            return Tab:AddTable(Info);
+            return Library:CreateDataTable(Info);
         end;
 
         function Tab:AddChat(Info)
-            Info = type(Info) == 'table' and Info or {};
-            local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Chat');
-            return Groupbox:AddChat(Info);
+            return Library:CreateChat(Info);
         end;
 
         function Tab:AddCardGrid(Info)
-            Info = type(Info) == 'table' and Info or {};
-            local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Cards');
-            return Groupbox:AddCardGrid(Info);
+            return Library:CreateCardGrid(Info);
         end;
 
         function Tab:AddTabbox(Info)
