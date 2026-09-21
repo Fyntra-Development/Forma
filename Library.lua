@@ -174,7 +174,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.1';
+    Version = '1.3.2';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
@@ -182,6 +182,7 @@ local Library = {
     UpdateManifestCache = nil;
     UpdateManifestCacheAt = 0;
     UpdateManifestCacheSeconds = 20;
+    UpdatePollSeconds = 60;
     UpdateChecks = {};
     UpdatePrompted = {};
     Updatables = {};
@@ -10606,6 +10607,20 @@ function Library:CheckForUpdates(ComponentName, Force)
     end);
 end;
 
+function Library:CheckAllUpdates(Force)
+    if not Library.AutoUpdateEnabled then return; end;
+
+    -- Refresh versions.json once, then let all component checks share that
+    -- cached manifest instead of issuing one HTTP request per manager.
+    if Force then
+        pcall(Library.FetchUpdateManifest, Library, true);
+    end
+
+    for Name in next, Library.Updatables do
+        Library:CheckForUpdates(Name, false);
+    end
+end;
+
 function Library:Notify(Text, Time, Title)
     local Info = {};
     if type(Text) == 'table' then
@@ -11993,7 +12008,18 @@ Library:SetFont('Rubik Light');
 
 Library:RegisterUpdatable('Library', Library.Version, 'Library.lua');
 task.defer(function()
-    Library:CheckForUpdates('Library');
+    Library:CheckAllUpdates(true);
+end);
+
+-- Keep checking while an older UI is already running. This means a release
+-- published after the player opened Forma can still surface the update prompt
+-- without requiring them to reopen the whole interface first.
+task.spawn(function()
+    while ScreenGui.Parent do
+        task.wait(math.max(tonumber(Library.UpdatePollSeconds) or 60, 15));
+        if not ScreenGui.Parent then break; end
+        Library:CheckAllUpdates(true);
+    end
 end);
 
 getgenv().Library = Library
