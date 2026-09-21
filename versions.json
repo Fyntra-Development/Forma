@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "Components": {
+    "Library": {
+      "version": "1.1.0",
+      "path": "Library.lua",
+      "changes": [
+        "Added built-in automatic UI update checks.",
+        "Added persistent action notifications with buttons and a top-right close button.",
+        "Update prompts now show the version change and release notes.",
+        "Added restart hooks and reload support for applying updates."
+      ]
+    },
+    "MenuManager": {
+      "version": "1.1.0",
+      "path": "addons/MenuManager.lua",
+      "changes": [
+        "Added automatic update registration.",
+        "Checks for manager updates when the menu manager is attached or opened."
+      ]
+    },
+    "SaveManager": {
+      "version": "1.1.0",
+      "path": "addons/SaveManager.lua",
+      "changes": [
+        "Added automatic update registration.",
+        "Checks for manager updates when the configuration manager is attached or opened."
+      ]
+    },
+    "ThemeManager": {
+      "version": "1.1.0",
+      "path": "addons/ThemeManager.lua",
+      "changes": [
+        "Added automatic update registration.",
+        "Checks for manager updates when the theme manager is attached or opened."
+      ]
+    }
+  }
+}
