@@ -184,7 +184,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.3';
+    Version = '1.3.4';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
@@ -246,7 +246,15 @@ function Library:DetectGameName()
     return Library.GameName;
 end;
 
-Library.GameName = Library:DetectGameName();
+Library.GameName = NormalizeGameName(game.Name) or 'Unknown Game';
+task.defer(function()
+    local Success, Name = pcall(Library.DetectGameName, Library);
+    if Success and Name and Library.SetWatermarkInfo then
+        pcall(function()
+            Library:SetWatermarkInfo({ GameName = Name; });
+        end);
+    end;
+end);
 
 local RainbowStep = 0
 local Hue = 0
@@ -1058,7 +1066,18 @@ function Library:SetTextScale(Scale)
     return Library:SetTextSize(14 * math.clamp(tonumber(Scale) or 1, 0.65, 1.75));
 end;
 
-Library:LoadFont('Rubik Light');
+do
+    local DefaultFontName = 'Rubik Light';
+    local DefaultInfo = Fonts[DefaultFontName];
+    local CachedPath = DefaultInfo and ('FormaAssets/Fonts/' .. DefaultInfo.Ttf);
+    if CachedPath and isfile and isfile(CachedPath) then
+        Library:LoadFont(DefaultFontName);
+    else
+        task.spawn(function()
+            Library:LoadFont(DefaultFontName);
+        end);
+    end;
+end;
 
 --// Icon Module \\--
 local BuiltinIcons = {
@@ -10878,6 +10897,7 @@ function Library:Notify(Text, Time, Title)
 
         local Padding = 6;
         local Count = math.min(#Buttons, 3);
+        local UpdateButtonWidth = 76;
         for Index = 1, Count do
             local ButtonInfo = Buttons[Index];
             local Fraction = 1 / Count;
@@ -10886,13 +10906,21 @@ function Library:Notify(Text, Time, Title)
             local BaseBackground = (IsUpdateNotification or AccentOutline)
                 and Library.Contrast
                 or (ButtonInfo.Primary and Library.AccentColor or Library.Contrast);
+            local ButtonAnchor = IsUpdateNotification and Vector2.new(1, 0) or Vector2.zero;
+            local ButtonPosition = IsUpdateNotification
+                and UDim2.new(1, -((Count - Index) * (UpdateButtonWidth + Padding)), 0, 0)
+                or UDim2.new((Index - 1) * Fraction, Index > 1 and Padding / 2 or 0, 0, 0);
+            local ButtonSize = IsUpdateNotification
+                and UDim2.fromOffset(UpdateButtonWidth, 25)
+                or UDim2.new(Fraction, -(Padding * (Count - 1) / Count), 1, 0);
 
             local Button = Library:Create('TextButton', {
                 AutoButtonColor = false;
+                AnchorPoint = ButtonAnchor;
                 BackgroundColor3 = BaseBackground;
                 BorderSizePixel = 0;
-                Position = UDim2.new((Index - 1) * Fraction, Index > 1 and Padding / 2 or 0, 0, 0);
-                Size = UDim2.new(Fraction, -(Padding * (Count - 1) / Count), 1, 0);
+                Position = ButtonPosition;
+                Size = ButtonSize;
                 Text = ButtonInfo.Text;
                 TextColor3 = (IsUpdateNotification and not AccentOutline)
                     and Library.DisabledTextColor
@@ -12117,8 +12145,6 @@ end;
 
 Players.PlayerAdded:Connect(OnPlayerChange);
 Players.PlayerRemoving:Connect(OnPlayerChange);
-
-Library:SetFont('Rubik Light');
 
 Library:RegisterUpdatable('Library', Library.Version, 'Library.lua');
 task.defer(function()
