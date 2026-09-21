@@ -270,8 +270,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.11.2+build.1';
-    Release = 'HF';
+    Version = '1.12.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -303,8 +303,8 @@ local Library = {
     CursorDisplayOrder = 1000000;
     CursorStyle = 'Arrow';
     CursorStyles = { 'Arrow', 'Dot', 'System' };
-    TitleAnimation = 'Cascade';
-    TitleAnimations = { 'None', 'Cascade', 'Glint', 'Pop', 'Decode', 'Slide' };
+    TitleAnimation = 'Aurora';
+    TitleAnimations = { 'None', 'Aurora', 'Glint', 'Neon Pulse', 'Echo', 'Heartbeat' };
 };
 
 local function NormalizeGameName(Value)
@@ -436,7 +436,7 @@ function Library:SetCursorStyle(Style)
 end;
 
 function Library:GetTitleAnimations()
-    return table.clone(Library.TitleAnimations or { 'None', 'Cascade', 'Glint', 'Pop', 'Decode', 'Slide' });
+    return table.clone(Library.TitleAnimations or { 'None', 'Aurora', 'Glint', 'Neon Pulse', 'Echo', 'Heartbeat' });
 end;
 
 local function CopyTitleFont(Source, Target)
@@ -472,7 +472,6 @@ local function CreateTitleLayer(Source, Name)
     Layer.LineHeight = Source.LineHeight;
     Layer.ZIndex = Source.ZIndex + 1;
     CopyTitleFont(Source, Layer);
-    Layer.Parent = Source;
     return Layer;
 end;
 
@@ -490,10 +489,10 @@ local function TrackTitleTween(State, Tween)
     return Tween;
 end;
 
-local function SyncTitleLayerStyle(State, Layer)
-    if not State or not Layer or not Layer.Parent then return; end;
+local function SyncTitleLayer(Source, Layer)
+    if not Source or not Layer or not Layer.Parent then return; end;
 
-    local Source = State.Source;
+    Layer.Position = UDim2.fromOffset(0, 0);
     Layer.Size = UDim2.fromScale(1, 1);
     Layer.Text = Source.Text;
     Layer.TextSize = Source.TextSize;
@@ -546,34 +545,37 @@ function Library:StartTitleAnimation(State)
     local Base = State.Base;
     local Source = State.Source;
     local BaseColor = Source.TextColor3;
-    local Highlight = BaseColor:Lerp(Color3.new(1, 1, 1), 0.72);
+    local Light = BaseColor:Lerp(Color3.new(1, 1, 1), 0.72);
+    local SoftLight = BaseColor:Lerp(Color3.new(1, 1, 1), 0.30);
 
-    Base.Position = UDim2.fromOffset(0, 0);
-    Base.AnchorPoint = Vector2.new(0, 0);
+    Base.Text = Source.Text;
     Base.TextColor3 = BaseColor;
     Base.TextTransparency = 0;
+    Base.Position = UDim2.fromOffset(0, 0);
 
-    if Mode == 'Cascade' then
-        local Trail = CreateTitleLayer(Source, 'FormaTitleCascadeTrail');
-        Trail.Parent = State.Root;
-        Trail.Position = UDim2.fromOffset(0, 2);
-        Trail.TextColor3 = BaseColor:Lerp(Highlight, 0.35);
-        Trail.TextTransparency = 0.82;
-        Trail.ZIndex = Base.ZIndex - 1;
-        State.Trail = Trail;
+    if Mode == 'Aurora' then
+        Base.TextColor3 = Color3.new(1, 1, 1);
+
+        local Gradient = Instance.new('UIGradient');
+        Gradient.Name = 'FormaTitleAurora';
+        Gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.00, BaseColor:Lerp(Library.AccentColor, 0.18));
+            ColorSequenceKeypoint.new(0.22, SoftLight);
+            ColorSequenceKeypoint.new(0.50, BaseColor);
+            ColorSequenceKeypoint.new(0.78, Light);
+            ColorSequenceKeypoint.new(1.00, BaseColor:Lerp(Library.AccentColor, 0.26));
+        });
+        Gradient.Offset = Vector2.new(-0.48, 0);
+        Gradient.Rotation = -5;
+        Gradient.Parent = Base;
+        State.Gradient = Gradient;
 
         TrackTitleTween(State, TweenService:Create(
-            Base,
-            TweenInfo.new(1.35, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-            { Position = UDim2.fromOffset(0, -1.5) }
-        ));
-
-        TrackTitleTween(State, TweenService:Create(
-            Trail,
-            TweenInfo.new(1.35, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+            Gradient,
+            TweenInfo.new(3.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
             {
-                Position = UDim2.fromOffset(0, -2);
-                TextTransparency = 0.94;
+                Offset = Vector2.new(0.48, 0);
+                Rotation = 5;
             }
         ));
     elseif Mode == 'Glint' then
@@ -582,92 +584,106 @@ function Library:StartTitleAnimation(State)
         local Gradient = Instance.new('UIGradient');
         Gradient.Name = 'FormaTitleGlint';
         Gradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, BaseColor);
-            ColorSequenceKeypoint.new(0.42, BaseColor);
-            ColorSequenceKeypoint.new(0.50, Highlight);
-            ColorSequenceKeypoint.new(0.58, BaseColor);
-            ColorSequenceKeypoint.new(1, BaseColor);
+            ColorSequenceKeypoint.new(0.00, BaseColor);
+            ColorSequenceKeypoint.new(0.38, BaseColor);
+            ColorSequenceKeypoint.new(0.48, SoftLight);
+            ColorSequenceKeypoint.new(0.50, Light);
+            ColorSequenceKeypoint.new(0.52, SoftLight);
+            ColorSequenceKeypoint.new(0.62, BaseColor);
+            ColorSequenceKeypoint.new(1.00, BaseColor);
         });
-        Gradient.Offset = Vector2.new(-1.15, 0);
+        Gradient.Offset = Vector2.new(-1.2, 0);
         Gradient.Parent = Base;
         State.Gradient = Gradient;
 
         TrackTitleTween(State, TweenService:Create(
             Gradient,
-            TweenInfo.new(1.65, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false, 0.35),
-            { Offset = Vector2.new(1.15, 0) }
+            TweenInfo.new(1.45, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false, 0.75),
+            { Offset = Vector2.new(1.2, 0) }
         ));
-    elseif Mode == 'Pop' then
-        Base.AnchorPoint = Vector2.new(0, 0.5);
-        Base.Position = UDim2.fromScale(0, 0.5);
-
-        local Scale = Instance.new('UIScale');
-        Scale.Name = 'FormaTitlePopScale';
-        Scale.Scale = 1;
-        Scale.Parent = Base;
-        State.Scale = Scale;
+    elseif Mode == 'Neon Pulse' then
+        local Stroke = Instance.new('UIStroke');
+        Stroke.Name = 'FormaTitleNeonStroke';
+        Stroke.Color = Library.AccentColor:Lerp(Color3.new(1, 1, 1), 0.18);
+        Stroke.Thickness = 0.8;
+        Stroke.Transparency = 0.68;
+        Stroke.LineJoinMode = Enum.LineJoinMode.Round;
+        Stroke.Parent = Base;
+        State.Stroke = Stroke;
 
         TrackTitleTween(State, TweenService:Create(
-            Scale,
-            TweenInfo.new(0.82, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-            { Scale = 1.035 }
+            Stroke,
+            TweenInfo.new(1.15, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+            {
+                Thickness = 1.35;
+                Transparency = 0.38;
+            }
         ));
 
         TrackTitleTween(State, TweenService:Create(
             Base,
-            TweenInfo.new(0.82, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-            { TextColor3 = BaseColor:Lerp(Highlight, 0.26) }
+            TweenInfo.new(1.15, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+            { TextColor3 = SoftLight }
         ));
-    elseif Mode == 'Decode' then
-        local Ghost = CreateTitleLayer(Source, 'FormaTitleDecodeGhost');
-        Ghost.Parent = State.Root;
-        Ghost.TextColor3 = Highlight;
-        Ghost.TextTransparency = 1;
-        Ghost.Position = UDim2.fromOffset(0, 0);
-        Ghost.ZIndex = Base.ZIndex + 1;
-        State.Ghost = Ghost;
+    elseif Mode == 'Echo' then
+        local Echo = CreateTitleLayer(Source, 'FormaTitleEcho');
+        Echo.TextColor3 = Library.AccentColor:Lerp(Light, 0.34);
+        Echo.TextTransparency = 0.86;
+        Echo.TextStrokeColor3 = Library.AccentColor;
+        Echo.TextStrokeTransparency = 0.72;
+        Echo.ZIndex = Base.ZIndex - 1;
+        Echo.Parent = State.Root;
+        State.Echo = Echo;
 
+        TrackTitleTween(State, TweenService:Create(
+            Echo,
+            TweenInfo.new(1.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+            {
+                TextTransparency = 0.97;
+                TextStrokeTransparency = 0.94;
+            }
+        ));
+    elseif Mode == 'Heartbeat' then
         task.spawn(function()
-            while State.Alive and Ghost.Parent and Base.Parent do
-                task.wait(1.35);
-                if not State.Alive or not Ghost.Parent or not Base.Parent then break; end;
+            while State.Alive and Base.Parent do
+                task.wait(2.15);
+                if not State.Alive or not Base.Parent then break; end;
 
-                Ghost.Position = UDim2.fromOffset(1, 0);
-                Ghost.TextTransparency = 1;
-                local InA = TrackTitleTween(State, TweenService:Create(
-                    Ghost,
-                    TweenInfo.new(0.055, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    { TextTransparency = 0.42 }
+                local FirstIn = TrackTitleTween(State, TweenService:Create(
+                    Base,
+                    TweenInfo.new(0.10, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                    { TextColor3 = Light }
                 ));
-                pcall(function() InA.Completed:Wait(); end);
+                pcall(function() FirstIn.Completed:Wait(); end);
                 if not State.Alive then break; end;
 
-                Ghost.Position = UDim2.fromOffset(-1, 0);
-                local Shift = TrackTitleTween(State, TweenService:Create(
-                    Ghost,
-                    TweenInfo.new(0.07, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                    { TextTransparency = 0.68 }
+                local FirstOut = TrackTitleTween(State, TweenService:Create(
+                    Base,
+                    TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+                    { TextColor3 = BaseColor }
                 ));
-                pcall(function() Shift.Completed:Wait(); end);
+                pcall(function() FirstOut.Completed:Wait(); end);
                 if not State.Alive then break; end;
 
-                Ghost.Position = UDim2.fromOffset(0, 0);
-                local Out = TrackTitleTween(State, TweenService:Create(
-                    Ghost,
-                    TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    { TextTransparency = 1 }
+                task.wait(0.08);
+                if not State.Alive then break; end;
+
+                local SecondIn = TrackTitleTween(State, TweenService:Create(
+                    Base,
+                    TweenInfo.new(0.075, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                    { TextColor3 = SoftLight }
                 ));
-                pcall(function() Out.Completed:Wait(); end);
+                pcall(function() SecondIn.Completed:Wait(); end);
+                if not State.Alive then break; end;
+
+                local SecondOut = TrackTitleTween(State, TweenService:Create(
+                    Base,
+                    TweenInfo.new(0.19, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                    { TextColor3 = BaseColor }
+                ));
+                pcall(function() SecondOut.Completed:Wait(); end);
             end;
         end);
-    elseif Mode == 'Slide' then
-        Base.Position = UDim2.fromOffset(-1.5, 0);
-
-        TrackTitleTween(State, TweenService:Create(
-            Base,
-            TweenInfo.new(1.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-            { Position = UDim2.fromOffset(1.5, 0) }
-        ));
     end;
 end;
 
@@ -731,7 +747,7 @@ function Library:RegisterTitleAnimationLabel(Label)
         table.insert(Connections, Label:GetPropertyChangedSignal('Text'):Connect(function()
             local State = Library.TitleAnimationStates[Label];
             if State then
-                for _, Layer in ipairs({ State.Base, State.Trail, State.Ghost }) do
+                for _, Layer in ipairs({ State.Base, State.Echo }) do
                     if Layer and Layer.Parent then
                         Layer.Text = Label.Text;
                     end;
@@ -742,9 +758,9 @@ function Library:RegisterTitleAnimationLabel(Label)
         table.insert(Connections, Label:GetPropertyChangedSignal('TextSize'):Connect(function()
             local State = Library.TitleAnimationStates[Label];
             if State then
-                for _, Layer in ipairs({ State.Base, State.Trail, State.Ghost }) do
+                for _, Layer in ipairs({ State.Base, State.Echo }) do
                     if Layer and Layer.Parent then
-                        SyncTitleLayerStyle(State, Layer);
+                        SyncTitleLayer(Label, Layer);
                     end;
                 end;
             end;
@@ -802,40 +818,8 @@ end;
 function Library:RefreshTitleAnimations()
     for Label in next, Library.TitleAnimationLabels do
         if Label and Label.Parent then
-            local State = Library.TitleAnimationStates[Label];
-
             if Library.TitleAnimation == 'None' then
                 Library:ResetTitleAnimation(Label);
-            elseif State and State.Mode == Library.TitleAnimation then
-                for _, Layer in ipairs({ State.Base, State.Trail, State.Ghost }) do
-                    if Layer and Layer.Parent then
-                        SyncTitleLayerStyle(State, Layer);
-                    end;
-                end;
-
-                if State.Mode == 'Glint' and State.Gradient then
-                    local BaseColor = Label.TextColor3;
-                    local Highlight = BaseColor:Lerp(Color3.new(1, 1, 1), 0.72);
-                    State.Gradient.Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, BaseColor);
-                        ColorSequenceKeypoint.new(0.42, BaseColor);
-                        ColorSequenceKeypoint.new(0.50, Highlight);
-                        ColorSequenceKeypoint.new(0.58, BaseColor);
-                        ColorSequenceKeypoint.new(1, BaseColor);
-                    });
-                elseif State.Base then
-                    State.Base.TextColor3 = Label.TextColor3;
-                end;
-
-                if State.Trail then
-                    local Highlight = Label.TextColor3:Lerp(Color3.new(1, 1, 1), 0.72);
-                    State.Trail.TextColor3 = Label.TextColor3:Lerp(Highlight, 0.35);
-                end;
-                if State.Ghost then
-                    State.Ghost.TextColor3 = Label.TextColor3:Lerp(Color3.new(1, 1, 1), 0.72);
-                end;
-
-                Label.TextTransparency = 1;
             else
                 Library:ApplyTitleAnimation(Label);
             end;
