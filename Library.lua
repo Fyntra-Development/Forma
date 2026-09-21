@@ -5648,10 +5648,12 @@ do
             Parent = Header;
         });
 
+        local DetailHeight = math.max(tonumber(Info.DetailHeight) or (Info.DetailFields and 78 or 0), 0);
+        local DetailGap = DetailHeight > 0 and 6 or 0;
         local Viewport = CreateUtilityScroller(
             Root,
             UDim2.fromOffset(6, 60),
-            UDim2.new(1, -12, 1, -66),
+            UDim2.new(1, -12, 1, -(66 + DetailHeight + DetailGap)),
             3
         );
         local Layout = Library:Create('UIListLayout', {
@@ -5711,6 +5713,58 @@ do
         end;
         Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(UpdateCanvas);
 
+        local DetailPane;
+        local DetailContent;
+        local DetailActions;
+        if DetailHeight > 0 then
+            DetailPane = Library:Create('Frame', {
+                BackgroundColor3 = Library.Contrast;
+                BorderSizePixel = 0;
+                Position = UDim2.new(0, 6, 1, -(DetailHeight + 6));
+                Size = UDim2.new(1, -12, 0, DetailHeight);
+                ZIndex = 8;
+                Parent = Root;
+            });
+            Library:AddCorner(DetailPane, 3);
+            Library:AddToRegistry(DetailPane, { BackgroundColor3 = 'Contrast'; });
+
+            local DetailStroke = Library:Create('UIStroke', {
+                Color = Library.OutlineColor;
+                Thickness = 1;
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                Parent = DetailPane;
+            });
+            Library:AddToRegistry(DetailStroke, { Color = 'OutlineColor'; });
+
+            DetailContent = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(7, 5);
+                Size = UDim2.new(0.62, -10, 1, -10);
+                ZIndex = 9;
+                Parent = DetailPane;
+            });
+            Library:Create('UIListLayout', {
+                FillDirection = Enum.FillDirection.Vertical;
+                Padding = UDim.new(0, 1);
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                Parent = DetailContent;
+            });
+
+            DetailActions = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                Position = UDim2.new(0.62, 2, 0, 5);
+                Size = UDim2.new(0.38, -9, 1, -10);
+                ZIndex = 9;
+                Parent = DetailPane;
+            });
+            Library:Create('UIListLayout', {
+                FillDirection = Enum.FillDirection.Vertical;
+                Padding = UDim.new(0, 4);
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                Parent = DetailActions;
+            });
+        end;
+
         local function GetCellValue(RowData, Column, Index)
             local Key = Column.Key or Column.Name or Index;
             local Value = RowData[Key];
@@ -5741,6 +5795,59 @@ do
                 return Library.Contrast;
             end;
             return Library.MainColor;
+        end;
+
+        function DataTable:RefreshDetails()
+            if not DetailContent then return; end
+
+            for _, Child in ipairs(DetailContent:GetChildren()) do
+                if Child:IsA('GuiObject') then Child:Destroy(); end
+            end;
+
+            local Data = DataTable.Selected and DataTable.Selected.Data or nil;
+            local Fields = Info.DetailFields or {};
+            if not Data then
+                local Empty = Library:CreateLabel({
+                    BackgroundTransparency = 1;
+                    Size = UDim2.new(1, 0, 0, 16);
+                    Text = tostring(Info.EmptyDetailText or 'Select a row to view details');
+                    TextColor3 = Library.DisabledTextColor;
+                    TextSize = 12;
+                    TextXAlignment = Enum.TextXAlignment.Left;
+                    ZIndex = 10;
+                    Parent = DetailContent;
+                });
+                Library.RegistryMap[Empty].Properties.TextColor3 = 'DisabledTextColor';
+                return;
+            end;
+
+            for Index, Field in ipairs(Fields) do
+                local Key;
+                local Name;
+                if type(Field) == 'table' then
+                    Key = Field.Key or Field.Name or Index;
+                    Name = Field.Name or tostring(Key);
+                else
+                    Key = Field;
+                    Name = tostring(Field);
+                end;
+
+                local Value = Data[Key];
+                if Value == nil then Value = '--'; end
+                local Line = Library:CreateLabel({
+                    BackgroundTransparency = 1;
+                    LayoutOrder = Index;
+                    Size = UDim2.new(1, 0, 0, 15);
+                    Text = tostring(Name) .. ':  ' .. tostring(Value);
+                    TextColor3 = Library.DisabledTextColor;
+                    TextSize = 12;
+                    TextXAlignment = Enum.TextXAlignment.Left;
+                    TextTruncate = Enum.TextTruncate.AtEnd;
+                    ZIndex = 10;
+                    Parent = DetailContent;
+                });
+                Library.RegistryMap[Line].Properties.TextColor3 = 'DisabledTextColor';
+            end;
         end;
 
         function DataTable:Refresh()
@@ -5850,6 +5957,7 @@ do
             DataTable.Selected = Row;
             if Previous then Previous:RefreshStyle(true); end
             if Row then Row:RefreshStyle(true); end
+            DataTable:RefreshDetails();
             Library:SafeCallback(DataTable.Callback, Row and Row.Data or nil, Row);
         end;
 
@@ -5901,6 +6009,7 @@ do
             end;
             table.clear(DataTable.Rows);
             DataTable.Selected = nil;
+            DataTable:RefreshDetails();
             UpdateCanvas();
         end;
 
@@ -5923,16 +6032,41 @@ do
             Groupbox:Resize();
         end;
 
+        if DetailActions and type(Info.DetailActions) == 'table' then
+            for Index, Action in ipairs(Info.DetailActions) do
+                if type(Action) == 'table' and Action.Text then
+                    local ActionButton = CreateUtilityButton(
+                        DetailActions,
+                        Action.Text,
+                        UDim2.fromOffset(0, 0),
+                        UDim2.new(1, 0, 0, 20),
+                        function() return DataTable.Selected ~= nil; end
+                    );
+                    ActionButton.LayoutOrder = Index;
+                    ActionButton.MouseButton1Click:Connect(function()
+                        if DataTable.Selected and type(Action.Callback or Action.Func) == 'function' then
+                            Library:SafeCallback(Action.Callback or Action.Func, DataTable.Selected.Data, DataTable.Selected, DataTable);
+                        end
+                    end);
+                end
+            end
+        end;
+
         SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
             DataTable:Refresh();
         end);
 
+        DataTable:RefreshDetails();
         DataTable.SearchBox = SearchBox;
         DataTable.Viewport = Viewport;
         DataTable.Header = Header;
 
         if type(Info.Rows) == 'table' then DataTable:SetRows(Info.Rows); end
         return DataTable;
+    end;
+
+    function Funcs:AddDataTable(Info)
+        return Funcs.AddTable(self, Info);
     end;
 
     function Funcs:AddChat(Info)
@@ -13103,6 +13237,10 @@ function Library:CreateWindow(...)
             Info = type(Info) == 'table' and Info or {};
             local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Table');
             return Groupbox:AddTable(Info);
+        end;
+
+        function Tab:AddDataTable(Info)
+            return Tab:AddTable(Info);
         end;
 
         function Tab:AddChat(Info)
