@@ -12944,7 +12944,7 @@ function Library:CreateWindow(...)
                 BorderSizePixel = 0;
                 Size = UDim2.new(1, 0, 0, 507 + 2);
                 ZIndex = 2;
-                Parent = Info.Side == 1 and LeftSide or RightSide;
+                Parent = Info.Parent or (Info.Side == 1 and LeftSide or RightSide);
             });
 
             Library:AddCorner(BoxOuter, 4);
@@ -13039,6 +13039,82 @@ function Library:CreateWindow(...)
 
         function Tab:AddRightGroupbox(Name)
             return Tab:AddGroupbox({ Side = 2; Name = Name; });
+        end;
+
+        local FullSide;
+        local function EnsureFullSide()
+            if FullSide and FullSide.Parent then return FullSide; end
+
+            LeftSide.Visible = false;
+            RightSide.Visible = false;
+            Tab.LayoutMode = 'Full';
+
+            FullSide = Library:Create('ScrollingFrame', {
+                Name = 'FullSide';
+                BackgroundTransparency = 1;
+                BorderSizePixel = 0;
+                Position = UDim2.new(0, 7, 0, 7);
+                Size = UDim2.new(1, -14, 1, -14);
+                CanvasSize = UDim2.fromOffset(0, 0);
+                BottomImage = '';
+                TopImage = '';
+                ScrollBarThickness = 0;
+                ZIndex = 2;
+                Parent = TabFrame;
+            });
+
+            Library:Create('UIPadding', {
+                PaddingTop = UDim.new(0, 8);
+                PaddingBottom = UDim.new(0, 8);
+                Parent = FullSide;
+            });
+
+            local Layout = Library:Create('UIListLayout', {
+                Padding = UDim.new(0, 8);
+                FillDirection = Enum.FillDirection.Vertical;
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                HorizontalAlignment = Enum.HorizontalAlignment.Center;
+                Parent = FullSide;
+            });
+
+            Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(function()
+                FullSide.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 16);
+            end);
+
+            local Reveal = Library:BindScrollReveal(FullSide, { VisibilityRoot = TabFrame; });
+            if Reveal then table.insert(Tab.ScrollRevealStates, Reveal); end
+            return FullSide;
+        end;
+
+        function Tab:AddFullGroupbox(Name)
+            return Tab:AddGroupbox({
+                Name = tostring(Name or 'Panel');
+                Parent = EnsureFullSide();
+            });
+        end;
+
+        function Tab:AddConsole(Info)
+            Info = type(Info) == 'table' and Info or {};
+            local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Console');
+            return Groupbox:AddConsole(Info);
+        end;
+
+        function Tab:AddTable(Info)
+            Info = type(Info) == 'table' and Info or {};
+            local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Table');
+            return Groupbox:AddTable(Info);
+        end;
+
+        function Tab:AddChat(Info)
+            Info = type(Info) == 'table' and Info or {};
+            local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Chat');
+            return Groupbox:AddChat(Info);
+        end;
+
+        function Tab:AddCardGrid(Info)
+            Info = type(Info) == 'table' and Info or {};
+            local Groupbox = Tab:AddFullGroupbox(Info.Title or 'Cards');
+            return Groupbox:AddCardGrid(Info);
         end;
 
         function Tab:AddTabbox(Info)
