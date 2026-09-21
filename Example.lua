@@ -611,30 +611,35 @@ FormaRight:AddButton({
 
 local ConsoleView = Library:CreateConsole({
     Title = 'Console',
-    Width = 390,
-    Height = 300,
-    Position = UDim2.new(0, 28, 0, 110),
-    SearchPlaceholder = 'Search output...',
+    Width = 380,
+    Height = 366,
+    Position = UDim2.new(0, 18, 0, 88),
+    SearchPlaceholder = 'Search...',
+    Levels = { 'Output', 'Info', 'Warning' },
     MaxEntries = 250,
 })
 
 ConsoleView:Log('Console ready')
 ConsoleView:Info('Library initialized')
 ConsoleView:Warn('This is a warning example')
-ConsoleView:Error('Errors use the current Forma risk color')
 
 local PlayerPriorities = {}
 local RefreshPlayerTable
+
 local PlayerTable = Library:CreateDataTable({
     Title = 'Players',
-    Width = 430,
-    Height = 390,
-    Position = UDim2.new(0.5, -215, 0, 82),
-    SearchPlaceholder = 'Search players...',
+    Width = 456,
+    Height = 500,
+    Position = UDim2.new(0.5, -228, 0, 64),
+    FilterLabel = 'Player',
+    SearchPlaceholder = 'Search...',
+    DetailTitle = 'Settings',
+    DetailHeight = 122,
+    EmptyText = 'No players found',
     Columns = {
-        { Name = 'Player', Key = 'Player', Width = 0.46 },
-        { Name = 'Team', Key = 'Team', Width = 0.30 },
-        { Name = 'Priority', Key = 'Priority', Width = 0.24 },
+        { Name = 'Player', Key = 'Player', Width = 0.48 },
+        { Name = 'Team', Key = 'Team', Width = 0.26 },
+        { Name = 'Priority', Key = 'Priority', Width = 0.26 },
     },
     DetailFields = {
         { Name = 'Name', Key = 'Player' },
@@ -644,16 +649,38 @@ local PlayerTable = Library:CreateDataTable({
     },
     DetailActions = {
         {
-            Text = 'Print selected',
-            Callback = function(Data)
-                print('Selected player row:', Data.Player, Data.UserId)
+            Text = 'Priority',
+            Label = 'priority',
+            Values = { 'Friend', 'Neutral', 'Priority', 'Enemy' },
+            Key = 'Priority',
+            GetValue = function(Data)
+                return PlayerPriorities[Data.UserId] or Data.Priority or 'Neutral'
+            end,
+            Callback = function(Data, Value)
+                PlayerPriorities[Data.UserId] = Value
+                Data.Priority = Value
             end,
         },
         {
-            Text = 'Mark priority',
+            Text = 'Teleport',
             Callback = function(Data)
-                PlayerPriorities[Data.UserId] = Data.Priority == 'Priority' and 'Neutral' or 'Priority'
-                RefreshPlayerTable()
+                local Target = Players:GetPlayerByUserId(tonumber(Data.UserId) or 0)
+                local LocalCharacter = Players.LocalPlayer and Players.LocalPlayer.Character
+                local TargetCharacter = Target and Target.Character
+                local LocalRoot = LocalCharacter and LocalCharacter:FindFirstChild('HumanoidRootPart')
+                local TargetRoot = TargetCharacter and TargetCharacter:FindFirstChild('HumanoidRootPart')
+                if LocalRoot and TargetRoot then
+                    LocalRoot.CFrame = TargetRoot.CFrame * CFrame.new(0, 0, 3)
+                end
+            end,
+        },
+        {
+            Text = 'Print Priorities',
+            Callback = function()
+                print('--- Forma player priorities ---')
+                for UserId, Priority in next, PlayerPriorities do
+                    print(UserId, Priority)
+                end
             end,
         },
     },
@@ -684,15 +711,15 @@ Library:GiveSignal(Players.PlayerRemoving:Connect(RefreshPlayerTable))
 local GlobalChat
 GlobalChat = Library:CreateChat({
     Title = 'Global Chat',
-    Width = 390,
-    Height = 340,
-    Position = UDim2.new(1, -418, 0, 110),
-    Placeholder = 'Type a message...',
+    Width = 438,
+    Height = 475,
+    Position = UDim2.new(1, -458, 0, 72),
+    Placeholder = 'Type here...',
     MaxMessages = 100,
     OnSend = function(Text)
         local LocalPlayer = Players.LocalPlayer
         GlobalChat:AddMessage({
-            Name = LocalPlayer.DisplayName,
+            Name = LocalPlayer.Name,
             Username = '@' .. LocalPlayer.Name,
             UserId = LocalPlayer.UserId,
             Text = Text,
@@ -702,49 +729,43 @@ GlobalChat = Library:CreateChat({
 })
 
 GlobalChat:AddMessage({
-    Name = Players.LocalPlayer.DisplayName,
+    Name = Players.LocalPlayer.Name,
     Username = '@' .. Players.LocalPlayer.Name,
     UserId = Players.LocalPlayer.UserId,
-    Text = 'Forma chat view ready.',
+    Text = 'aaa',
+    Side = 'Right',
+})
+
+GlobalChat:AddMessage({
+    Name = Players.LocalPlayer.Name,
+    Username = '@' .. Players.LocalPlayer.Name,
+    UserId = Players.LocalPlayer.UserId,
+    Text = 'aaa',
     Side = 'Left',
 })
 
 local SkinGrid = Library:CreateCardGrid({
     Title = 'Skin Changer',
-    Width = 440,
-    Height = 330,
-    Position = UDim2.new(0, 40, 1, -360),
-    CardSize = Vector2.new(98, 108),
-    Searchable = true,
+    Width = 584,
+    Height = 451,
+    Position = UDim2.new(0, 32, 1, -474),
+    CardSize = Vector2.new(105, 105),
+    Searchable = false,
     Selectable = true,
-    OnSelected = function(Data)
-        if Data then
-            ConsoleView:Log('Selected card: ' .. tostring(Data.Title))
-        end
-    end,
 })
 
 SkinGrid:AddCard({
     Title = 'Add',
     Icon = 'plus',
-    IconSize = 28,
     Selectable = false,
     Action = function()
         Library:Notify({
-            Title = 'Card grid',
-            Text = 'Use AddCard() to insert a new skin, preset, theme, or asset.',
+            Title = 'Skin Changer',
+            Text = 'Use AddCard() to add skins, presets, themes, or other assets.',
             Duration = 4,
         })
     end,
 })
-
-for Index = 1, 3 do
-    SkinGrid:AddCard({
-        Title = 'Skin ' .. Index,
-        Image = 'rbxthumb://type=AvatarHeadShot&id=' .. tostring(Players.LocalPlayer.UserId) .. '&w=150&h=150',
-        SearchText = 'demo preset skin',
-    })
-end
 
 -- ============================================================================
 -- Target HUD
