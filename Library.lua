@@ -2846,12 +2846,18 @@ end;
 
 function Library:UpdateColorsUsingRegistry()
     for Idx, Object in next, Library.Registry do
-        for Property, ColorIdx in next, Object.Properties do
-            if type(ColorIdx) == 'string' then
-                Object.Instance[Property] = Library[ColorIdx];
-            elseif type(ColorIdx) == 'function' then
-                Object.Instance[Property] = ColorIdx()
-            end
+        if Object.Instance and Object.Instance.Parent then
+            for Property, ColorIdx in next, Object.Properties do
+                if Library.CancelMotion then
+                    Library:CancelMotion(Object.Instance, Property);
+                end;
+
+                if type(ColorIdx) == 'string' then
+                    Object.Instance[Property] = Library[ColorIdx];
+                elseif type(ColorIdx) == 'function' then
+                    Object.Instance[Property] = ColorIdx();
+                end
+            end;
         end;
     end;
 end;
