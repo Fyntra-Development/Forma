@@ -42,7 +42,6 @@ local Window = Library:CreateWindow({
 local Tabs = {
     Main = Window:AddTab('Main'),
     ['Forma'] = Window:AddTab('Forma'),
-    ['Utilities'] = Window:AddTab('Utilities'),
     ['Target HUD'] = Window:AddTab('Target HUD'),
     ['UI Settings'] = Window:AddTab('UI Settings'),
 }
@@ -607,12 +606,14 @@ FormaRight:AddButton({
 })
 
 -- ============================================================================
--- Utility components
+-- Standalone utility windows
 -- ============================================================================
 
-local ConsoleView = Tabs.Utilities:AddConsole({
+local ConsoleView = Library:CreateConsole({
     Title = 'Console',
-    Height = 245,
+    Width = 390,
+    Height = 300,
+    Position = UDim2.new(0, 28, 0, 110),
     SearchPlaceholder = 'Search output...',
     MaxEntries = 250,
 })
@@ -624,9 +625,11 @@ ConsoleView:Error('Errors use the current Forma risk color')
 
 local PlayerPriorities = {}
 local RefreshPlayerTable
-local PlayerTable = Tabs.Utilities:AddTable({
+local PlayerTable = Library:CreateDataTable({
     Title = 'Players',
-    Height = 320,
+    Width = 430,
+    Height = 390,
+    Position = UDim2.new(0.5, -215, 0, 82),
     SearchPlaceholder = 'Search players...',
     Columns = {
         { Name = 'Player', Key = 'Player', Width = 0.46 },
@@ -679,9 +682,11 @@ Library:GiveSignal(Players.PlayerAdded:Connect(RefreshPlayerTable))
 Library:GiveSignal(Players.PlayerRemoving:Connect(RefreshPlayerTable))
 
 local GlobalChat
-GlobalChat = Tabs.Utilities:AddChat({
+GlobalChat = Library:CreateChat({
     Title = 'Global Chat',
-    Height = 275,
+    Width = 390,
+    Height = 340,
+    Position = UDim2.new(1, -418, 0, 110),
     Placeholder = 'Type a message...',
     MaxMessages = 100,
     OnSend = function(Text)
@@ -704,9 +709,11 @@ GlobalChat:AddMessage({
     Side = 'Left',
 })
 
-local SkinGrid = Tabs.Utilities:AddCardGrid({
-    Title = 'Skin / asset grid',
-    Height = 275,
+local SkinGrid = Library:CreateCardGrid({
+    Title = 'Skin Changer',
+    Width = 440,
+    Height = 330,
+    Position = UDim2.new(0, 40, 1, -360),
     CardSize = Vector2.new(98, 108),
     Searchable = true,
     Selectable = true,
