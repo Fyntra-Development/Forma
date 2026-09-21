@@ -5172,6 +5172,1269 @@ do
         });
     end;
 
+    local function CreateUtilityRoot(Groupbox, Height)
+        local Root = Library:Create('Frame', {
+            BackgroundColor3 = Library.MainColor;
+            BorderSizePixel = 0;
+            ClipsDescendants = true;
+            Size = UDim2.new(1, -4, 0, math.max(tonumber(Height) or 260, 80));
+            ZIndex = 5;
+            Parent = Groupbox.Container;
+        });
+
+        Library:AddCorner(Root, 3);
+        local Stroke = Library:Create('UIStroke', {
+            Color = Library.OutlineColor;
+            Thickness = 1;
+            LineJoinMode = Enum.LineJoinMode.Round;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            Parent = Root;
+        });
+        Library:AddToRegistry(Root, { BackgroundColor3 = 'MainColor'; });
+        Library:AddToRegistry(Stroke, { Color = 'OutlineColor'; });
+
+        Groupbox:AddBlank(5);
+        Groupbox:Resize();
+        return Root;
+    end;
+
+    local function CreateUtilitySearch(Parent, Placeholder, Position, Size)
+        local Outer = Library:Create('Frame', {
+            BackgroundColor3 = Library.OutlineColor;
+            BorderSizePixel = 0;
+            Position = Position or UDim2.fromOffset(6, 6);
+            Size = Size or UDim2.new(1, -12, 0, 22);
+            ZIndex = 8;
+            Parent = Parent;
+        });
+        Library:AddCorner(Outer, 3);
+        Library:AddToRegistry(Outer, { BackgroundColor3 = 'OutlineColor'; });
+
+        local Inner = Library:Create('Frame', {
+            BackgroundColor3 = Library.Contrast;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
+            BorderSizePixel = 1;
+            Position = UDim2.fromOffset(1, 1);
+            Size = UDim2.new(1, -2, 1, -2);
+            ZIndex = 9;
+            Parent = Outer;
+        });
+        Library:AddCorner(Inner, 3);
+        Library:AddToRegistry(Inner, {
+            BackgroundColor3 = 'Contrast';
+            BorderColor3 = 'OutlineColor';
+        });
+
+        local Box = Library:Create('TextBox', {
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            ClearTextOnFocus = false;
+            PlaceholderColor3 = Library.DisabledTextColor;
+            PlaceholderText = Placeholder or 'Search...';
+            Position = UDim2.fromOffset(6, 0);
+            Size = UDim2.new(1, -12, 1, 0);
+            Text = '';
+            TextColor3 = Library.FontColor;
+            TextSize = 13;
+            TextStrokeTransparency = 0;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            ZIndex = 10;
+            Parent = Inner;
+        });
+        Library:ApplyFont(Box);
+        Library:ApplyTextStroke(Box);
+        Library:AddToRegistry(Box, {
+            TextColor3 = 'FontColor';
+            PlaceholderColor3 = 'DisabledTextColor';
+        });
+        Library:EnableTypingAnimation(Box);
+        return Box, Outer;
+    end;
+
+    local function CreateUtilityScroller(Parent, Position, Size, Padding)
+        local Scrolling = Library:Create('ScrollingFrame', {
+            BackgroundColor3 = Library.Inline;
+            BorderSizePixel = 0;
+            CanvasSize = UDim2.fromOffset(0, 0);
+            Position = Position;
+            Size = Size;
+            ScrollBarThickness = 2;
+            ScrollBarImageColor3 = Library.AccentColor;
+            ScrollBarImageTransparency = 0.25;
+            ZIndex = 7;
+            Parent = Parent;
+        });
+        Library:AddCorner(Scrolling, 3);
+        Library:AddToRegistry(Scrolling, {
+            BackgroundColor3 = 'Inline';
+            ScrollBarImageColor3 = 'AccentColor';
+        });
+
+        local Stroke = Library:Create('UIStroke', {
+            Color = Library.OutlineColor;
+            Thickness = 1;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            Parent = Scrolling;
+        });
+        Library:AddToRegistry(Stroke, { Color = 'OutlineColor'; });
+
+        if Padding then
+            Library:Create('UIPadding', {
+                PaddingTop = UDim.new(0, Padding);
+                PaddingBottom = UDim.new(0, Padding);
+                PaddingLeft = UDim.new(0, Padding);
+                PaddingRight = UDim.new(0, Padding);
+                Parent = Scrolling;
+            });
+        end;
+
+        return Scrolling;
+    end;
+
+    local function CreateUtilityButton(Parent, Text, Position, Size, ActiveResolver)
+        local Button = Library:Create('TextButton', {
+            AutoButtonColor = false;
+            BackgroundColor3 = Library.Contrast;
+            BorderSizePixel = 0;
+            Position = Position;
+            Size = Size;
+            Text = tostring(Text or '');
+            TextColor3 = Library.DisabledTextColor;
+            TextSize = 12;
+            TextStrokeTransparency = 1;
+            ZIndex = 11;
+            Parent = Parent;
+        });
+        Library:ApplyFont(Button);
+        Library:AddCorner(Button, 3);
+
+        local function ResolveBackground()
+            if type(ActiveResolver) == 'function' and ActiveResolver() then
+                return Library.AccentColor:Lerp(Library.MainColor, 0.78);
+            end;
+            return Library.Contrast;
+        end;
+        local function ResolveText()
+            if type(ActiveResolver) == 'function' and ActiveResolver() then
+                return Library.FontColor;
+            end;
+            return Library.DisabledTextColor;
+        end;
+
+        Library:AddToRegistry(Button, {
+            BackgroundColor3 = ResolveBackground;
+            TextColor3 = ResolveText;
+        });
+
+        function Button:RefreshFormaStyle(Animated)
+            local Background = ResolveBackground();
+            local Foreground = ResolveText();
+            if Animated then
+                Library:Animate(Button, {
+                    BackgroundColor3 = Background;
+                    TextColor3 = Foreground;
+                }, 0.12, nil, 'Color');
+            else
+                Library:CancelMotion(Button);
+                Button.BackgroundColor3 = Background;
+                Button.TextColor3 = Foreground;
+            end;
+        end;
+
+        return Button;
+    end;
+
+    function Funcs:AddConsole(Info)
+        Info = type(Info) == 'table' and Info or {};
+        local Groupbox = self;
+        local Height = tonumber(Info.Height) or 300;
+        local Root = CreateUtilityRoot(Groupbox, Height);
+        local Console = {
+            Type = 'Console';
+            Root = Root;
+            Entries = {};
+            Filters = {};
+            MaxEntries = math.max(tonumber(Info.MaxEntries) or 500, 20);
+            AutoScroll = Info.AutoScroll ~= false;
+        };
+
+        local Levels = Info.Levels or { 'Output', 'Info', 'Warning', 'Error' };
+        local Toolbar = Library:Create('Frame', {
+            BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(6, 6);
+            Size = UDim2.new(1, -12, 0, 22);
+            ZIndex = 8;
+            Parent = Root;
+        });
+
+        local SearchBox = CreateUtilitySearch(
+            Toolbar,
+            Info.SearchPlaceholder or 'Search...',
+            UDim2.fromOffset(0, 0),
+            UDim2.new(0.42, -3, 1, 0)
+        );
+
+        local FilterHolder = Library:Create('Frame', {
+            BackgroundTransparency = 1;
+            Position = UDim2.new(0.42, 3, 0, 0);
+            Size = UDim2.new(0.58, -3, 1, 0);
+            ZIndex = 8;
+            Parent = Toolbar;
+        });
+
+        local FilterLayout = Library:Create('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal;
+            HorizontalAlignment = Enum.HorizontalAlignment.Right;
+            Padding = UDim.new(0, 4);
+            SortOrder = Enum.SortOrder.LayoutOrder;
+            Parent = FilterHolder;
+        });
+
+        local FilterButtons = {};
+        for Index, Level in ipairs(Levels) do
+            Console.Filters[Level] = true;
+            local Button = CreateUtilityButton(
+                FilterHolder,
+                Level,
+                UDim2.fromOffset(0, 0),
+                UDim2.new(1 / math.max(#Levels, 1), -3, 1, 0),
+                function() return Console.Filters[Level] == true; end
+            );
+            Button.LayoutOrder = Index;
+            FilterButtons[Level] = Button;
+        end;
+
+        local Viewport = CreateUtilityScroller(
+            Root,
+            UDim2.fromOffset(6, 34),
+            UDim2.new(1, -12, 1, -40),
+            5
+        );
+        local Layout = Library:Create('UIListLayout', {
+            FillDirection = Enum.FillDirection.Vertical;
+            Padding = UDim.new(0, 2);
+            SortOrder = Enum.SortOrder.LayoutOrder;
+            Parent = Viewport;
+        });
+
+        local function CategoryColor(Level)
+            if Level == 'Info' then
+                return Library.AccentColor;
+            elseif Level == 'Warning' then
+                return Color3.fromRGB(235, 196, 82);
+            elseif Level == 'Error' then
+                return Library.RiskColor;
+            end;
+            return Library.FontColor;
+        end;
+
+        local function UpdateCanvas()
+            Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 10);
+            if Console.AutoScroll then
+                task.defer(function()
+                    local MaxY = math.max(Viewport.AbsoluteCanvasSize.Y - Viewport.AbsoluteSize.Y, 0);
+                    Viewport.CanvasPosition = Vector2.new(0, MaxY);
+                end);
+            end;
+        end;
+        Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(UpdateCanvas);
+
+        local function MatchesEntry(Entry)
+            if Console.Filters[Entry.Level] == false then return false; end
+            local Query = string.lower(SearchBox.Text or '');
+            if Query == '' then return true; end
+            local Haystack = string.lower(tostring(Entry.Level) .. ' ' .. tostring(Entry.Message) .. ' ' .. tostring(Entry.Timestamp));
+            return string.find(Haystack, Query, 1, true) ~= nil;
+        end;
+
+        function Console:Refresh()
+            for _, Entry in ipairs(Console.Entries) do
+                Entry.Frame.Visible = MatchesEntry(Entry);
+                if Entry.Category and Entry.Category.Parent then
+                    Entry.Category.TextColor3 = CategoryColor(Entry.Level);
+                end;
+            end;
+            for _, Button in next, FilterButtons do
+                Button:RefreshFormaStyle(false);
+            end;
+            task.defer(UpdateCanvas);
+        end;
+
+        function Console:SetFilter(Level, Enabled)
+            if Console.Filters[Level] == nil then return; end
+            Console.Filters[Level] = Enabled ~= false;
+            Console:Refresh();
+        end;
+
+        function Console:SetSearch(Query)
+            SearchBox.Text = tostring(Query or '');
+        end;
+
+        function Console:AddEntry(Level, Message, EntryInfo)
+            EntryInfo = type(EntryInfo) == 'table' and EntryInfo or {};
+            Level = tostring(Level or 'Output');
+            if Console.Filters[Level] == nil then Console.Filters[Level] = true; end;
+
+            while #Console.Entries >= Console.MaxEntries do
+                local Old = table.remove(Console.Entries, 1);
+                if Old and Old.Frame then Old.Frame:Destroy(); end;
+            end;
+
+            local Clock = EntryInfo.Timestamp;
+            if Clock == nil then
+                local Now = os.date('*t');
+                Clock = string.format('%02d:%02d:%02d', Now.hour, Now.min, Now.sec);
+            end;
+
+            local Row = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                Size = UDim2.new(1, -2, 0, 18);
+                ZIndex = 8;
+                Parent = Viewport;
+            });
+
+            local TimeLabel = Library:CreateLabel({
+                Position = UDim2.fromOffset(0, 0);
+                Size = UDim2.fromOffset(68, 18);
+                Text = '[' .. tostring(Clock) .. ']';
+                TextColor3 = Library.DisabledTextColor;
+                TextSize = 12;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 9;
+                Parent = Row;
+            });
+            Library.RegistryMap[TimeLabel].Properties.TextColor3 = 'DisabledTextColor';
+
+            local Category = Library:CreateLabel({
+                Position = UDim2.fromOffset(70, 0);
+                Size = UDim2.fromOffset(64, 18);
+                Text = '[' .. string.upper(Level) .. ']';
+                TextColor3 = CategoryColor(Level);
+                TextSize = 12;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 9;
+                Parent = Row;
+            });
+            Library.RegistryMap[Category].Properties.TextColor3 = function()
+                return CategoryColor(Level);
+            end;
+
+            local MessageLabel = Library:CreateLabel({
+                Position = UDim2.fromOffset(136, 0);
+                Size = UDim2.new(1, -138, 0, 18);
+                Text = tostring(Message or '');
+                TextSize = 12;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                TextTruncate = Enum.TextTruncate.AtEnd;
+                ZIndex = 9;
+                Parent = Row;
+            });
+
+            local Entry = {
+                Frame = Row;
+                Time = TimeLabel;
+                Category = Category;
+                MessageLabel = MessageLabel;
+                Level = Level;
+                Message = tostring(Message or '');
+                Timestamp = tostring(Clock);
+            };
+            table.insert(Console.Entries, Entry);
+            Row.Visible = MatchesEntry(Entry);
+            task.defer(UpdateCanvas);
+            return Entry;
+        end;
+
+        function Console:Log(Message, EntryInfo) return Console:AddEntry('Output', Message, EntryInfo); end;
+        function Console:Info(Message, EntryInfo) return Console:AddEntry('Info', Message, EntryInfo); end;
+        function Console:Warn(Message, EntryInfo) return Console:AddEntry('Warning', Message, EntryInfo); end;
+        function Console:Error(Message, EntryInfo) return Console:AddEntry('Error', Message, EntryInfo); end;
+
+        function Console:Clear()
+            for _, Entry in ipairs(Console.Entries) do
+                if Entry.Frame then Entry.Frame:Destroy(); end;
+            end;
+            table.clear(Console.Entries);
+            UpdateCanvas();
+        end;
+
+        function Console:SetVisible(Visible)
+            Root.Visible = Visible ~= false;
+            Groupbox:Resize();
+        end;
+
+        function Console:Destroy()
+            Root:Destroy();
+            Groupbox:Resize();
+        end;
+
+        SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
+            Console:Refresh();
+        end);
+        for Level, Button in next, FilterButtons do
+            Button.MouseButton1Click:Connect(function()
+                Console.Filters[Level] = not Console.Filters[Level];
+                Console:Refresh();
+            end);
+        end;
+
+        Console.SearchBox = SearchBox;
+        Console.Viewport = Viewport;
+
+        if type(Info.Entries) == 'table' then
+            for _, Entry in ipairs(Info.Entries) do
+                if type(Entry) == 'table' then
+                    Console:AddEntry(Entry.Level, Entry.Text or Entry.Message, Entry);
+                else
+                    Console:Log(Entry);
+                end;
+            end;
+        end;
+
+        return Console;
+    end;
+
+    function Funcs:AddTable(Info)
+        Info = type(Info) == 'table' and Info or {};
+        local Groupbox = self;
+        local Height = tonumber(Info.Height) or 300;
+        local Root = CreateUtilityRoot(Groupbox, Height);
+        local DataTable = {
+            Type = 'Table';
+            Root = Root;
+            Rows = {};
+            Columns = Info.Columns or {};
+            Selected = nil;
+            SortKey = nil;
+            SortAscending = true;
+            Callback = Info.Callback or Info.OnSelected;
+        };
+
+        if #DataTable.Columns == 0 then
+            DataTable.Columns = {
+                { Name = 'Name'; Key = 'Name'; Width = 1; };
+            };
+        end;
+
+        local SearchBox = CreateUtilitySearch(
+            Root,
+            Info.SearchPlaceholder or 'Search...',
+            UDim2.fromOffset(6, 6),
+            UDim2.new(1, -12, 0, 22)
+        );
+
+        local Header = Library:Create('Frame', {
+            BackgroundColor3 = Library.Contrast;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(6, 34);
+            Size = UDim2.new(1, -12, 0, 22);
+            ZIndex = 8;
+            Parent = Root;
+        });
+        Library:AddCorner(Header, 3);
+        Library:AddToRegistry(Header, { BackgroundColor3 = 'Contrast'; });
+
+        local HeaderLayout = Library:Create('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal;
+            SortOrder = Enum.SortOrder.LayoutOrder;
+            Parent = Header;
+        });
+
+        local Viewport = CreateUtilityScroller(
+            Root,
+            UDim2.fromOffset(6, 60),
+            UDim2.new(1, -12, 1, -66),
+            3
+        );
+        local Layout = Library:Create('UIListLayout', {
+            FillDirection = Enum.FillDirection.Vertical;
+            Padding = UDim.new(0, 1);
+            SortOrder = Enum.SortOrder.LayoutOrder;
+            Parent = Viewport;
+        });
+
+        local function ColumnWidth(Column)
+            local Width = tonumber(Column.Width);
+            if not Width or Width <= 0 then return 1 / #DataTable.Columns; end
+            if Width <= 1 then return Width; end
+            return Width / math.max(Root.AbsoluteSize.X - 18, 1);
+        end;
+
+        local HeaderButtons = {};
+        for Index, Column in ipairs(DataTable.Columns) do
+            local Key = Column.Key or Column.Name or Index;
+            local Button = Library:Create('TextButton', {
+                AutoButtonColor = false;
+                BackgroundTransparency = 1;
+                LayoutOrder = Index;
+                Size = UDim2.new(ColumnWidth(Column), 0, 1, 0);
+                Text = tostring(Column.Name or Key);
+                TextColor3 = Library.DisabledTextColor;
+                TextSize = 12;
+                TextStrokeTransparency = 1;
+                TextXAlignment = Column.Align == 'Center' and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left;
+                ZIndex = 9;
+                Parent = Header;
+            });
+            Library:ApplyFont(Button);
+            Library:AddToRegistry(Button, {
+                TextColor3 = function()
+                    if DataTable.SortKey == Key then return Library.AccentColor; end
+                    return Library.DisabledTextColor;
+                end;
+            });
+            HeaderButtons[Key] = Button;
+
+            if Column.Sortable ~= false then
+                Button.MouseButton1Click:Connect(function()
+                    if DataTable.SortKey == Key then
+                        DataTable.SortAscending = not DataTable.SortAscending;
+                    else
+                        DataTable.SortKey = Key;
+                        DataTable.SortAscending = true;
+                    end;
+                    DataTable:Sort(DataTable.SortKey, DataTable.SortAscending);
+                end);
+            end;
+        end;
+
+        local function UpdateCanvas()
+            Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 6);
+        end;
+        Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(UpdateCanvas);
+
+        local function GetCellValue(RowData, Column, Index)
+            local Key = Column.Key or Column.Name or Index;
+            local Value = RowData[Key];
+            if Value == nil then Value = RowData[Index]; end
+            if type(Column.Formatter) == 'function' then
+                local Success, Formatted = pcall(Column.Formatter, Value, RowData);
+                if Success then Value = Formatted; end
+            end;
+            if Value == nil then Value = ''; end
+            return tostring(Value);
+        end;
+
+        local function RowMatches(Row)
+            local Query = string.lower(SearchBox.Text or '');
+            if Query == '' then return true; end
+            for Index, Column in ipairs(DataTable.Columns) do
+                if string.find(string.lower(GetCellValue(Row.Data, Column, Index)), Query, 1, true) then
+                    return true;
+                end;
+            end;
+            return false;
+        end;
+
+        local function ResolveRowColor(Row)
+            if DataTable.Selected == Row then
+                return Library.AccentColor:Lerp(Library.MainColor, 0.82);
+            elseif Row.Hovered then
+                return Library.Contrast;
+            end;
+            return Library.MainColor;
+        end;
+
+        function DataTable:Refresh()
+            for _, Row in ipairs(DataTable.Rows) do
+                Row.Frame.Visible = RowMatches(Row);
+                Row:RefreshStyle(false);
+            end;
+            for _, Button in next, HeaderButtons do
+                local Entry = Library.RegistryMap[Button];
+                if Entry and Entry.Properties and type(Entry.Properties.TextColor3) == 'function' then
+                    Button.TextColor3 = Entry.Properties.TextColor3();
+                end;
+            end;
+            task.defer(UpdateCanvas);
+        end;
+
+        function DataTable:AddRow(RowData)
+            RowData = type(RowData) == 'table' and RowData or { tostring(RowData) };
+            local Row = {
+                Data = RowData;
+                Hovered = false;
+            };
+
+            local Frame = Library:Create('Frame', {
+                BackgroundColor3 = Library.MainColor;
+                BorderSizePixel = 0;
+                Size = UDim2.new(1, -2, 0, tonumber(Info.RowHeight) or 22);
+                ZIndex = 8;
+                Parent = Viewport;
+            });
+            Library:AddCorner(Frame, 2);
+            Row.Frame = Frame;
+
+            Library:AddToRegistry(Frame, {
+                BackgroundColor3 = function() return ResolveRowColor(Row); end;
+            });
+
+            local CellLayout = Library:Create('UIListLayout', {
+                FillDirection = Enum.FillDirection.Horizontal;
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                Parent = Frame;
+            });
+
+            Row.Labels = {};
+            for Index, Column in ipairs(DataTable.Columns) do
+                local Label = Library:CreateLabel({
+                    BackgroundTransparency = 1;
+                    LayoutOrder = Index;
+                    Position = UDim2.fromOffset(4, 0);
+                    Size = UDim2.new(ColumnWidth(Column), -4, 1, 0);
+                    Text = GetCellValue(RowData, Column, Index);
+                    TextColor3 = Library.FontColor;
+                    TextSize = 12;
+                    TextXAlignment = Column.Align == 'Center' and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left;
+                    TextTruncate = Enum.TextTruncate.AtEnd;
+                    ZIndex = 9;
+                    Parent = Frame;
+                });
+                table.insert(Row.Labels, Label);
+            end;
+
+            local Hitbox = Library:Create('TextButton', {
+                AutoButtonColor = false;
+                BackgroundTransparency = 1;
+                Size = UDim2.fromScale(1, 1);
+                Text = '';
+                ZIndex = 10;
+                Parent = Frame;
+            });
+            Row.Hitbox = Hitbox;
+
+            function Row:RefreshStyle(Animated)
+                local Target = ResolveRowColor(Row);
+                if Animated then
+                    Library:Animate(Frame, { BackgroundColor3 = Target; }, 0.10, nil, 'Color');
+                else
+                    Library:CancelMotion(Frame, 'BackgroundColor3');
+                    Frame.BackgroundColor3 = Target;
+                end;
+            end;
+
+            Hitbox.MouseEnter:Connect(function()
+                Row.Hovered = true;
+                Row:RefreshStyle(true);
+            end);
+            Hitbox.MouseLeave:Connect(function()
+                Row.Hovered = false;
+                Row:RefreshStyle(true);
+            end);
+            Hitbox.MouseButton1Click:Connect(function()
+                DataTable:Select(Row);
+            end);
+
+            table.insert(DataTable.Rows, Row);
+            Frame.LayoutOrder = #DataTable.Rows;
+            Frame.Visible = RowMatches(Row);
+            task.defer(UpdateCanvas);
+            return Row;
+        end;
+
+        function DataTable:Select(RowOrIndex)
+            local Row = RowOrIndex;
+            if type(RowOrIndex) == 'number' then Row = DataTable.Rows[RowOrIndex]; end
+            if Row ~= nil and not table.find(DataTable.Rows, Row) then return; end
+
+            local Previous = DataTable.Selected;
+            DataTable.Selected = Row;
+            if Previous then Previous:RefreshStyle(true); end
+            if Row then Row:RefreshStyle(true); end
+            Library:SafeCallback(DataTable.Callback, Row and Row.Data or nil, Row);
+        end;
+
+        function DataTable:GetSelected()
+            return DataTable.Selected and DataTable.Selected.Data or nil;
+        end;
+
+        function DataTable:Sort(Key, Ascending)
+            Key = Key or DataTable.SortKey;
+            if not Key then return; end
+            DataTable.SortKey = Key;
+            DataTable.SortAscending = Ascending ~= false;
+
+            local ColumnIndex = 1;
+            for Index, Column in ipairs(DataTable.Columns) do
+                if (Column.Key or Column.Name or Index) == Key then
+                    ColumnIndex = Index;
+                    break;
+                end;
+            end;
+            local Column = DataTable.Columns[ColumnIndex];
+
+            table.sort(DataTable.Rows, function(A, B)
+                local AV = GetCellValue(A.Data, Column, ColumnIndex);
+                local BV = GetCellValue(B.Data, Column, ColumnIndex);
+                local AN, BN = tonumber(AV), tonumber(BV);
+                local Less = (AN and BN) and AN < BN or string.lower(AV) < string.lower(BV);
+                if DataTable.SortAscending then return Less; end
+                return not Less and AV ~= BV;
+            end);
+
+            for Index, Row in ipairs(DataTable.Rows) do Row.Frame.LayoutOrder = Index; end
+            DataTable:Refresh();
+        end;
+
+        function DataTable:RemoveRow(RowOrIndex)
+            local Index = type(RowOrIndex) == 'number' and RowOrIndex or table.find(DataTable.Rows, RowOrIndex);
+            if not Index then return; end
+            local Row = table.remove(DataTable.Rows, Index);
+            if DataTable.Selected == Row then DataTable.Selected = nil; end
+            if Row and Row.Frame then Row.Frame:Destroy(); end
+            for Order, Existing in ipairs(DataTable.Rows) do Existing.Frame.LayoutOrder = Order; end
+            UpdateCanvas();
+        end;
+
+        function DataTable:Clear()
+            for _, Row in ipairs(DataTable.Rows) do
+                if Row.Frame then Row.Frame:Destroy(); end;
+            end;
+            table.clear(DataTable.Rows);
+            DataTable.Selected = nil;
+            UpdateCanvas();
+        end;
+
+        function DataTable:SetRows(Rows)
+            DataTable:Clear();
+            for _, RowData in ipairs(Rows or {}) do DataTable:AddRow(RowData); end
+        end;
+
+        function DataTable:SetSearch(Query)
+            SearchBox.Text = tostring(Query or '');
+        end;
+
+        function DataTable:SetVisible(Visible)
+            Root.Visible = Visible ~= false;
+            Groupbox:Resize();
+        end;
+
+        function DataTable:Destroy()
+            Root:Destroy();
+            Groupbox:Resize();
+        end;
+
+        SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
+            DataTable:Refresh();
+        end);
+
+        DataTable.SearchBox = SearchBox;
+        DataTable.Viewport = Viewport;
+        DataTable.Header = Header;
+
+        if type(Info.Rows) == 'table' then DataTable:SetRows(Info.Rows); end
+        return DataTable;
+    end;
+
+    function Funcs:AddChat(Info)
+        Info = type(Info) == 'table' and Info or {};
+        local Groupbox = self;
+        local Height = tonumber(Info.Height) or 320;
+        local Root = CreateUtilityRoot(Groupbox, Height);
+        local Chat = {
+            Type = 'Chat';
+            Root = Root;
+            Messages = {};
+            MaxMessages = math.max(tonumber(Info.MaxMessages) or 200, 20);
+            OnSend = Info.OnSend or Info.Callback;
+        };
+
+        local ComposerHeight = Info.Composer == false and 0 or 30;
+        local Viewport = CreateUtilityScroller(
+            Root,
+            UDim2.fromOffset(6, 6),
+            UDim2.new(1, -12, 1, -(12 + ComposerHeight)),
+            6
+        );
+        local Layout = Library:Create('UIListLayout', {
+            FillDirection = Enum.FillDirection.Vertical;
+            Padding = UDim.new(0, 6);
+            SortOrder = Enum.SortOrder.LayoutOrder;
+            Parent = Viewport;
+        });
+
+        local function ScrollBottom()
+            task.defer(function()
+                Viewport.CanvasSize = UDim2.fromOffset(0, Layout.AbsoluteContentSize.Y + 12);
+                local MaxY = math.max(Viewport.AbsoluteCanvasSize.Y - Viewport.AbsoluteSize.Y, 0);
+                Viewport.CanvasPosition = Vector2.new(0, MaxY);
+            end);
+        end;
+        Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(ScrollBottom);
+
+        function Chat:AddMessage(MessageInfo)
+            if type(MessageInfo) ~= 'table' then MessageInfo = { Text = tostring(MessageInfo); }; end
+            while #Chat.Messages >= Chat.MaxMessages do
+                local Old = table.remove(Chat.Messages, 1);
+                if Old and Old.Frame then Old.Frame:Destroy(); end
+            end;
+
+            local Side = tostring(MessageInfo.Side or 'Left');
+            local IsRight = string.lower(Side) == 'right';
+            local AvatarSize = (MessageInfo.Avatar or MessageInfo.UserId) and 34 or 0;
+            local Row = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                Size = UDim2.new(1, -2, 0, 48);
+                ZIndex = 8;
+                Parent = Viewport;
+            });
+
+            local Avatar;
+            if AvatarSize > 0 then
+                local Image = MessageInfo.Avatar;
+                if not Image and MessageInfo.UserId then
+                    Image = 'rbxthumb://type=AvatarHeadShot&id=' .. tostring(MessageInfo.UserId) .. '&w=100&h=100';
+                end;
+                Avatar = Library:Create('ImageLabel', {
+                    BackgroundColor3 = Library.Contrast;
+                    BorderSizePixel = 0;
+                    Image = tostring(Image or '');
+                    Position = IsRight and UDim2.new(1, -AvatarSize, 0, 2) or UDim2.fromOffset(0, 2);
+                    Size = UDim2.fromOffset(AvatarSize, AvatarSize);
+                    ZIndex = 9;
+                    Parent = Row;
+                });
+                Library:AddCorner(Avatar, math.floor(AvatarSize / 2));
+                Library:AddToRegistry(Avatar, { BackgroundColor3 = 'Contrast'; });
+            end;
+
+            local LeftPad = not IsRight and AvatarSize > 0 and AvatarSize + 8 or 0;
+            local RightPad = IsRight and AvatarSize > 0 and AvatarSize + 8 or 0;
+            local NameText = tostring(MessageInfo.Name or MessageInfo.DisplayName or 'User');
+            local Username = MessageInfo.Username and tostring(MessageInfo.Username) or '';
+            if Username ~= '' then NameText = NameText .. '  ' .. Username; end;
+
+            local NameLabel = Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(LeftPad, 0);
+                Size = UDim2.new(1, -(LeftPad + RightPad), 0, 16);
+                Text = NameText;
+                TextColor3 = Library.FontColor;
+                TextSize = 12;
+                TextXAlignment = IsRight and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left;
+                ZIndex = 9;
+                Parent = Row;
+            });
+
+            local Body = Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(LeftPad, 17);
+                Size = UDim2.new(1, -(LeftPad + RightPad), 0, 28);
+                Text = tostring(MessageInfo.Text or MessageInfo.Message or '');
+                TextColor3 = Library.DisabledTextColor;
+                TextSize = 12;
+                TextWrapped = true;
+                TextXAlignment = IsRight and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left;
+                TextYAlignment = Enum.TextYAlignment.Top;
+                ZIndex = 9;
+                Parent = Row;
+            });
+            Library.RegistryMap[Body].Properties.TextColor3 = 'DisabledTextColor';
+
+            local Message = {
+                Frame = Row;
+                Avatar = Avatar;
+                NameLabel = NameLabel;
+                Body = Body;
+                Data = MessageInfo;
+            };
+            table.insert(Chat.Messages, Message);
+
+            task.defer(function()
+                if not Row.Parent then return; end
+                local Available = math.max(Body.AbsoluteSize.X, 80);
+                local _, TextHeight = Library:GetTextBounds(
+                    Body.Text,
+                    Library.Font,
+                    Library.BaseTextSizes[Body] or 12,
+                    Vector2.new(Available, 10000)
+                );
+                local ContentHeight = math.max(AvatarSize + 4, 20 + TextHeight);
+                Row.Size = UDim2.new(1, -2, 0, math.max(ContentHeight, 42));
+                Body.Size = UDim2.new(1, -(LeftPad + RightPad), 0, math.max(TextHeight + 2, 20));
+                ScrollBottom();
+            end);
+
+            ScrollBottom();
+            return Message;
+        end;
+
+        function Chat:Clear()
+            for _, Message in ipairs(Chat.Messages) do
+                if Message.Frame then Message.Frame:Destroy(); end
+            end;
+            table.clear(Chat.Messages);
+            ScrollBottom();
+        end;
+
+        function Chat:ScrollToBottom()
+            ScrollBottom();
+        end;
+
+        local ComposerBox;
+        if Info.Composer ~= false then
+            local Composer = Library:Create('Frame', {
+                BackgroundColor3 = Library.OutlineColor;
+                BorderSizePixel = 0;
+                Position = UDim2.new(0, 6, 1, -30);
+                Size = UDim2.new(1, -42, 0, 24);
+                ZIndex = 8;
+                Parent = Root;
+            });
+            Library:AddCorner(Composer, 3);
+            Library:AddToRegistry(Composer, { BackgroundColor3 = 'OutlineColor'; });
+
+            local ComposerInner = Library:Create('Frame', {
+                BackgroundColor3 = Library.Contrast;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Inset;
+                BorderSizePixel = 1;
+                Position = UDim2.fromOffset(1, 1);
+                Size = UDim2.new(1, -2, 1, -2);
+                ZIndex = 9;
+                Parent = Composer;
+            });
+            Library:AddCorner(ComposerInner, 3);
+            Library:AddToRegistry(ComposerInner, {
+                BackgroundColor3 = 'Contrast';
+                BorderColor3 = 'OutlineColor';
+            });
+
+            ComposerBox = Library:Create('TextBox', {
+                BackgroundTransparency = 1;
+                ClearTextOnFocus = false;
+                PlaceholderColor3 = Library.DisabledTextColor;
+                PlaceholderText = Info.Placeholder or 'Type here...';
+                Position = UDim2.fromOffset(6, 0);
+                Size = UDim2.new(1, -12, 1, 0);
+                Text = '';
+                TextColor3 = Library.FontColor;
+                TextSize = 12;
+                TextStrokeTransparency = 0;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 10;
+                Parent = ComposerInner;
+            });
+            Library:ApplyFont(ComposerBox);
+            Library:ApplyTextStroke(ComposerBox);
+            Library:AddToRegistry(ComposerBox, {
+                TextColor3 = 'FontColor';
+                PlaceholderColor3 = 'DisabledTextColor';
+            });
+            Library:EnableTypingAnimation(ComposerBox);
+
+            local SendButton = CreateUtilityButton(
+                Root,
+                '↗',
+                UDim2.new(1, -32, 1, -30),
+                UDim2.fromOffset(26, 24),
+                function() return ComposerBox:IsFocused(); end
+            );
+            SendButton.TextSize = 16;
+
+            local function Submit()
+                local Text = ComposerBox.Text;
+                if Text == '' then return; end
+                local ShouldClear = true;
+                if type(Chat.OnSend) == 'function' then
+                    local Success, Result = pcall(Chat.OnSend, Text, Chat);
+                    if not Success then
+                        if Library.NotifyOnError then Library:Notify('Chat callback error: ' .. tostring(Result), 4); end
+                    elseif Result == false then
+                        ShouldClear = false;
+                    end;
+                end
+                if ShouldClear then ComposerBox.Text = ''; end
+            end;
+
+            SendButton.MouseButton1Click:Connect(Submit);
+            ComposerBox.FocusLost:Connect(function(EnterPressed)
+                SendButton:RefreshFormaStyle(false);
+                if EnterPressed then Submit(); end
+            end);
+            ComposerBox.Focused:Connect(function()
+                SendButton:RefreshFormaStyle(true);
+            end);
+
+            Chat.Input = ComposerBox;
+            Chat.SendButton = SendButton;
+        end;
+
+        function Chat:SetVisible(Visible)
+            Root.Visible = Visible ~= false;
+            Groupbox:Resize();
+        end;
+
+        function Chat:Destroy()
+            Root:Destroy();
+            Groupbox:Resize();
+        end;
+
+        Chat.Viewport = Viewport;
+        if type(Info.Messages) == 'table' then
+            for _, Message in ipairs(Info.Messages) do Chat:AddMessage(Message); end
+        end;
+        return Chat;
+    end;
+
+    function Funcs:AddCardGrid(Info)
+        Info = type(Info) == 'table' and Info or {};
+        local Groupbox = self;
+        local Height = tonumber(Info.Height) or 300;
+        local Root = CreateUtilityRoot(Groupbox, Height);
+        local CardGrid = {
+            Type = 'CardGrid';
+            Root = Root;
+            Cards = {};
+            Selected = nil;
+            Selectable = Info.Selectable ~= false;
+            Callback = Info.Callback or Info.OnSelected;
+        };
+
+        local HasSearch = Info.Searchable ~= false;
+        local TopOffset = HasSearch and 34 or 6;
+        local SearchBox;
+        if HasSearch then
+            SearchBox = CreateUtilitySearch(
+                Root,
+                Info.SearchPlaceholder or 'Search...',
+                UDim2.fromOffset(6, 6),
+                UDim2.new(1, -12, 0, 22)
+            );
+        end;
+
+        local Viewport = CreateUtilityScroller(
+            Root,
+            UDim2.fromOffset(6, TopOffset),
+            UDim2.new(1, -12, 1, -(TopOffset + 6)),
+            6
+        );
+
+        local CardSize = typeof(Info.CardSize) == 'Vector2' and Info.CardSize or Vector2.new(96, 104);
+        local Spacing = tonumber(Info.Spacing) or 7;
+        local GridLayout = Library:Create('UIGridLayout', {
+            CellPadding = UDim2.fromOffset(Spacing, Spacing);
+            CellSize = UDim2.fromOffset(CardSize.X, CardSize.Y);
+            FillDirection = Enum.FillDirection.Horizontal;
+            FillDirectionMaxCells = tonumber(Info.Columns) or 0;
+            HorizontalAlignment = Enum.HorizontalAlignment.Left;
+            SortOrder = Enum.SortOrder.LayoutOrder;
+            Parent = Viewport;
+        });
+
+        local function UpdateCanvas()
+            Viewport.CanvasSize = UDim2.fromOffset(0, GridLayout.AbsoluteContentSize.Y + 12);
+        end;
+        GridLayout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(UpdateCanvas);
+
+        local function ResolveCardBackground(Card)
+            if CardGrid.Selected == Card then
+                return Library.AccentColor:Lerp(Library.MainColor, 0.84);
+            elseif Card.Hovered then
+                return Library.Contrast;
+            end
+            return Library.MainColor;
+        end;
+
+        function CardGrid:Refresh()
+            local Query = SearchBox and string.lower(SearchBox.Text or '') or '';
+            for _, Card in ipairs(CardGrid.Cards) do
+                local Data = Card.Data;
+                local Haystack = string.lower(tostring(Data.Title or '') .. ' ' .. tostring(Data.Subtitle or '') .. ' ' .. tostring(Data.SearchText or ''));
+                Card.Frame.Visible = Query == '' or string.find(Haystack, Query, 1, true) ~= nil;
+                Card:RefreshStyle(false);
+            end;
+            task.defer(UpdateCanvas);
+        end;
+
+        function CardGrid:AddCard(Data)
+            Data = type(Data) == 'table' and Data or { Title = tostring(Data); };
+            local Card = {
+                Data = Data;
+                Hovered = false;
+            };
+
+            local Frame = Library:Create('Frame', {
+                BackgroundColor3 = Library.MainColor;
+                BorderSizePixel = 0;
+                Size = UDim2.fromOffset(CardSize.X, CardSize.Y);
+                ZIndex = 8;
+                Parent = Viewport;
+            });
+            Library:AddCorner(Frame, 4);
+            Card.Frame = Frame;
+
+            local Stroke = Library:Create('UIStroke', {
+                Color = Library.OutlineColor;
+                Thickness = 1;
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+                Parent = Frame;
+            });
+            Card.Stroke = Stroke;
+
+            Library:AddToRegistry(Frame, {
+                BackgroundColor3 = function() return ResolveCardBackground(Card); end;
+            });
+            Library:AddToRegistry(Stroke, {
+                Color = function()
+                    if CardGrid.Selected == Card then return Library.AccentColor; end
+                    return Library.OutlineColor;
+                end;
+            });
+
+            local PreviewHeight = math.max(CardSize.Y - 28, 36);
+            if Data.Image then
+                local Preview = Library:Create('ImageLabel', {
+                    BackgroundColor3 = Library.Inline;
+                    BorderSizePixel = 0;
+                    Image = tostring(Data.Image);
+                    Position = UDim2.fromOffset(6, 6);
+                    Size = UDim2.new(1, -12, 0, PreviewHeight - 8);
+                    ScaleType = Enum.ScaleType.Fit;
+                    ZIndex = 9;
+                    Parent = Frame;
+                });
+                Library:AddCorner(Preview, 3);
+                Library:AddToRegistry(Preview, { BackgroundColor3 = 'Inline'; });
+                Card.Preview = Preview;
+            else
+                local IconText = tostring(Data.IconText or (Data.Icon == 'plus' and '+' or Data.Icon or ''));
+                local IconLabel = Library:CreateLabel({
+                    BackgroundTransparency = 1;
+                    Position = UDim2.fromOffset(6, 6);
+                    Size = UDim2.new(1, -12, 0, PreviewHeight - 8);
+                    Text = IconText;
+                    TextColor3 = Data.IconColor or Library.FontColor;
+                    TextSize = tonumber(Data.IconSize) or 26;
+                    ZIndex = 9;
+                    Parent = Frame;
+                });
+                if not Data.IconColor then
+                    Library.RegistryMap[IconLabel].Properties.TextColor3 = 'FontColor';
+                end;
+                Card.IconLabel = IconLabel;
+            end;
+
+            local Title = Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Position = UDim2.new(0, 5, 1, -22);
+                Size = UDim2.new(1, -10, 0, 18);
+                Text = tostring(Data.Title or '');
+                TextSize = 12;
+                TextTruncate = Enum.TextTruncate.AtEnd;
+                ZIndex = 9;
+                Parent = Frame;
+            });
+            Card.Title = Title;
+
+            local Hitbox = Library:Create('TextButton', {
+                AutoButtonColor = false;
+                BackgroundTransparency = 1;
+                Size = UDim2.fromScale(1, 1);
+                Text = '';
+                ZIndex = 10;
+                Parent = Frame;
+            });
+            Card.Hitbox = Hitbox;
+
+            function Card:RefreshStyle(Animated)
+                local Background = ResolveCardBackground(Card);
+                local Outline = CardGrid.Selected == Card and Library.AccentColor or Library.OutlineColor;
+                if Animated then
+                    Library:Animate(Frame, { BackgroundColor3 = Background; }, 0.12, nil, 'Color');
+                    Library:Animate(Stroke, { Color = Outline; }, 0.12, nil, 'Color');
+                else
+                    Library:CancelMotion(Frame, 'BackgroundColor3');
+                    Library:CancelMotion(Stroke, 'Color');
+                    Frame.BackgroundColor3 = Background;
+                    Stroke.Color = Outline;
+                end;
+            end;
+
+            Hitbox.MouseEnter:Connect(function()
+                Card.Hovered = true;
+                Card:RefreshStyle(true);
+            end);
+            Hitbox.MouseLeave:Connect(function()
+                Card.Hovered = false;
+                Card:RefreshStyle(true);
+            end);
+            Hitbox.MouseButton1Click:Connect(function()
+                if CardGrid.Selectable and Data.Selectable ~= false then
+                    CardGrid:Select(Card);
+                end
+                if type(Data.Action) == 'function' then
+                    Library:SafeCallback(Data.Action, Card, Data);
+                end
+            end);
+
+            table.insert(CardGrid.Cards, Card);
+            Frame.LayoutOrder = #CardGrid.Cards;
+            CardGrid:Refresh();
+            return Card;
+        end;
+
+        function CardGrid:Select(CardOrIndex)
+            local Card = CardOrIndex;
+            if type(CardOrIndex) == 'number' then Card = CardGrid.Cards[CardOrIndex]; end
+            if Card ~= nil and not table.find(CardGrid.Cards, Card) then return; end
+            local Previous = CardGrid.Selected;
+            CardGrid.Selected = Card;
+            if Previous then Previous:RefreshStyle(true); end
+            if Card then Card:RefreshStyle(true); end
+            Library:SafeCallback(CardGrid.Callback, Card and Card.Data or nil, Card);
+        end;
+
+        function CardGrid:RemoveCard(CardOrIndex)
+            local Index = type(CardOrIndex) == 'number' and CardOrIndex or table.find(CardGrid.Cards, CardOrIndex);
+            if not Index then return; end
+            local Card = table.remove(CardGrid.Cards, Index);
+            if CardGrid.Selected == Card then CardGrid.Selected = nil; end
+            if Card and Card.Frame then Card.Frame:Destroy(); end
+            for Order, Existing in ipairs(CardGrid.Cards) do Existing.Frame.LayoutOrder = Order; end
+            CardGrid:Refresh();
+        end;
+
+        function CardGrid:Clear()
+            for _, Card in ipairs(CardGrid.Cards) do
+                if Card.Frame then Card.Frame:Destroy(); end
+            end;
+            table.clear(CardGrid.Cards);
+            CardGrid.Selected = nil;
+            UpdateCanvas();
+        end;
+
+        function CardGrid:SetSearch(Query)
+            if SearchBox then SearchBox.Text = tostring(Query or ''); end
+        end;
+
+        function CardGrid:SetVisible(Visible)
+            Root.Visible = Visible ~= false;
+            Groupbox:Resize();
+        end;
+
+        function CardGrid:Destroy()
+            Root:Destroy();
+            Groupbox:Resize();
+        end;
+
+        if SearchBox then
+            SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
+                CardGrid:Refresh();
+            end);
+        end;
+
+        CardGrid.SearchBox = SearchBox;
+        CardGrid.Viewport = Viewport;
+
+        if type(Info.Cards) == 'table' then
+            for _, Data in ipairs(Info.Cards) do CardGrid:AddCard(Data); end
+        end;
+        return CardGrid;
+    end;
+
     function Funcs:AddLabel(Text, DoesWrap)
         local Label = {};
 
