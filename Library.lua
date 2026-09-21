@@ -12,6 +12,8 @@ local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
 
 local RepoFontBaseUrl = "https://raw.githubusercontent.com/Fyntra-Development/Forma/main/";
+local RepoBaseUrl = RepoFontBaseUrl;
+local UpdateManifestUrl = RepoBaseUrl .. "versions.json";
 
 local Fonts = {
     ["Rubik Light"] = {
@@ -153,6 +155,22 @@ local Library = {
 
     Signals = {};
     ScreenGui = ScreenGui;
+
+    -- Built-in update system. Component versions are compared against versions.json
+    -- on the Forma repository whenever the library or a manager is opened.
+    Version = '1.0.0';
+    AutoUpdateVersion = 1;
+    AutoUpdateEnabled = true;
+    UpdateRepoBaseUrl = RepoBaseUrl;
+    UpdateManifestUrl = UpdateManifestUrl;
+    UpdateManifestCache = nil;
+    UpdateManifestCacheAt = 0;
+    UpdateManifestCacheSeconds = 20;
+    UpdateChecks = {};
+    UpdatePrompted = {};
+    Updatables = {};
+    UpdateRestartHandler = nil;
+    UpdateRestartSource = nil;
 };
 
 local function NormalizeGameName(Value)
@@ -10104,26 +10122,314 @@ function Library:CreateOptionWheel(Config)
     return Wheel;
 end;
 
+
+local function ParseFormaVersion(Value)
+    local Parts = {};
+    for Number in tostring(Value or '0'):gmatch('%d+') do
+        table.insert(Parts, tonumber(Number) or 0);
+    end;
+    if #Parts == 0 then Parts[1] = 0; end;
+    return Parts;
+end;
+
+local function IsFormaVersionNewer(Remote, Current)
+    local A = ParseFormaVersion(Remote);
+    local B = ParseFormaVersion(Current);
+    local Count = math.max(#A, #B);
+    for Index = 1, Count do
+        local Left = A[Index] or 0;
+        local Right = B[Index] or 0;
+        if Left ~= Right then
+            return Left > Right;
+        end;
+    end;
+    return false;
+end;
+
+local function AddUpdateCacheBuster(Url)
+    local Separator = tostring(Url):find('?', 1, true) and '&' or '?';
+    return tostring(Url) .. Separator .. 'forma_update=' .. tostring(math.floor(os.clock() * 100000));
+end;
+
+function Library:SetAutoUpdateEnabled(State)
+    Library.AutoUpdateEnabled = not not State;
+end;
+
+function Library:SetUpdateRestartHandler(Callback)
+    assert(Callback == nil or type(Callback) == 'function', 'SetUpdateRestartHandler: expected function or nil');
+    Library.UpdateRestartHandler = Callback;
+end;
+
+function Library:SetUpdateRestartSource(Url)
+    assert(Url == nil or type(Url) == 'string', 'SetUpdateRestartSource: expected string or nil');
+    Library.UpdateRestartSource = Url;
+end;
+
+function Library:RegisterUpdatable(Name, Version, Path)
+    assert(type(Name) == 'string' and Name ~= '', 'RegisterUpdatable: invalid component name');
+    Library.Updatables[Name] = {
+        Name = Name;
+        Version = tostring(Version or '0.0.0');
+        Path = tostring(Path or '');
+    };
+    return Library.Updatables[Name];
+end;
+
+function Library:FetchUpdateManifest(Force)
+    if not Library.AutoUpdateEnabled then
+        return nil, 'automatic updates disabled';
+    end;
+
+    local Now = os.clock();
+    if not Force
+        and Library.UpdateManifestCache
+        and (Now - Library.UpdateManifestCacheAt) <= Library.UpdateManifestCacheSeconds then
+        return Library.UpdateManifestCache;
+    end;
+
+    local Success, Body = pcall(function()
+        return game:HttpGet(AddUpdateCacheBuster(Library.UpdateManifestUrl));
+    end);
+    if not Success or type(Body) ~= 'string' or Body == '' then
+        return nil, tostring(Body or 'failed to fetch update manifest');
+    end;
+
+    local DecodeSuccess, Manifest = pcall(HttpService.JSONDecode, HttpService, Body);
+    if not DecodeSuccess or type(Manifest) ~= 'table' then
+        return nil, tostring(Manifest or 'invalid update manifest');
+    end;
+
+    Library.UpdateManifestCache = Manifest;
+    Library.UpdateManifestCacheAt = Now;
+    return Manifest;
+end;
+
+function Library:GetRemoteUpdateInfo(ComponentName, Force)
+    local Component = Library.Updatables[ComponentName];
+    if not Component then
+        return nil, 'component is not registered';
+    end;
+
+    local Manifest, Error = Library:FetchUpdateManifest(Force);
+    if not Manifest then return nil, Error; end;
+
+    local Components = Manifest.Components or Manifest.components or Manifest;
+    local Remote = type(Components) == 'table' and Components[ComponentName] or nil;
+    if type(Remote) ~= 'table' then
+        return nil, 'component missing from update manifest';
+    end;
+
+    local RemoteVersion = tostring(Remote.version or Remote.Version or '0.0.0');
+    if not IsFormaVersionNewer(RemoteVersion, Component.Version) then
+        return nil;
+    end;
+
+    return {
+        Name = ComponentName;
+        CurrentVersion = Component.Version;
+        Version = RemoteVersion;
+        Path = tostring(Remote.path or Remote.Path or Component.Path or '');
+        Changes = Remote.changes or Remote.Changes or {};
+        Notes = Remote.notes or Remote.Notes;
+    };
+end;
+
+function Library:BuildUpdateDescription(Info)
+    local Lines = {
+        string.format('%s  v%s  ->  v%s', tostring(Info.Name), tostring(Info.CurrentVersion), tostring(Info.Version));
+        '';
+        'What changed:';
+    };
+
+    local Changes = type(Info.Changes) == 'table' and Info.Changes or {};
+    if #Changes == 0 then
+        table.insert(Lines, '- General improvements and fixes.');
+    else
+        for Index, Change in ipairs(Changes) do
+            if Index > 6 then
+                table.insert(Lines, string.format('- +%d more change(s)', #Changes - 6));
+                break;
+            end;
+            table.insert(Lines, '- ' .. tostring(Change));
+        end;
+    end;
+
+    if Info.Notes and tostring(Info.Notes) ~= '' then
+        table.insert(Lines, '');
+        table.insert(Lines, tostring(Info.Notes));
+    end;
+
+    table.insert(Lines, '');
+    table.insert(Lines, 'Update and restart the UI now?');
+    return table.concat(Lines, '\n');
+end;
+
+function Library:PerformUpdateRestart(ComponentName, RemoteInfo)
+    local Handler = Library.UpdateRestartHandler;
+    local Environment = getgenv and getgenv() or _G;
+    if not Handler and Environment and type(Environment.FormaRestart) == 'function' then
+        Handler = Environment.FormaRestart;
+    end;
+
+    if Handler then
+        local Success, Error = pcall(Handler, ComponentName, RemoteInfo, Library);
+        if not Success then
+            return false, tostring(Error);
+        end;
+        return true;
+    end;
+
+    local RestartSource = Library.UpdateRestartSource;
+    if (not RestartSource or RestartSource == '') and Environment and type(Environment.FormaLoaderUrl) == 'string' then
+        RestartSource = Environment.FormaLoaderUrl;
+    end;
+
+    -- A custom UI can set a loader URL with SetUpdateRestartSource. If none is
+    -- provided, the built-in fallback restarts the library itself from main.
+    if not RestartSource or RestartSource == '' then
+        RestartSource = Library.UpdateRepoBaseUrl .. 'Library.lua';
+    end;
+
+    local FetchSuccess, Source = pcall(function()
+        return game:HttpGet(AddUpdateCacheBuster(RestartSource));
+    end);
+    if not FetchSuccess or type(Source) ~= 'string' or Source == '' then
+        return false, 'failed to download the updated UI';
+    end;
+
+    local Chunk, CompileError = loadstring(Source);
+    if not Chunk then
+        return false, 'updated UI failed to compile: ' .. tostring(CompileError);
+    end;
+
+    Library:Unload();
+
+    task.defer(function()
+        local Success, Result = pcall(Chunk);
+        if Success and Environment then
+            Environment.Library = Result or Environment.Library;
+            Environment.FormaLibrary = Result or Environment.FormaLibrary;
+        elseif not Success then
+            warn('[Forma updater] Restart failed: ' .. tostring(Result));
+        end;
+    end);
+
+    return true;
+end;
+
+function Library:PromptForUpdate(Info)
+    if type(Info) ~= 'table' then return nil; end;
+
+    local PromptKey = tostring(Info.Name) .. '@' .. tostring(Info.Version);
+    if Library.UpdatePrompted[PromptKey] then return nil; end;
+    Library.UpdatePrompted[PromptKey] = true;
+
+    return Library:Notify({
+        Type = 'Action';
+        Title = 'Forma update available';
+        Text = Library:BuildUpdateDescription(Info);
+        Persistent = true;
+        CloseButton = true;
+        Width = 370;
+        Button = {
+            Text = 'Yes';
+            Primary = true;
+            Callback = function()
+                local Success, Error = Library:PerformUpdateRestart(Info.Name, Info);
+                if not Success and Library.ScreenGui and Library.ScreenGui.Parent then
+                    Library:Notify({
+                        Title = 'Update failed';
+                        Text = tostring(Error or 'Unknown update error');
+                        Duration = 5;
+                    });
+                end;
+            end;
+        };
+        SubButton = {
+            Text = 'No';
+            Callback = function() end;
+        };
+    });
+end;
+
+function Library:CheckForUpdates(ComponentName, Force)
+    if not Library.AutoUpdateEnabled then return; end;
+
+    ComponentName = tostring(ComponentName or 'Library');
+    local CheckKey = ComponentName;
+    if Library.UpdateChecks[CheckKey] then return; end;
+    Library.UpdateChecks[CheckKey] = true;
+
+    task.spawn(function()
+        local Success, Info = pcall(Library.GetRemoteUpdateInfo, Library, ComponentName, Force);
+        Library.UpdateChecks[CheckKey] = nil;
+        if Success and Info then
+            Library:PromptForUpdate(Info);
+        end;
+    end);
+end;
+
 function Library:Notify(Text, Time, Title)
+    local Info = {};
     if type(Text) == 'table' then
-        local Info = Text;
+        Info = Text;
         Title = Info.Title;
-        Time = Info.Duration or Info.Time or Time;
+        Time = Info.Duration ~= nil and Info.Duration or (Info.Time ~= nil and Info.Time or Time);
         Text = Info.Text or Info.Message or Info.Description or '';
     end;
 
     Text = tostring(Text or '');
     Title = Title ~= nil and tostring(Title) or '';
+
+    local Persistent = Info.Persistent == true or Time == false;
+    local ShowCloseButton = Info.CloseButton == true or Persistent;
+    local Buttons = {};
+
+    local function AddButton(Button, DefaultText)
+        if Button == nil then return; end;
+        if type(Button) == 'string' then
+            Button = { Text = Button; };
+        elseif type(Button) == 'function' then
+            Button = { Text = DefaultText; Callback = Button; };
+        end;
+        if type(Button) == 'table' then
+            Button.Text = tostring(Button.Text or DefaultText or 'Button');
+            table.insert(Buttons, Button);
+        end;
+    end;
+
+    if type(Info.Buttons) == 'table' then
+        for _, Button in ipairs(Info.Buttons) do
+            AddButton(Button, 'Button');
+        end;
+    else
+        AddButton(Info.Button, 'OK');
+        AddButton(Info.SubButton, 'Cancel');
+    end;
+
     local HasTitle = Title ~= '';
-    local TextSize = 14;
-    local TextWidth, TextHeight = Library:GetTextBounds(Text, Library.Font, TextSize);
+    local TextSize = tonumber(Info.TextSize) or 14;
+    local TitleSize = tonumber(Info.TitleSize) or 15;
+    local RequestedWidth = tonumber(Info.Width);
+    local RawTextWidth = select(1, Library:GetTextBounds(Text, Library.Font, TextSize));
+    local RawTitleWidth = HasTitle and select(1, Library:GetTextBounds(Title, Library.Font, TitleSize)) or 0;
+    local XSize = RequestedWidth
+        and math.clamp(math.floor(RequestedWidth + 0.5), 220, 460)
+        or math.clamp(math.max(RawTextWidth, RawTitleWidth) + 24, 190, (#Buttons > 0 and 370 or 380));
+
+    local ContentWidth = math.max(XSize - (ShowCloseButton and 38 or 18), 120);
+    local TextWidth, TextHeight = Library:GetTextBounds(Text, Library.Font, TextSize, Vector2.new(ContentWidth, 1080));
     local TitleWidth, TitleHeight = 0, 0;
     if HasTitle then
-        TitleWidth, TitleHeight = Library:GetTextBounds(Title, Library.Font, 15);
+        TitleWidth, TitleHeight = Library:GetTextBounds(Title, Library.Font, TitleSize, Vector2.new(ContentWidth, 1080));
     end;
-    local XSize = math.max(math.max(TextWidth, TitleWidth) + 24, 190);
-    local YSize = HasTitle and (TitleHeight + TextHeight + 18) or (TextHeight + 14);
-    local Duration = math.max(tonumber(Time) or 5, 0.1);
+
+    local TopPadding = 6;
+    local TitleBlock = HasTitle and (TitleHeight + 5) or 0;
+    local ButtonRowHeight = #Buttons > 0 and 31 or 0;
+    local BottomPadding = Persistent and 8 or 12;
+    local YSize = math.max(HasTitle and 42 or 32, TopPadding + TitleBlock + TextHeight + ButtonRowHeight + BottomPadding);
+    local Duration = Persistent and nil or math.max(tonumber(Time) or 5, 0.1);
 
     local NotifyOuter = Library:Create('Frame', {
         BackgroundTransparency = 1;
@@ -10144,7 +10450,6 @@ function Library:Notify(Text, Time, Title)
         ZIndex = 101;
         Parent = NotifyOuter;
     });
-
     Library:AddCorner(NotifyInner, 3);
 
     local NotifyStroke = Library:Create('UIStroke', {
@@ -10155,13 +10460,8 @@ function Library:Notify(Text, Time, Title)
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
         Parent = NotifyInner;
     });
-    Library:AddToRegistry(NotifyStroke, {
-        Color = 'OutlineColor';
-    }, true);
-
-    Library:AddToRegistry(NotifyInner, {
-        BackgroundColor3 = 'MainColor';
-    }, true);
+    Library:AddToRegistry(NotifyStroke, { Color = 'OutlineColor'; }, true);
+    Library:AddToRegistry(NotifyInner, { BackgroundColor3 = 'MainColor'; }, true);
 
     local InnerFrame = Library:Create('Frame', {
         BackgroundColor3 = Color3.new(1, 1, 1);
@@ -10171,47 +10471,50 @@ function Library:Notify(Text, Time, Title)
         ZIndex = 102;
         Parent = NotifyInner;
     });
-
     Library:AddCorner(InnerFrame, 2);
 
     local Gradient = Library:Create('UIGradient', {
         Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
-            ColorSequenceKeypoint.new(1, Library.MainColor),
+            ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+            ColorSequenceKeypoint.new(1, Library.MainColor);
         });
         Rotation = -90;
         Parent = InnerFrame;
     });
-
     Library:AddToRegistry(Gradient, {
         Color = function()
             return ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
-                ColorSequenceKeypoint.new(1, Library.MainColor),
+                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+                ColorSequenceKeypoint.new(1, Library.MainColor);
             });
-        end
+        end;
     });
 
     if HasTitle then
         local NotifyTitle = Library:CreateLabel({
             Position = UDim2.fromOffset(8, 3);
-            Size = UDim2.new(1, -16, 0, TitleHeight + 2);
+            Size = UDim2.new(1, ShowCloseButton and -40 or -16, 0, TitleHeight + 2);
             Text = Title;
             TextColor3 = Library.AccentColor;
             TextXAlignment = Enum.TextXAlignment.Left;
-            TextSize = 15;
+            TextYAlignment = Enum.TextYAlignment.Top;
+            TextSize = TitleSize;
+            TextWrapped = true;
             ZIndex = 104;
             Parent = InnerFrame;
         });
         Library.RegistryMap[NotifyTitle].Properties.TextColor3 = 'AccentColor';
     end;
 
+    local TextTop = TopPadding + TitleBlock;
     Library:CreateLabel({
-        Position = UDim2.fromOffset(8, HasTitle and (TitleHeight + 6) or 2);
-        Size = UDim2.new(1, -16, 0, TextHeight + 3);
+        Position = UDim2.fromOffset(8, TextTop);
+        Size = UDim2.new(1, ShowCloseButton and -40 or -16, 0, TextHeight + 3);
         Text = Text;
         TextXAlignment = Enum.TextXAlignment.Left;
+        TextYAlignment = Enum.TextYAlignment.Top;
         TextSize = TextSize;
+        TextWrapped = true;
         ZIndex = 103;
         Parent = InnerFrame;
     });
@@ -10224,54 +10527,156 @@ function Library:Notify(Text, Time, Title)
         ZIndex = 105;
         Parent = NotifyInner;
     });
-
-    Library:AddToRegistry(LeftColor, {
-        BackgroundColor3 = 'AccentColor';
-    }, true);
+    Library:AddToRegistry(LeftColor, { BackgroundColor3 = 'AccentColor'; }, true);
     local LeftGradient = Library:AddMovingAccentGradient(LeftColor, 1.6);
-    if LeftGradient then LeftGradient.Rotation = 90; end
+    if LeftGradient then LeftGradient.Rotation = 90; end;
 
-    local ProgressClip = Library:Create('Frame', {
-        AnchorPoint = Vector2.new(0, 1);
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        ClipsDescendants = true;
-        Position = UDim2.new(0, 4, 1, -1);
-        Size = UDim2.new(1, -5, 0, 2);
-        ZIndex = 105;
-        Parent = NotifyInner;
-    });
+    local Motion;
+    local Closed = false;
+    local function Dismiss(Reason)
+        if Closed or not NotifyOuter.Parent then return; end;
+        Closed = true;
+        if Motion then Library:BeginNotificationExit(Motion); end;
+        Library:TweenUnifiedFade(NotifyOuter, 0, 0.22, function(State)
+            if Motion then Library:ReleaseNotificationMotion(Motion); end;
+            if State ~= Enum.PlaybackState.Cancelled and NotifyOuter.Parent then
+                NotifyOuter:Destroy();
+            end;
+            if type(Info.OnClose) == 'function' then
+                pcall(Info.OnClose, Reason);
+            end;
+        end, 'Fade');
+    end;
 
-    local TimeBar = Library:Create('Frame', {
-        BackgroundColor3 = Library.AccentColor;
-        BorderSizePixel = 0;
-        Size = UDim2.new(0, 0, 1, 0);
-        ZIndex = 106;
-        Parent = ProgressClip;
-    });
-    Library:AddToRegistry(TimeBar, {
-        BackgroundColor3 = 'AccentColor';
-    }, true);
-    Library:AddMovingAccentGradient(TimeBar, 1.6);
+    if ShowCloseButton then
+        local CloseButton = Library:Create('TextButton', {
+            AutoButtonColor = false;
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = UDim2.new(1, -27, 0, 4);
+            Size = UDim2.fromOffset(22, 22);
+            Text = '×';
+            TextColor3 = Library.DisabledTextColor;
+            TextSize = 20;
+            TextStrokeTransparency = 1;
+            ZIndex = 108;
+            Parent = InnerFrame;
+        });
+        Library:ApplyFont(CloseButton);
+        Library:AddToRegistry(CloseButton, { TextColor3 = 'DisabledTextColor'; }, true);
+        Library:GiveSignal(CloseButton.MouseEnter:Connect(function()
+            Library:Animate(CloseButton, { TextColor3 = Library.FontColor; }, 0.10, nil, 'Color');
+        end));
+        Library:GiveSignal(CloseButton.MouseLeave:Connect(function()
+            Library:Animate(CloseButton, { TextColor3 = Library.DisabledTextColor; }, 0.10, nil, 'Color');
+        end));
+        Library:GiveSignal(CloseButton.MouseButton1Click:Connect(function()
+            Dismiss('Close');
+        end));
+    end;
 
-    local Motion = Library:RegisterNotificationMotion(NotifyOuter, NotifyInner, YSize, TimeBar, Duration);
+    if #Buttons > 0 then
+        local ButtonArea = Library:Create('Frame', {
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(8, TextTop + TextHeight + 6);
+            Size = UDim2.new(1, -16, 0, 25);
+            ZIndex = 106;
+            Parent = InnerFrame;
+        });
+
+        local Padding = 6;
+        local Count = math.min(#Buttons, 3);
+        for Index = 1, Count do
+            local ButtonInfo = Buttons[Index];
+            local Fraction = 1 / Count;
+            local Button = Library:Create('TextButton', {
+                AutoButtonColor = false;
+                BackgroundColor3 = ButtonInfo.Primary and Library.AccentColor or Library.Contrast;
+                BorderSizePixel = 0;
+                Position = UDim2.new((Index - 1) * Fraction, Index > 1 and Padding / 2 or 0, 0, 0);
+                Size = UDim2.new(Fraction, -(Padding * (Count - 1) / Count), 1, 0);
+                Text = ButtonInfo.Text;
+                TextColor3 = Library.FontColor;
+                TextSize = 13;
+                TextStrokeTransparency = 1;
+                ZIndex = 107;
+                Parent = ButtonArea;
+            });
+            Library:ApplyFont(Button);
+            Library:AddCorner(Button, 3);
+            Library:AddToRegistry(Button, {
+                BackgroundColor3 = ButtonInfo.Primary and 'AccentColor' or 'Contrast';
+                TextColor3 = 'FontColor';
+            }, true);
+
+            Library:GiveSignal(Button.MouseEnter:Connect(function()
+                Library:Animate(Button, {
+                    BackgroundColor3 = ButtonInfo.Primary
+                        and Library.AccentColor:Lerp(Color3.new(1, 1, 1), 0.10)
+                        or Library.OutlineColor;
+                }, 0.10, nil, 'Color');
+            end));
+            Library:GiveSignal(Button.MouseLeave:Connect(function()
+                Library:Animate(Button, {
+                    BackgroundColor3 = ButtonInfo.Primary and Library.AccentColor or Library.Contrast;
+                }, 0.10, nil, 'Color');
+            end));
+            Library:GiveSignal(Button.MouseButton1Click:Connect(function()
+                local Callback = ButtonInfo.Callback or ButtonInfo.Func;
+                if type(Callback) == 'function' then
+                    pcall(Callback, NotifyOuter, ButtonInfo);
+                end;
+                if ButtonInfo.KeepOpen ~= true then
+                    Dismiss(ButtonInfo.Text);
+                end;
+            end));
+        end;
+    end;
+
+    local TimeBar = nil;
+    if not Persistent then
+        local ProgressClip = Library:Create('Frame', {
+            AnchorPoint = Vector2.new(0, 1);
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            ClipsDescendants = true;
+            Position = UDim2.new(0, 4, 1, -1);
+            Size = UDim2.new(1, -5, 0, 2);
+            ZIndex = 105;
+            Parent = NotifyInner;
+        });
+
+        TimeBar = Library:Create('Frame', {
+            BackgroundColor3 = Library.AccentColor;
+            BorderSizePixel = 0;
+            Size = UDim2.new(0, 0, 1, 0);
+            ZIndex = 106;
+            Parent = ProgressClip;
+        });
+        Library:AddToRegistry(TimeBar, { BackgroundColor3 = 'AccentColor'; }, true);
+        Library:AddMovingAccentGradient(TimeBar, 1.6);
+    end;
+
+    Motion = Library:RegisterNotificationMotion(NotifyOuter, NotifyInner, YSize, TimeBar, Duration or 5);
     Library:SetUnifiedFadeProgress(NotifyOuter, 0);
     Library:TweenUnifiedFade(NotifyOuter, 1, 0.28, nil, 'Fade');
 
-    task.delay(Duration, function()
-        if not NotifyOuter.Parent then return; end
-        Library:BeginNotificationExit(Motion);
-        Library:TweenUnifiedFade(NotifyOuter, 0, 0.28, function(State)
-            if State ~= Enum.PlaybackState.Cancelled then
-                Library:ReleaseNotificationMotion(Motion);
-                if NotifyOuter.Parent then NotifyOuter:Destroy(); end
-            end
-        end, 'Fade');
-    end);
+    if not Persistent then
+        task.delay(Duration, function()
+            if not NotifyOuter.Parent or Closed then return; end;
+            Dismiss('Timeout');
+        end);
+    end;
+
     return NotifyOuter;
 end;
 
 function Library:CreateWindow(...)
+    task.defer(function()
+        if Library.CheckForUpdates then Library:CheckForUpdates('Library'); end
+    end);
+
     local Arguments = { ... }
     local Config = { AnchorPoint = Vector2.zero }
 
@@ -11349,5 +11754,11 @@ Players.PlayerRemoving:Connect(OnPlayerChange);
 
 Library:SetFont('Rubik Light');
 
+Library:RegisterUpdatable('Library', Library.Version, 'Library.lua');
+task.defer(function()
+    Library:CheckForUpdates('Library');
+end);
+
 getgenv().Library = Library
+getgenv().FormaLibrary = Library
 return Library
