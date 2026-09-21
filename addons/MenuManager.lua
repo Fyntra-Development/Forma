@@ -1,6 +1,7 @@
 local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
+	MenuManager.Version = '1.1.0'
 	MenuManager.Library = nil
 	MenuManager.EasingStyle = 'Sine'
 	MenuManager.EasingDirection = 'Out'
@@ -149,6 +150,12 @@ local MenuManager = {} do
 	function MenuManager:SetLibrary(Library)
 		self.Library = Library
 		Library.MenuManager = self
+		if Library.RegisterUpdatable then
+			Library:RegisterUpdatable('MenuManager', self.Version, 'addons/MenuManager.lua')
+		end
+		task.defer(function()
+			if Library.CheckForUpdates then Library:CheckForUpdates('MenuManager') end
+		end)
 	end
 
 	function MenuManager:SetEasingStyle(Value)
@@ -180,6 +187,7 @@ local MenuManager = {} do
 
 	function MenuManager:BuildMenuSection(Tab)
 		assert(self.Library, 'Must set MenuManager.Library')
+		if self.Library.CheckForUpdates then self.Library:CheckForUpdates('MenuManager') end
 		local Section = Tab:AddRightGroupbox('Menu manager')
 		self:CreateMenuManager(Section)
 		return Section
