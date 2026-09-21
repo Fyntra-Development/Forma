@@ -3,7 +3,11 @@ local UserInputService = game:GetService('UserInputService')
 local CoreGui = game:GetService('CoreGui')
 
 local Updater = {}
+Updater.Version = '1.5.2+build.1'
+Updater.Release = 'HF'
+Updater.Build = 1
 Updater.RepoBaseUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/'
+Updater.ApiBaseUrl = 'https://api.github.com/repos/Fyntra-Development/Forma/contents/'
 Updater.LoaderUrl = Updater.RepoBaseUrl .. 'Loader.lua'
 Updater.ManifestUrl = Updater.RepoBaseUrl .. 'versions.json'
 Updater.ManifestSources = {
@@ -78,6 +82,88 @@ local function DecodeJson(Body)
         return nil
     end
     return Data
+end
+
+local function EncodeRepoPath(Path)
+    local Parts = {}
+    for Part in tostring(Path):gmatch('[^/\\]+') do
+        table.insert(Parts, HttpService:UrlEncode(Part))
+    end
+    return table.concat(Parts, '/')
+end
+
+local function FetchRepoFile(Path)
+    local CleanPath = tostring(Path):gsub('^/+', ''):gsub('\\', '/')
+    local ApiUrl = Updater.ApiBaseUrl .. EncodeRepoPath(CleanPath) .. '?ref=main'
+    local Body = Fetch(ApiUrl, {
+        ['Accept'] = 'application/vnd.github.raw+json',
+        ['X-GitHub-Api-Version'] = '2022-11-28',
+    })
+    if type(Body) == 'string' and Body ~= '' then
+        return Body
+    end
+
+    local Sources = {
+        'https://raw.githubusercontent.com/Fyntra-Development/Forma/refs/heads/main/' .. CleanPath,
+        'https://github.com/Fyntra-Development/Forma/raw/refs/heads/main/' .. CleanPath,
+        Updater.RepoBaseUrl .. CleanPath,
+    }
+
+    local LastError
+    for _, Url in ipairs(Sources) do
+        local Source, Error = Fetch(Url)
+        if type(Source) == 'string' and Source ~= '' then
+            return Source
+        end
+        LastError = Error or LastError
+    end
+
+    return nil, tostring(LastError or ('failed to fetch ' .. CleanPath))
+end
+
+local function GetSourceVersion(Name, Source)
+    if type(Source) ~= 'string' then return nil end
+
+    if Name == 'Library' then
+        local Start = Source:find('local Library = {', 1, true)
+        if Start then
+            local Tail = Source:sub(Start)
+            return Tail:match("Version%s*=%s*['\"]([^'\"]+)['\"]")
+        end
+    elseif Name == 'Loader' then
+        return Source:match("Updater%.Version%s*=%s*['\"]([^'\"]+)['\"]")
+    else
+        return Source:match(tostring(Name) .. "%.Version%s*=%s*['\"]([^'\"]+)['\"]")
+    end
+
+    return nil
+end
+
+local function ValidateComponentSource(Name, Info, Source)
+    if type(Source) ~= 'string' or Source == '' then
+        return false, 'empty source'
+    end
+
+    local Path = type(Info) == 'table' and (Info.path or Info.Path) or nil
+    if type(Path) == 'string' and Path:lower():sub(-4) == '.lua' and type(loadstring) == 'function' then
+        local Chunk, CompileError = loadstring(Source)
+        if not Chunk then
+            return false, tostring(CompileError or 'compile failed')
+        end
+    end
+
+    local Expected = type(Info) == 'table' and tostring(Info.version or Info.Version or '') or ''
+    if Expected ~= '' then
+        local Actual = GetSourceVersion(Name, Source)
+        if Actual and Actual ~= Expected then
+            return false, string.format('version mismatch: expected %s, got %s', Expected, Actual)
+        end
+        if (Name == 'Library' or Name == 'Loader') and not Actual then
+            return false, 'version marker missing'
+        end
+    end
+
+    return true
 end
 
 local function EnsureFolder(Path)
@@ -166,6 +252,7 @@ function Updater:InstallManifest(Manifest, Progress)
             table.insert(Entries, {
                 Name = tostring(Name);
                 Path = Info.path or Info.Path;
+                Info = Info;
             })
         end
     end
@@ -178,16 +265,24 @@ function Updater:InstallManifest(Manifest, Progress)
     for Index, Entry in ipairs(Entries) do
         Report('Downloading ' .. Entry.Name .. '...', 0.12 + ((Index - 1) / Count) * 0.48)
 
-        local Source, Error = Fetch(Entry.Path)
-        if not Source then
-            return false, string.format('failed to download %s: %s', Entry.Name, tostring(Error))
+        local Source
+        local Error
+
+        for Attempt = 1, 3 do
+            Source, Error = FetchRepoFile(Entry.Path)
+            if Source then
+                local Valid, ValidationError = ValidateComponentSource(Entry.Name, Entry.Info, Source)
+                if Valid then
+                    break
+                end
+                Error = ValidationError
+                Source = nil
+            end
+            if Attempt < 3 then task.wait(0.12 * Attempt) end
         end
 
-        if Entry.Path:lower():sub(-4) == '.lua' and type(loadstring) == 'function' then
-            local Chunk, CompileError = loadstring(Source)
-            if not Chunk then
-                return false, string.format('%s failed to compile: %s', Entry.Name, tostring(CompileError))
-            end
+        if not Source then
+            return false, string.format('failed to download %s: %s', Entry.Name, tostring(Error))
         end
 
         Staged[Entry.Path] = Source
@@ -231,11 +326,39 @@ function Updater:EnsureInstalled()
 
     EnsureFolder(self.CacheRoot)
     local Installed = self:ReadInstalledManifest()
-    local LibraryPath = LocalPath('Library.lua')
 
-    if Installed and isfile(LibraryPath) then
-        self.InstalledManifest = Installed
-        return true
+    if Installed then
+        local Components = Installed.Components or Installed.components
+        local CacheValid = type(Components) == 'table'
+
+        if CacheValid then
+            for Name, Info in next, Components do
+                if type(Info) == 'table' and type(Info.path or Info.Path) == 'string' then
+                    local Path = LocalPath(Info.path or Info.Path)
+                    if not isfile(Path) then
+                        CacheValid = false
+                        break
+                    end
+
+                    local ReadSuccess, Source = pcall(readfile, Path)
+                    if not ReadSuccess then
+                        CacheValid = false
+                        break
+                    end
+
+                    local Valid = ValidateComponentSource(tostring(Name), Info, Source)
+                    if not Valid then
+                        CacheValid = false
+                        break
+                    end
+                end
+            end
+        end
+
+        if CacheValid then
+            self.InstalledManifest = Installed
+            return true
+        end
     end
 
     local Manifest, Error = self:FetchManifest()
@@ -252,18 +375,43 @@ end
 function Updater:GetSource(NameOrPath)
     local Info = self:GetComponentInfo(NameOrPath)
     local RemotePath = Info and (Info.path or Info.Path) or tostring(NameOrPath)
+    local Name = Info and tostring(NameOrPath) or tostring(NameOrPath)
 
     if self.Persistent then
         local Path = LocalPath(RemotePath)
         if isfile(Path) then
             local Success, Source = pcall(readfile, Path)
             if Success and type(Source) == 'string' and Source ~= '' then
-                return Source
+                if not Info then
+                    return Source
+                end
+
+                local Valid = ValidateComponentSource(Name, Info, Source)
+                if Valid then
+                    return Source
+                end
             end
         end
     end
 
-    return Fetch(RemotePath)
+    local Source, Error = FetchRepoFile(RemotePath)
+    if not Source then return nil, Error end
+
+    if Info then
+        local Valid, ValidationError = ValidateComponentSource(Name, Info, Source)
+        if not Valid then
+            return nil, ValidationError
+        end
+    end
+
+    if self.Persistent and Info then
+        local Destination = LocalPath(RemotePath)
+        local Parent = ParentFolder(Destination)
+        if Parent then EnsureFolder(Parent) end
+        pcall(writefile, Destination, Source)
+    end
+
+    return Source
 end
 
 function Updater:LoadAddon(Name)
@@ -545,12 +693,20 @@ function Library:PerformUpdateRestart(ComponentName, RemoteInfo)
     end
 
     local RestartSource = Library.UpdateRestartSource
-    if not RestartSource or RestartSource == '' then
-        RestartSource = Updater.LoaderUrl
-    end
+    local Source
+    local FetchError
 
     Report('Preparing restart...', 0.985)
-    local Source, FetchError = Fetch(RestartSource)
+
+    if not RestartSource or RestartSource == '' or RestartSource == Updater.LoaderUrl then
+        Source, FetchError = Updater:GetSource('Loader')
+        if not Source then
+            Source, FetchError = FetchRepoFile('Loader.lua')
+        end
+    else
+        Source, FetchError = Fetch(RestartSource)
+    end
+
     if not Source then
         return false, tostring(FetchError or 'failed to download restart source')
     end
