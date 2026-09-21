@@ -5716,6 +5716,7 @@ do
         local DetailPane;
         local DetailContent;
         local DetailActions;
+        local DetailActionButtons = {};
         if DetailHeight > 0 then
             DetailPane = Library:Create('Frame', {
                 BackgroundColor3 = Library.Contrast;
@@ -5798,6 +5799,9 @@ do
         end;
 
         function DataTable:RefreshDetails()
+            for _, Button in ipairs(DetailActionButtons) do
+                RefreshUtilityButton(Button, false);
+            end;
             if not DetailContent then return; end
 
             for _, Child in ipairs(DetailContent:GetChildren()) do
@@ -6043,6 +6047,7 @@ do
                         function() return DataTable.Selected ~= nil; end
                     );
                     ActionButton.LayoutOrder = Index;
+                    table.insert(DetailActionButtons, ActionButton);
                     ActionButton.MouseButton1Click:Connect(function()
                         if DataTable.Selected and type(Action.Callback or Action.Func) == 'function' then
                             Library:SafeCallback(Action.Callback or Action.Func, DataTable.Selected.Data, DataTable.Selected, DataTable);
