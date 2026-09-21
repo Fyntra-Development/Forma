@@ -270,8 +270,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.10.0+build.1';
-    Release = 'GA';
+    Version = '1.10.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -575,8 +575,14 @@ function Library:ApplyTitleAnimation(Label)
             CharacterLabel.FontFace = Label.FontFace;
         end);
 
+        local CharacterScale = Instance.new('UIScale');
+        CharacterScale.Name = 'FormaTitleCharacterScale';
+        CharacterScale.Scale = 1;
+        CharacterScale.Parent = CharacterLabel;
+
         State.Characters[Index] = {
             Label = CharacterLabel;
+            Scale = CharacterScale;
             BasePosition = CharacterLabel.Position;
             IsSpace = Character == ' ';
         };
@@ -682,18 +688,29 @@ table.insert(Library.Signals, RenderStepped:Connect(function()
                 local Rotation = 0;
                 local Color = State.BaseColor;
                 local YOffset = 0;
+                local Scale = 1;
 
                 if Mode == 'Wave' then
-                    local Phase = (Time * 3.35) - ((Index - 1) * 0.58);
-                    local Wave = math.sin(Phase);
-                    YOffset = Wave * 1.85;
-                    Rotation = Wave * 1.15;
+                    -- Slow sinusoidal ribbon: adjacent characters are close enough in phase
+                    -- to read as one continuous wave instead of individual hopping letters.
+                    local Phase = (Time * 2.15) - ((Index - 1) * 0.42);
+                    local Primary = math.sin(Phase);
+                    local Secondary = math.sin((Phase * 0.5) + 0.7) * 0.22;
+                    local Wave = (Primary * 0.88) + Secondary;
+
+                    YOffset = Wave * 1.45;
+                    Rotation = math.sin(Phase - 0.35) * 0.28;
+                    Scale = 1 + (math.cos(Phase) * 0.012);
                 elseif Mode == 'Bounce' then
-                    local Cycle = (Time * 2.55) - ((Index - 1) * 0.48);
-                    local Hop = math.max(math.sin(Cycle), 0);
-                    Hop = Hop * Hop;
-                    YOffset = -3.25 * Hop;
-                    Rotation = math.sin(Cycle * 0.5) * 0.45 * Hop;
+                    -- A periodic smoothstep pulse travels across the word. Smoothstep gives
+                    -- zero-ish velocity at the top/bottom so the bounce never snaps.
+                    local Cycle = ((Time * 0.68) - ((Index - 1) * 0.085)) % 1;
+                    local Distance = math.min(Cycle, 1 - Cycle);
+                    local Pulse = math.max(0, 1 - (Distance / 0.235));
+                    Pulse = Pulse * Pulse * (3 - (2 * Pulse));
+
+                    YOffset = -2.75 * Pulse;
+                    Scale = 1 + (0.055 * Pulse);
                 elseif Mode == 'Glow Sweep' then
                     local Sweep = ((Time * 0.52) - ((Index - 1) / Count)) % 1;
                     local Distance = math.min(Sweep, 1 - Sweep);
@@ -706,6 +723,9 @@ table.insert(Library.Signals, RenderStepped:Connect(function()
                 CharacterLabel.Position = AddTitleOffset(Position, 0, YOffset);
                 CharacterLabel.Rotation = Rotation;
                 CharacterLabel.TextColor3 = Color;
+                if Character.Scale then
+                    Character.Scale.Scale = Scale;
+                end;
             end;
         end;
     end;
@@ -11023,13 +11043,14 @@ do
         Position = UDim2.fromOffset(8, 1);
         Size = UDim2.new(0, 0, 1, -2);
         Text = '';
-        TextColor3 = Library.FontColor;
+        TextColor3 = Library.AccentColor;
         TextSize = 15;
         TextXAlignment = Enum.TextXAlignment.Left;
         ZIndex = 207;
         Parent = InnerFrame;
     });
-    Library.RegistryMap[WatermarkTitle].Properties.TextColor3 = 'FontColor';
+    Library.RegistryMap[WatermarkTitle].Properties.TextColor3 = 'AccentColor';
+    Library:RegisterTitleAnimationLabel(WatermarkTitle);
 
     local WatermarkStats = Library:CreateLabel({
         Position = UDim2.fromOffset(8, 1);
