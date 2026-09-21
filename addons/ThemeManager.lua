@@ -1,6 +1,7 @@
 local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
 local ThemeManager = {} do
+	ThemeManager.Version = '1.1.0'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -619,6 +620,12 @@ local ThemeManager = {} do
 
 	function ThemeManager:SetLibrary(lib)
 		self.Library = lib
+		if lib.RegisterUpdatable then
+			lib:RegisterUpdatable('ThemeManager', self.Version, 'addons/ThemeManager.lua')
+		end
+		task.defer(function()
+			if lib.CheckForUpdates then lib:CheckForUpdates('ThemeManager') end
+		end)
 	end
 
 	function ThemeManager:BuildFolderTree()
@@ -652,6 +659,7 @@ local ThemeManager = {} do
 
 	function ThemeManager:ApplyToTab(tab)
 		assert(self.Library, 'Must set ThemeManager.Library first!')
+		if self.Library.CheckForUpdates then self.Library:CheckForUpdates('ThemeManager') end
 		local groupbox = self:CreateGroupBox(tab)
 		self:CreateThemeManager(groupbox)
 
@@ -663,6 +671,7 @@ local ThemeManager = {} do
 
 	function ThemeManager:ApplyToGroupbox(groupbox)
 		assert(self.Library, 'Must set ThemeManager.Library first!')
+		if self.Library.CheckForUpdates then self.Library:CheckForUpdates('ThemeManager') end
 		self:CreateThemeManager(groupbox)
 	end
 
