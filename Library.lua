@@ -9401,194 +9401,283 @@ function Library:CreateOptionWheel(Config)
         Library.OptionWheel:Destroy();
     end
 
+    -- React Bits OptionWheel defaults, translated directly to Roblox units.
+    -- The important part is that positioning comes from one circle equation:
+    --   rowH   = fontSize * spacing
+    --   radius = rowH / radians(tilt)
+    --   y      = radius * sin(distance * tilt)
+    --   x      = -radius * (1 - cos(distance * tilt)) * curve
+    --   rot    = distance * tilt
+    -- There is intentionally NO distance-based text scaling.
     local Wheel = {
         Open = false;
         ActiveMode = Config.DefaultMode or 'Configs';
         Modes = { 'Configs', 'Themes', 'Presets', 'Actions' };
         Items = {};
-        TargetIndex = 1;
-        SmoothIndex = 1;
-        Velocity = 0;
-        AnimationId = 0;
+        Views = {};
+        TargetIndex = tonumber(Config.DefaultIndex) or 1;
+        SmoothIndex = tonumber(Config.DefaultIndex) or 1;
+        Alpha = 0;
+        AlphaTarget = 0;
         Keybind = Config.Keybind or 'V';
         Enabled = Config.Enabled ~= false;
+        Loop = Config.Loop == true;
         Connections = {};
-        Slots = {};
-        Alpha = 0;
+        Dragging = false;
+        DragStartY = 0;
+        DragStartIndex = 1;
+        DragMoved = false;
+        LastFont = nil;
+        LastRoundedSelection = nil;
     };
 
-    -- Give the wheel its own full-viewport GUI so its placement is not shifted by
-    -- Roblox's topbar/safe-area inset or by the main library window hierarchy.
-    local Lighting = game:GetService('Lighting');
-    local OldBlur = Lighting:FindFirstChild('FormaOptionWheelBlur');
-    if OldBlur then pcall(function() OldBlur:Destroy(); end); end
-
-    local OldWheelGui = ParentGui and ParentGui:FindFirstChild('FormaOptionWheelGui');
-    if OldWheelGui then pcall(function() OldWheelGui:Destroy(); end); end
-
-    local WheelGui = Instance.new('ScreenGui');
-    WheelGui.Name = 'FormaOptionWheelGui';
-    WheelGui.ResetOnSpawn = false;
-    WheelGui.IgnoreGuiInset = true;
-    WheelGui.ZIndexBehavior = Enum.ZIndexBehavior.Global;
-    WheelGui.DisplayOrder = 100000;
-    pcall(function() ProtectGui(WheelGui); end);
-    WheelGui.Parent = ParentGui;
-
-    -- A tiny global world blur helps the left vignette read as soft focus. The
-    -- amount stays deliberately low so the right side of the game is not washed out.
-    local SceneBlur = Instance.new('BlurEffect');
-    SceneBlur.Name = 'FormaOptionWheelBlur';
-    SceneBlur.Size = 0;
-    SceneBlur.Parent = Lighting;
+    local Style = {
+        FontSize = math.max(1, tonumber(Config.FontSize) or 48);
+        Spacing = math.max(0.1, tonumber(Config.Spacing) or 1.4);
+        Curve = math.max(0, tonumber(Config.Curve) or 1);
+        Tilt = math.max(0, tonumber(Config.Tilt) or 6);
+        Blur = math.max(0, tonumber(Config.Blur) or 2);
+        Fade = math.max(0, tonumber(Config.Fade) or 0.25);
+        MinOpacity = math.clamp(tonumber(Config.MinOpacity) or 0.05, 0, 1);
+        SmoothingMs = math.max(1, tonumber(Config.Smoothing) or 200);
+        Inset = math.max(0, tonumber(Config.Inset) or 80);
+        TextColor = Config.TextColor or Color3.fromRGB(166, 166, 166);
+        ActiveColor = Config.ActiveColor or Color3.fromRGB(255, 255, 255);
+    };
+    Wheel.Style = Style;
 
     local WheelHolder = Library:Create('Frame', {
         Name = 'OptionWheelHolder';
+        Active = true;
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
+        ClipsDescendants = true;
         Position = UDim2.fromScale(0, 0);
         Size = UDim2.fromScale(1, 1);
         ZIndex = 250;
         Visible = false;
-        Parent = WheelGui;
+        Parent = ScreenGui;
     });
 
-    -- Localized dark vignette. It is intentionally black/purple-black rather than
-    -- gray so it feels like the React Bits backdrop instead of a translucent panel.
-    local WheelWash = Library:Create('Frame', {
-        Name = 'OptionWheelWash';
-        BackgroundColor3 = Color3.fromRGB(13, 11, 18);
+    -- Intentionally no mode title, help text, wash, panel, or fullscreen tint.
+    -- The React Bits component itself is only the wheel.
+    local WheelCanvas = Library:Create('Frame', {
+        Name = 'OptionWheelCanvas';
+        Active = false;
+        BackgroundTransparency = 1;
         BorderSizePixel = 0;
+        ClipsDescendants = false;
         Position = UDim2.fromScale(0, 0);
-        Size = UDim2.new(0.46, 0, 1, 0);
+        Size = UDim2.fromScale(1, 1);
         ZIndex = 251;
         Parent = WheelHolder;
     });
 
-    local WashGradient = Library:Create('UIGradient', {
-        Rotation = 0;
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1);
-            NumberSequenceKeypoint.new(1, 1);
-        });
-        Parent = WheelWash;
-    });
-
-    -- Zero-size anchor located exactly where the selected text begins. Every wheel
-    -- item is positioned locally from this point, eliminating double-X-offset bugs.
-    local ContentContainer = Library:Create('Frame', {
-        Name = 'WheelAnchor';
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Position = UDim2.new(0.108, -14, 0.505, 0);
-        Size = UDim2.fromOffset(0, 0);
-        ZIndex = 252;
-        Parent = WheelHolder;
-    });
-
-    -- No mode title, instructions, key hints, or other chrome: the wheel itself is the UI.
-
-
-    -- A small pool is enough: the reference only shows ~5 meaningful rows.
-    -- The clone ring is deliberately very faint; strong clone opacity creates the
-    -- doubled/outlined text artifact that the previous implementation had.
-    local MaxVisibleSlots = 5;
-    local SlotPool = {};
-    local Offsets = {
-        Vector2.new(-1.00,  0.00), Vector2.new(1.00,  0.00),
-        Vector2.new( 0.00, -1.00), Vector2.new(0.00,  1.00),
-        Vector2.new(-0.70, -0.70), Vector2.new(0.70, -0.70),
-        Vector2.new(-0.70,  0.70), Vector2.new(0.70,  0.70),
+    local BlurOffsets = {
+        Vector2.new(-1.00, 0.00),
+        Vector2.new(1.00, 0.00),
+        Vector2.new(0.00, -1.00),
+        Vector2.new(0.00, 1.00),
+        Vector2.new(-0.707, -0.707),
+        Vector2.new(0.707, -0.707),
+        Vector2.new(-0.707, 0.707),
+        Vector2.new(0.707, 0.707),
     };
 
-    for i = 1, MaxVisibleSlots do
-        local SlotFrame = Library:Create('Frame', {
-            Name = 'WheelSlot_' .. i;
+    local function TrackConnection(Connection)
+        if not Connection then return Connection; end
+        table.insert(Wheel.Connections, Connection);
+        if Library.GiveSignal then
+            Library:GiveSignal(Connection);
+        end
+        return Connection;
+    end
+
+    local function ClampTarget(Value)
+        local Count = #Wheel.Items;
+        if Count <= 0 then return 1; end
+        if Wheel.Loop then return Value; end
+        return math.clamp(Value, 1, Count);
+    end
+
+    local function NormalizeIndex(Index)
+        local Count = #Wheel.Items;
+        if Count <= 0 then return nil; end
+        if Wheel.Loop then
+            return ((Index - 1) % Count) + 1;
+        end
+        return math.clamp(Index, 1, Count);
+    end
+
+    local function SignedLoopDistance(Index, Position)
+        local Count = #Wheel.Items;
+        local Delta = Index - Position;
+        if Wheel.Loop and Count > 1 then
+            Delta = ((Delta % Count) + Count) % Count;
+            if Delta > Count / 2 then
+                Delta = Delta - Count;
+            end
+        end
+        return Delta;
+    end
+
+    local function ApplyWheelFont(Label, Selected)
+        if not Label then return; end
+
+        -- React Bits uses weight 200 normally and 500 on the selected item.
+        -- For custom Forma fonts, request Medium for the selected item when the
+        -- loaded family supports it, then gracefully fall back to the UI font.
+        if typeof(Library.Font) == 'Font' then
+            local Success = false;
+            if Selected then
+                Success = pcall(function()
+                    Label.FontFace = Font.new(
+                        Library.Font.Family,
+                        Enum.FontWeight.Medium,
+                        Library.Font.Style
+                    );
+                end);
+            end
+            if not Success then
+                pcall(function() Label.FontFace = Library.Font; end);
+            end
+        else
+            Library:ApplyFont(Label);
+        end
+    end
+
+    local function ClearViews()
+        for _, View in ipairs(Wheel.Views) do
+            if View.Frame then
+                pcall(function() View.Frame:Destroy(); end);
+            end
+        end
+        table.clear(Wheel.Views);
+    end
+
+    local function CreateView(Index, Item)
+        -- A zero-size frame makes Rotation occur around the exact left-center
+        -- anchor, matching CSS transform-origin: left center.
+        local Pivot = Library:Create('Frame', {
+            Name = 'OptionWheelItem_' .. tostring(Index);
+            Active = false;
             AnchorPoint = Vector2.new(0, 0.5);
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Active = true;
-            Size = UDim2.new(0, 700, 0, 120);
+            Position = UDim2.fromOffset(0, 0);
+            Size = UDim2.fromOffset(0, 0);
             ZIndex = 260;
-            Visible = false;
-            Parent = ContentContainer;
+            Parent = WheelCanvas;
         });
 
-        local BlurClones = {};
-        for k = 1, #Offsets do
+        local Clones = {};
+        for CloneIndex = 1, #BlurOffsets do
             local Clone = Library:Create('TextLabel', {
-                Name = 'BlurClone_' .. k;
+                Name = 'Blur_' .. tostring(CloneIndex);
+                Active = false;
                 AnchorPoint = Vector2.new(0, 0.5);
                 BackgroundTransparency = 1;
                 BorderSizePixel = 0;
-                Position = UDim2.new(0, 0, 0.5, 0);
-                Size = UDim2.new(1, 0, 1, 0);
-                Text = '';
-                TextSize = 22;
-                TextColor3 = Color3.fromRGB(200, 205, 215);
+                Position = UDim2.fromOffset(0, 0);
+                Size = UDim2.fromOffset(900, 120);
+                Text = Item and tostring(Item.Text or '') or '';
+                TextSize = Style.FontSize;
+                TextColor3 = Style.TextColor;
                 TextTransparency = 1;
                 TextStrokeTransparency = 1;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 TextYAlignment = Enum.TextYAlignment.Center;
                 ZIndex = 259;
-                Parent = SlotFrame;
+                Parent = Pivot;
             });
-            Library:ApplyFont(Clone);
-            BlurClones[k] = Clone;
+            ApplyWheelFont(Clone, false);
+            Clones[CloneIndex] = Clone;
         end
 
-        local MainText = Library:Create('TextLabel', {
-            Name = 'MainText';
+        local MainText = Library:Create('TextButton', {
+            Name = 'Text';
+            Active = true;
+            AutoButtonColor = false;
             AnchorPoint = Vector2.new(0, 0.5);
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Position = UDim2.new(0, 0, 0.5, 0);
-            Size = UDim2.new(1, 0, 1, 0);
-            Text = '';
-            TextSize = 38;
-            TextColor3 = Color3.fromRGB(255, 255, 255);
-            TextTransparency = 0;
+            Position = UDim2.fromOffset(0, 0);
+            Size = UDim2.fromOffset(900, 120);
+            Text = Item and tostring(Item.Text or '') or '';
+            TextSize = Style.FontSize;
+            TextColor3 = Style.TextColor;
+            TextTransparency = 1;
             TextStrokeTransparency = 1;
             TextXAlignment = Enum.TextXAlignment.Left;
             TextYAlignment = Enum.TextYAlignment.Center;
             ZIndex = 261;
-            Parent = SlotFrame;
+            Parent = Pivot;
         });
-        Library:ApplyFont(MainText);
+        ApplyWheelFont(MainText, false);
 
-        SlotPool[i] = {
-            Frame = SlotFrame;
+        local View = {
+            Index = Index;
+            Frame = Pivot;
             MainText = MainText;
-            BlurClones = BlurClones;
-            BoundIndex = nil;
-            RelativeDelta = 0;
+            BlurClones = Clones;
+            Selected = false;
         };
 
-        SlotFrame.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                local Bound = SlotPool[i].BoundIndex;
-                local Delta = SlotPool[i].RelativeDelta;
-                if Bound and Delta then
-                    if math.abs(Delta) < 0.45 then
-                        Wheel:ExecuteItem(Bound);
-                    else
-                        Wheel.TargetIndex = Wheel.TargetIndex + math.round(Delta);
-                    end
-                end
+        TrackConnection(MainText.MouseButton1Click:Connect(function()
+            if not Wheel.Open or Wheel.DragMoved then return; end
+            local Count = #Wheel.Items;
+            if Count <= 0 then return; end
+
+            local Current = Wheel.TargetIndex;
+            local DistanceToCurrent = SignedLoopDistance(Index, Current);
+            if math.abs(DistanceToCurrent) < 0.45 then
+                Wheel:ExecuteItem(Index);
+                return;
             end
-        end);
+
+            if Wheel.Loop and Count > 1 then
+                local CurrentWrapped = ((Current - 1) % Count) + 1;
+                local Delta = Index - CurrentWrapped;
+                if Delta > Count / 2 then
+                    Delta = Delta - Count;
+                elseif Delta < -Count / 2 then
+                    Delta = Delta + Count;
+                end
+                Wheel.TargetIndex = Current + Delta;
+            else
+                Wheel.TargetIndex = Index;
+            end
+        end));
+
+        return View;
+    end
+
+    local function RebuildViews()
+        ClearViews();
+        for Index, Item in ipairs(Wheel.Items) do
+            Wheel.Views[Index] = CreateView(Index, Item);
+        end
+        Wheel.LastRoundedSelection = nil;
+        Wheel.LastFont = nil;
     end
 
     function Wheel:SetItems(ItemList)
         Wheel.Items = ItemList or {};
-        local Total = #Wheel.Items;
-        if Total > 0 then
-            Wheel.TargetIndex = ((Wheel.TargetIndex - 1) % Total) + 1;
-        else
+        local Count = #Wheel.Items;
+
+        if Count <= 0 then
             Wheel.TargetIndex = 1;
+            Wheel.SmoothIndex = 1;
+        elseif Wheel.Loop then
+            local Wrapped = ((math.round(Wheel.TargetIndex) - 1) % Count) + 1;
+            Wheel.TargetIndex = Wrapped;
+            Wheel.SmoothIndex = Wrapped;
+        else
+            Wheel.TargetIndex = math.clamp(math.round(Wheel.TargetIndex), 1, Count);
+            Wheel.SmoothIndex = Wheel.TargetIndex;
         end
-        Wheel.SmoothIndex = Wheel.TargetIndex;
-        Wheel.Velocity = 0;
+
+        RebuildViews();
     end
 
     function Wheel:SetMode(Mode)
@@ -9607,6 +9696,7 @@ function Library:CreateOptionWheel(Config)
                     end
                 end;
             });
+
             if Library.SaveManager and isfolder and isfolder(Library.SaveManager.Folder .. '/settings') then
                 local Files = listfiles(Library.SaveManager.Folder .. '/settings');
                 for _, FilePath in ipairs(Files) do
@@ -9622,6 +9712,7 @@ function Library:CreateOptionWheel(Config)
                     end
                 end
             end
+
             if #List == 1 then
                 for _, Sample in ipairs({ 'Legit Default', 'HvH Rage', 'Movement', 'Casual' }) do
                     table.insert(List, {
@@ -9700,270 +9791,185 @@ function Library:CreateOptionWheel(Config)
         Wheel:SetItems(List);
     end
 
+    function Wheel:GetMode()
+        return Wheel.ActiveMode;
+    end
+
     function Wheel:ExecuteItem(Index)
+        Index = NormalizeIndex(Index);
+        if not Index then return; end
+
         local Item = Wheel.Items[Index];
         if Item and Item.Callback then
-            local CenterSlot = nil;
-            for _, S in ipairs(SlotPool) do
-                if S.BoundIndex == Index and S.RelativeDelta and math.abs(S.RelativeDelta) < 0.5 then
-                    CenterSlot = S;
-                    break;
-                end
-            end
-            if CenterSlot and CenterSlot.MainText then
-                local OrigCol = CenterSlot.MainText.TextColor3;
-                CenterSlot.MainText.TextColor3 = Library.AccentColor;
-                task.delay(0.14, function()
-                    if CenterSlot.MainText then CenterSlot.MainText.TextColor3 = OrigCol; end
-                end);
-            end
             Library:SafeCallback(Item.Callback, Item);
         end
     end
 
     function Wheel:Scroll(Delta)
         if not Wheel.Open or #Wheel.Items == 0 then return; end
-        Wheel.TargetIndex = Wheel.TargetIndex + Delta;
+        Wheel.TargetIndex = ClampTarget(Wheel.TargetIndex + Delta);
     end
 
     function Wheel:CycleMode(Direction)
-        local CurIndex = table.find(Wheel.Modes, Wheel.ActiveMode) or 1;
-        local NewIndex = CurIndex + Direction;
-        if NewIndex < 1 then NewIndex = #Wheel.Modes;
-        elseif NewIndex > #Wheel.Modes then NewIndex = 1; end;
-        Wheel:SetMode(Wheel.Modes[NewIndex]);
+        local Current = table.find(Wheel.Modes, Wheel.ActiveMode) or 1;
+        local Next = Current + Direction;
+        if Next < 1 then Next = #Wheel.Modes; end
+        if Next > #Wheel.Modes then Next = 1; end
+        Wheel:SetMode(Wheel.Modes[Next]);
     end
 
-    -- React Bits-style wheel renderer. Geometry is local to WheelAnchor, so the
-    -- selected item stays at the same screen point regardless of font size or insets.
-    local function LerpStops(D, A, B, C)
-        if D <= 1 then
-            return A + (B - A) * D;
+    local function SetViewFontState(View, Selected)
+        if View.Selected == Selected and Wheel.LastFont == Library.Font then
+            return;
         end
-        return B + (C - B) * math.clamp(D - 1, 0, 1);
+        View.Selected = Selected;
+        ApplyWheelFont(View.MainText, Selected);
+        for _, Clone in ipairs(View.BlurClones) do
+            ApplyWheelFont(Clone, false);
+        end
     end
 
+    -- Direct port of React Bits' requestAnimationFrame layout math.
     local StepConnection = RenderStepped:Connect(function(Dt)
-        if not Wheel.Open and Wheel.Alpha <= 0.01 then
-            SceneBlur.Size = 0;
+        if not WheelHolder.Parent then return; end
+
+        local AlphaTau = 0.11;
+        local AlphaK = 1 - math.exp(-math.min(Dt, 0.05) / AlphaTau);
+        Wheel.Alpha = Wheel.Alpha + (Wheel.AlphaTarget - Wheel.Alpha) * AlphaK;
+        if math.abs(Wheel.AlphaTarget - Wheel.Alpha) < 0.001 then
+            Wheel.Alpha = Wheel.AlphaTarget;
+        end
+
+        if not Wheel.Open and Wheel.Alpha <= 0.001 then
+            WheelHolder.Visible = false;
             return;
         end
 
-        -- Critically-damped spring. This feels much closer to the React Bits picker
-        -- than repeatedly tweening each row or linearly lerping between integer slots.
-        Wheel.Velocity = Wheel.Velocity or 0;
-        local Error = Wheel.TargetIndex - Wheel.SmoothIndex;
-        local Stiffness = 110;
-        local SpringDamping = 21;
-        Wheel.Velocity = Wheel.Velocity + (Error * Stiffness - Wheel.Velocity * SpringDamping) * Dt;
-        Wheel.SmoothIndex = Wheel.SmoothIndex + Wheel.Velocity * Dt;
+        WheelHolder.Visible = true;
 
-        if math.abs(Error) < 0.0008 and math.abs(Wheel.Velocity) < 0.002 then
+        local Count = #Wheel.Items;
+        if Count <= 0 then return; end
+
+        local Tau = Style.SmoothingMs / 1000;
+        local K = 1 - math.exp(-math.min(Dt, 0.05) / Tau);
+        Wheel.SmoothIndex = Wheel.SmoothIndex + (Wheel.TargetIndex - Wheel.SmoothIndex) * K;
+        if math.abs(Wheel.TargetIndex - Wheel.SmoothIndex) < 0.001 then
             Wheel.SmoothIndex = Wheel.TargetIndex;
-            Wheel.Velocity = 0;
         end
 
-        local TotalItems = #Wheel.Items;
+        if Wheel.Loop and Count > 1 and math.abs(Wheel.TargetIndex - Wheel.SmoothIndex) < 0.001 then
+            local Wrapped = ((math.round(Wheel.TargetIndex) - 1) % Count) + 1;
+            local Diff = Wrapped - Wheel.TargetIndex;
+            if math.abs(Diff) > 0.001 then
+                Wheel.TargetIndex = Wrapped;
+                Wheel.SmoothIndex = Wheel.SmoothIndex + Diff;
+            end
+        end
+
+        local HolderSize = WheelHolder.AbsoluteSize;
+        local CenterY = HolderSize.Y * 0.5;
+        local Inset = Style.Inset;
+        local RowH = math.max(Style.FontSize * Style.Spacing, 1);
+        local TiltRad = math.rad(Style.Tilt);
+        local Radius = TiltRad > 0.0005 and (RowH / TiltRad) or 0;
         local MasterAlpha = math.clamp(Wheel.Alpha, 0, 1);
-        local ViewportWidth = math.max(WheelHolder.AbsoluteSize.X, 1);
-        local ViewportHeight = math.max(WheelHolder.AbsoluteSize.Y, 1);
+        local RoundedSelection = NormalizeIndex(math.round(Wheel.TargetIndex));
 
-        -- Horizontal typography scale follows width; vertical spacing follows height.
-        -- This prevents tall Roblox windows from collapsing the wheel into a tiny stack.
-        local TypeScale = math.clamp(ViewportWidth / 1078, 0.82, 1.28);
-        local StepY = math.clamp(ViewportHeight * 0.145, 96, 170);
-        Wheel.StepY = StepY;
+        if Wheel.LastFont ~= Library.Font then
+            Wheel.LastFont = Library.Font;
+            Wheel.LastRoundedSelection = nil;
+        end
 
-        -- The reference is dark around the wheel. Keep the treatment localized and
-        -- let it disappear before the middle of the screen.
-        WheelWash.Size = UDim2.new(0.46, 0, 1, 0);
-        WashGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0.00, 1 - 0.46 * MasterAlpha);
-            NumberSequenceKeypoint.new(0.24, 1 - 0.34 * MasterAlpha);
-            NumberSequenceKeypoint.new(0.58, 1 - 0.13 * MasterAlpha);
-            NumberSequenceKeypoint.new(0.82, 1 - 0.035 * MasterAlpha);
-            NumberSequenceKeypoint.new(1.00, 1.00);
-        });
-        SceneBlur.Size = 3.2 * MasterAlpha;
+        for Index, View in ipairs(Wheel.Views) do
+            local Delta = SignedLoopDistance(Index, Wheel.SmoothIndex);
+            local Distance = math.abs(Delta);
 
-        local CurrentPos = Wheel.SmoothIndex;
-        local CenterInt = math.floor(CurrentPos + 0.5);
-        local UsedSlots = 0;
+            local X = 0;
+            local Y = Delta * RowH;
+            local Rotation = 0;
 
-        if TotalItems > 0 then
-            -- Exactly the reference silhouette: two above, selected, two below.
-            -- With fewer items, do not duplicate the same option just to fill slots.
-            local VisibleCount = math.min(TotalItems, 5);
-            local Above = math.floor((VisibleCount - 1) / 2);
-            local Below = (VisibleCount - 1) - Above;
+            if Radius > 0 then
+                local Angle = math.clamp(Delta * TiltRad, -math.pi / 2, math.pi / 2);
+                Y = Radius * math.sin(Angle);
+                X = -Radius * (1 - math.cos(Angle)) * Style.Curve;
+                Rotation = math.deg(Angle);
+            end
 
-            for Rel = -Above, Below do
-                local ItemInt = CenterInt + Rel;
-                local Delta = ItemInt - CurrentPos;
-                local AbsDelta = math.abs(Delta);
+            View.Frame.Position = UDim2.fromOffset(Inset + X, CenterY + Y);
+            View.Frame.Rotation = Rotation;
+            View.Frame.ZIndex = 260 - math.min(40, math.floor(Distance * 2));
 
-                if AbsDelta <= 2.35 then
-                    UsedSlots = UsedSlots + 1;
-                    if UsedSlots > MaxVisibleSlots then break; end
+            local Opacity = math.max(Style.MinOpacity, 1 - Distance * Style.Fade);
+            local TotalOpacity = Opacity * MasterAlpha;
+            local ActiveProgress = math.max(0, 1 - math.min(Distance, 1));
+            local TextColor = Style.TextColor:Lerp(Style.ActiveColor, ActiveProgress);
+            local BlurRadius = Distance * Style.Blur;
 
-                    local Slot = SlotPool[UsedSlots];
-                    local ItemIndex = ((ItemInt - 1) % TotalItems) + 1;
-                    local Item = Wheel.Items[ItemIndex];
-                    local TextString = Item and tostring(Item.Text or '') or '';
+            -- Roblox has no per-TextLabel blur. Spread a conserved amount of
+            -- the text's opacity across faint neighboring copies instead of
+            -- stacking bright clones. This avoids the thick/ghosted look.
+            local BlurMix = math.clamp(BlurRadius / 6, 0, 0.78);
+            local MainShare = 1 - (0.55 * BlurMix);
+            local MainOpacity = TotalOpacity * MainShare;
+            local CloneOpacityTotal = math.max(0, TotalOpacity - MainOpacity);
+            local CloneOpacity = CloneOpacityTotal / #BlurOffsets;
 
-                    Slot.BoundIndex = ItemIndex;
-                    Slot.RelativeDelta = Delta;
-                    Slot.Frame.Visible = true;
+            View.MainText.Text = tostring(Wheel.Items[Index].Text or '');
+            View.MainText.TextSize = Style.FontSize;
+            View.MainText.TextColor3 = TextColor;
+            View.MainText.TextTransparency = 1 - math.clamp(MainOpacity, 0, 1);
+            View.MainText.TextStrokeTransparency = 1;
 
-                    -- Measured silhouette from the supplied React Bits reference:
-                    -- first neighbors are almost vertically aligned; the outer rows
-                    -- pull left enough to reveal the shallow wheel arc.
-                    local XOffset = LerpStops(
-                        AbsDelta,
-                        0,
-                        -4 * TypeScale,
-                        -28 * TypeScale
-                    );
-                    local YOffset = Delta * StepY;
+            local IsSelected = RoundedSelection == Index;
+            SetViewFontState(View, IsSelected);
 
-                    -- Near-center rows are almost unrotated. Rotation belongs mostly
-                    -- to the outer rows, which is what gives the reference its depth.
-                    local RotationMagnitude = LerpStops(AbsDelta, 0, 1.2, 9.0);
-                    local Rotation = math.sign(Delta) * RotationMagnitude;
-
-                    -- Selected is intentionally dramatic. First neighbors retain enough
-                    -- size to feel like the same wheel, not separate menu labels.
-                    local TextSize = LerpStops(
-                        AbsDelta,
-                        72 * TypeScale,
-                        50 * TypeScale,
-                        38 * TypeScale
-                    );
-
-                    -- Rapid but smooth depth falloff.
-                    local BaseTransparency = LerpStops(AbsDelta, 0.00, 0.50, 0.86);
-                    local MainTransparency = 1 - (1 - BaseTransparency) * MasterAlpha;
-
-                    Slot.Frame.Position = UDim2.fromOffset(
-                        math.floor(XOffset + 0.5),
-                        math.floor(YOffset + 0.5)
-                    );
-                    Slot.Frame.Size = UDim2.fromOffset(
-                        math.max(520, math.floor(ViewportWidth * 0.72)),
-                        math.floor(118 * TypeScale + 0.5)
-                    );
-                    Slot.Frame.Rotation = Rotation;
-                    Slot.Frame.ZIndex = 270 - math.floor(AbsDelta * 6);
-
-                    Slot.MainText.Text = TextString;
-                    Slot.MainText.TextSize = math.max(11, math.floor(TextSize + 0.5));
-                    Slot.MainText.TextColor3 = Library.FontColor or Color3.new(1, 1, 1);
-                    Slot.MainText.TextTransparency = MainTransparency;
-                    Slot.MainText.TextStrokeColor3 = Library.FontColor or Color3.new(1, 1, 1);
-                    Slot.MainText.TextStrokeTransparency = math.clamp(MainTransparency + 0.34, 0.88, 1);
-                    Slot.MainText.TextXAlignment = Enum.TextXAlignment.Left;
-                    Slot.MainText.TextYAlignment = Enum.TextYAlignment.Center;
-                    Library:ApplyFont(Slot.MainText);
-
-                    -- Roblox has no per-TextLabel Gaussian blur. These copies are kept
-                    -- extremely faint so they create soft defocus instead of readable
-                    -- duplicate/ghost text.
-                    local BlurRadius = LerpStops(AbsDelta, 0, 1.65 * TypeScale, 3.6 * TypeScale);
-                    local CloneBaseTransparency = LerpStops(AbsDelta, 1.0, 0.985, 0.994);
-                    local CloneTransparency = 1 - (1 - CloneBaseTransparency) * MasterAlpha;
-
-                    for K, Clone in ipairs(Slot.BlurClones) do
-                        if AbsDelta < 0.08 or BlurRadius <= 0.05 then
-                            Clone.TextTransparency = 1;
-                        else
-                            local Off = Offsets[K];
-                            Clone.Text = TextString;
-                            Clone.TextSize = Slot.MainText.TextSize;
-                            Clone.TextColor3 = Library.FontColor or Color3.new(1, 1, 1);
-                            Clone.TextTransparency = CloneTransparency;
-                            Clone.TextStrokeTransparency = 1;
-                            Clone.TextXAlignment = Enum.TextXAlignment.Left;
-                            Clone.TextYAlignment = Enum.TextYAlignment.Center;
-                            Clone.Position = UDim2.new(
-                                0,
-                                Off.X * BlurRadius,
-                                0.5,
-                                Off.Y * BlurRadius
-                            );
-                            Library:ApplyFont(Clone);
-                        end
-                    end
+            if BlurRadius <= 0.05 or CloneOpacity <= 0.001 then
+                for _, Clone in ipairs(View.BlurClones) do
+                    Clone.TextTransparency = 1;
+                end
+            else
+                local Spread = BlurRadius;
+                for CloneIndex, Offset in ipairs(BlurOffsets) do
+                    local Clone = View.BlurClones[CloneIndex];
+                    Clone.Text = View.MainText.Text;
+                    Clone.TextSize = Style.FontSize;
+                    Clone.TextColor3 = TextColor;
+                    Clone.TextTransparency = 1 - math.clamp(CloneOpacity, 0, 1);
+                    Clone.TextStrokeTransparency = 1;
+                    Clone.Position = UDim2.fromOffset(Offset.X * Spread, Offset.Y * Spread);
                 end
             end
         end
 
-        for J = UsedSlots + 1, MaxVisibleSlots do
-            SlotPool[J].Frame.Visible = false;
-            SlotPool[J].BoundIndex = nil;
-            SlotPool[J].RelativeDelta = nil;
-        end
+        Wheel.LastRoundedSelection = RoundedSelection;
     end);
-    table.insert(Wheel.Connections, StepConnection);
-    Library:GiveSignal(StepConnection);
+    TrackConnection(StepConnection);
 
     function Wheel:OpenWheel()
         if Wheel.Open or not Wheel.Enabled then return; end
         Wheel.Open = true;
-        Wheel.AnimationId = Wheel.AnimationId + 1;
-        local CurrentAnim = Wheel.AnimationId;
+        Wheel.AlphaTarget = 1;
+        Wheel.Dragging = false;
+        Wheel.DragMoved = false;
+        WheelHolder.Visible = true;
 
         if Library.KeybindFrame and Library.KeybindFrame.Visible then
             Wheel.SavedKeybindVisible = true;
             Library.KeybindFrame.Visible = false;
         end
-
-        WheelHolder.Visible = true;
-
-        Library:CancelMotion(ContentContainer);
-        ContentContainer.Position = UDim2.new(0.108, -18, 0.505, 0);
-
-        Library:Animate(ContentContainer, {
-            Position = UDim2.new(0.108, 0, 0.505, 0);
-        }, 0.24, nil, 'Picker');
-
-        local Driver = Instance.new('NumberValue');
-        Driver.Value = Wheel.Alpha;
-        Wheel.FadeDriver = Driver;
-        Library:Animate(Driver, { Value = 1 }, 0.22, function()
-            Driver:Destroy();
-        end, 'Fade');
-        Driver.Changed:Connect(function(Val)
-            Wheel.Alpha = Val;
-        end);
     end
 
     function Wheel:CloseWheel()
         if not Wheel.Open then return; end
         Wheel.Open = false;
-        Wheel.AnimationId = Wheel.AnimationId + 1;
-        local CurrentAnim = Wheel.AnimationId;
+        Wheel.AlphaTarget = 0;
+        Wheel.Dragging = false;
+        Wheel.DragMoved = false;
 
         if Wheel.SavedKeybindVisible and Library.KeybindFrame then
             Wheel.SavedKeybindVisible = false;
             Library.KeybindFrame.Visible = true;
         end
-
-        Library:Animate(ContentContainer, {
-            Position = UDim2.new(0.108, -18, 0.505, 0);
-        }, 0.18, nil, 'PopupExit');
-
-        local Driver = Instance.new('NumberValue');
-        Driver.Value = Wheel.Alpha;
-        Wheel.FadeDriver = Driver;
-        Library:Animate(Driver, { Value = 0 }, 0.18, function(State)
-            Driver:Destroy();
-            if CurrentAnim == Wheel.AnimationId and State ~= Enum.PlaybackState.Cancelled then
-                WheelHolder.Visible = false;
-            end
-        end, 'Fade');
-        Driver.Changed:Connect(function(Val)
-            Wheel.Alpha = Val;
-        end);
     end
 
     function Wheel:Toggle()
@@ -9974,29 +9980,39 @@ function Library:CreateOptionWheel(Config)
         end
     end
 
-    -- Mouse scroll input
-    local InputConn = InputService.InputChanged:Connect(function(Input)
+    local InputChangedConnection = InputService.InputChanged:Connect(function(Input)
         if not Wheel.Open then return; end
+
         if Input.UserInputType == Enum.UserInputType.MouseWheel then
             if Input.Position.Z > 0 then
                 Wheel:Scroll(-1);
             elseif Input.Position.Z < 0 then
                 Wheel:Scroll(1);
             end
+            return;
+        end
+
+        if Wheel.Dragging and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch) then
+            local Dy = Input.Position.Y - Wheel.DragStartY;
+            if not Wheel.DragMoved and math.abs(Dy) > 4 then
+                Wheel.DragMoved = true;
+            end
+            if Wheel.DragMoved then
+                local RowH = math.max(Style.FontSize * Style.Spacing, 1);
+                Wheel.TargetIndex = ClampTarget(Wheel.DragStartIndex - (Dy / RowH));
+            end
         end
     end);
-    table.insert(Wheel.Connections, InputConn);
-    Library:GiveSignal(InputConn);
+    TrackConnection(InputChangedConnection);
 
-    -- Keyboard navigation when wheel is active
-    local KeyConn = InputService.InputBegan:Connect(function(Input, GameProcessed)
+    local InputBeganConnection = InputService.InputBegan:Connect(function(Input, GameProcessed)
         if GameProcessed then return; end
 
-        -- Toggle keybind check
         local BoundKeyCode = typeof(Wheel.Keybind) == 'EnumItem' and Wheel.Keybind or nil;
         if not BoundKeyCode and type(Wheel.Keybind) == 'string' then
             pcall(function() BoundKeyCode = Enum.KeyCode[Wheel.Keybind]; end);
         end
+
         if BoundKeyCode and Input.KeyCode == BoundKeyCode then
             Wheel:Toggle();
             return;
@@ -10004,27 +10020,44 @@ function Library:CreateOptionWheel(Config)
 
         if not Wheel.Open then return; end
 
-        if Input.KeyCode == Enum.KeyCode.Up or Input.KeyCode == Enum.KeyCode.W then
+        if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+            Wheel.Dragging = true;
+            Wheel.DragStartY = Input.Position.Y;
+            Wheel.DragStartIndex = Wheel.TargetIndex;
+            Wheel.DragMoved = false;
+            return;
+        end
+
+        if Input.KeyCode == Enum.KeyCode.Up or Input.KeyCode == Enum.KeyCode.W or Input.KeyCode == Enum.KeyCode.Left then
             Wheel:Scroll(-1);
-        elseif Input.KeyCode == Enum.KeyCode.Down or Input.KeyCode == Enum.KeyCode.S then
+        elseif Input.KeyCode == Enum.KeyCode.Down or Input.KeyCode == Enum.KeyCode.S or Input.KeyCode == Enum.KeyCode.Right then
             Wheel:Scroll(1);
-        elseif Input.KeyCode == Enum.KeyCode.Q or Input.KeyCode == Enum.KeyCode.Left then
+        elseif Input.KeyCode == Enum.KeyCode.Q then
             Wheel:CycleMode(-1);
-        elseif Input.KeyCode == Enum.KeyCode.E or Input.KeyCode == Enum.KeyCode.Right then
+        elseif Input.KeyCode == Enum.KeyCode.E then
             Wheel:CycleMode(1);
         elseif Input.KeyCode == Enum.KeyCode.Return or Input.KeyCode == Enum.KeyCode.Space then
-            local Total = #Wheel.Items;
-            if Total > 0 then
-                local CurrentInt = math.floor(Wheel.SmoothIndex + 0.5);
-                local Selected = ((CurrentInt - 1) % Total) + 1;
-                Wheel:ExecuteItem(Selected);
-            end
+            local Selected = NormalizeIndex(math.round(Wheel.TargetIndex));
+            if Selected then Wheel:ExecuteItem(Selected); end
         elseif Input.KeyCode == Enum.KeyCode.Escape then
             Wheel:CloseWheel();
         end
     end);
-    table.insert(Wheel.Connections, KeyConn);
-    Library:GiveSignal(KeyConn);
+    TrackConnection(InputBeganConnection);
+
+    local InputEndedConnection = InputService.InputEnded:Connect(function(Input)
+        if not Wheel.Open or not Wheel.Dragging then return; end
+        if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+            Wheel.Dragging = false;
+            if Wheel.DragMoved then
+                Wheel.TargetIndex = ClampTarget(math.round(Wheel.TargetIndex));
+            end
+            task.defer(function()
+                Wheel.DragMoved = false;
+            end);
+        end
+    end);
+    TrackConnection(InputEndedConnection);
 
     function Wheel:SetKeybind(Key)
         Wheel.Keybind = Key;
@@ -10037,11 +10070,33 @@ function Library:CreateOptionWheel(Config)
         end
     end
 
+    function Wheel:SetStyle(NewStyle)
+        NewStyle = NewStyle or {};
+        if NewStyle.FontSize ~= nil then Style.FontSize = math.max(1, tonumber(NewStyle.FontSize) or Style.FontSize); end
+        if NewStyle.Spacing ~= nil then Style.Spacing = math.max(0.1, tonumber(NewStyle.Spacing) or Style.Spacing); end
+        if NewStyle.Curve ~= nil then Style.Curve = math.max(0, tonumber(NewStyle.Curve) or Style.Curve); end
+        if NewStyle.Tilt ~= nil then Style.Tilt = math.max(0, tonumber(NewStyle.Tilt) or Style.Tilt); end
+        if NewStyle.Blur ~= nil then Style.Blur = math.max(0, tonumber(NewStyle.Blur) or Style.Blur); end
+        if NewStyle.Fade ~= nil then Style.Fade = math.max(0, tonumber(NewStyle.Fade) or Style.Fade); end
+        if NewStyle.MinOpacity ~= nil then Style.MinOpacity = math.clamp(tonumber(NewStyle.MinOpacity) or Style.MinOpacity, 0, 1); end
+        if NewStyle.Smoothing ~= nil then Style.SmoothingMs = math.max(1, tonumber(NewStyle.Smoothing) or Style.SmoothingMs); end
+        if NewStyle.Inset ~= nil then Style.Inset = math.max(0, tonumber(NewStyle.Inset) or Style.Inset); end
+        if typeof(NewStyle.TextColor) == 'Color3' then Style.TextColor = NewStyle.TextColor; end
+        if typeof(NewStyle.ActiveColor) == 'Color3' then Style.ActiveColor = NewStyle.ActiveColor; end
+    end
+
     function Wheel:Destroy()
-        Wheel:CloseWheel();
-        for _, Conn in ipairs(Wheel.Connections) do pcall(function() Conn:Disconnect(); end); end
-        pcall(function() SceneBlur:Destroy(); end);
-        pcall(function() WheelGui:Destroy(); end);
+        Wheel.Open = false;
+        Wheel.AlphaTarget = 0;
+        for _, Connection in ipairs(Wheel.Connections) do
+            pcall(function() Connection:Disconnect(); end);
+        end
+        table.clear(Wheel.Connections);
+        ClearViews();
+        pcall(function() WheelHolder:Destroy(); end);
+        if Library.OptionWheel == Wheel then
+            Library.OptionWheel = nil;
+        end
     end
 
     Wheel:SetMode(Wheel.ActiveMode);
