@@ -30,7 +30,6 @@ local Mouse = LocalPlayer:GetMouse();
 local RuntimeEnvironment = getgenv and getgenv() or _G;
 local PreviousFormaLibrary = RuntimeEnvironment and RuntimeEnvironment.FormaLibrary;
 if type(PreviousFormaLibrary) == 'table'
-    and PreviousFormaLibrary ~= Library
     and type(PreviousFormaLibrary.Unload) == 'function' then
     pcall(PreviousFormaLibrary.Unload, PreviousFormaLibrary);
 end;
