@@ -5292,6 +5292,8 @@ do
         return Scrolling;
     end;
 
+    local UtilityButtonRefresh = setmetatable({}, { __mode = 'k' });
+
     local function CreateUtilityButton(Parent, Text, Position, Size, ActiveResolver)
         local Button = Library:Create('TextButton', {
             AutoButtonColor = false;
@@ -5327,7 +5329,7 @@ do
             TextColor3 = ResolveText;
         });
 
-        function Button:RefreshFormaStyle(Animated)
+        UtilityButtonRefresh[Button] = function(Animated)
             local Background = ResolveBackground();
             local Foreground = ResolveText();
             if Animated then
@@ -5343,6 +5345,11 @@ do
         end;
 
         return Button;
+    end;
+
+    local function RefreshUtilityButton(Button, Animated)
+        local Refresh = UtilityButtonRefresh[Button];
+        if Refresh then Refresh(Animated); end
     end;
 
     function Funcs:AddConsole(Info)
@@ -5456,7 +5463,7 @@ do
                 end;
             end;
             for _, Button in next, FilterButtons do
-                Button:RefreshFormaStyle(false);
+                RefreshUtilityButton(Button, false);
             end;
             task.defer(UpdateCanvas);
         end;
@@ -6151,11 +6158,11 @@ do
 
             SendButton.MouseButton1Click:Connect(Submit);
             ComposerBox.FocusLost:Connect(function(EnterPressed)
-                SendButton:RefreshFormaStyle(false);
+                SendRefreshUtilityButton(Button, false);
                 if EnterPressed then Submit(); end
             end);
             ComposerBox.Focused:Connect(function()
-                SendButton:RefreshFormaStyle(true);
+                SendRefreshUtilityButton(Button, true);
             end);
 
             Chat.Input = ComposerBox;
