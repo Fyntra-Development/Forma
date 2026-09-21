@@ -270,8 +270,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.11.0+build.1';
-    Release = 'GA';
+    Version = '1.11.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -439,38 +439,6 @@ function Library:GetTitleAnimations()
     return table.clone(Library.TitleAnimations or { 'None', 'Cascade', 'Glint', 'Pop', 'Decode', 'Slide' });
 end;
 
-local function AddTitleOffset(Position, X, Y)
-    return UDim2.new(
-        Position.X.Scale,
-        Position.X.Offset + (X or 0),
-        Position.Y.Scale,
-        Position.Y.Offset + (Y or 0)
-    );
-end;
-
-local function ClampTitleProgress(Value)
-    return math.clamp(tonumber(Value) or 0, 0, 1);
-end;
-
-local function EaseTitleOutCubic(Value)
-    local T = ClampTitleProgress(Value);
-    local Inverse = 1 - T;
-    return 1 - (Inverse * Inverse * Inverse);
-end;
-
-local function EaseTitleSmooth(Value)
-    local T = ClampTitleProgress(Value);
-    return T * T * (3 - (2 * T));
-end;
-
-local function EaseTitleOutBack(Value)
-    local T = ClampTitleProgress(Value);
-    local C1 = 1.18;
-    local C3 = C1 + 1;
-    local Shifted = T - 1;
-    return 1 + (C3 * Shifted * Shifted * Shifted) + (C1 * Shifted * Shifted);
-end;
-
 local function SplitTitleCharacters(Text)
     local Characters = {};
     local Success = pcall(function()
@@ -489,9 +457,24 @@ local function SplitTitleCharacters(Text)
     return Characters;
 end;
 
-local TitleDecodeGlyphs = {
-    '0', '1', '/', '\\', '+', '*', '#', '?', '%', '@'
-};
+local function EscapeTitleRichText(Text)
+    return tostring(Text or '')
+        :gsub('&', '&amp;')
+        :gsub('<', '&lt;')
+        :gsub('>', '&gt;');
+end;
+
+local function TitleColorHex(Color)
+    local R = math.clamp(math.floor((Color.R * 255) + 0.5), 0, 255);
+    local G = math.clamp(math.floor((Color.G * 255) + 0.5), 0, 255);
+    local B = math.clamp(math.floor((Color.B * 255) + 0.5), 0, 255);
+    return string.format('#%02X%02X%02X', R, G, B);
+end;
+
+local function TitleSmoothStep(Value)
+    local T = math.clamp(tonumber(Value) or 0, 0, 1);
+    return T * T * (3 - (2 * T));
+end;
 
 function Library:ResetTitleAnimation(Label)
     if not Label then return; end;
@@ -500,12 +483,12 @@ function Library:ResetTitleAnimation(Label)
     if State then
         State.Alive = false;
 
-        if State.Holder and State.Holder.Parent then
-            pcall(function() State.Holder:Destroy(); end);
+        if State.Overlay and State.Overlay.Parent then
+            pcall(function() State.Overlay:Destroy(); end);
         end;
 
         pcall(function()
-            Label.TextTransparency = State.OriginalTransparency or 0;
+            Label.TextTransparency = State.SourceTransparency or 0;
         end);
     else
         pcall(function()
@@ -518,109 +501,116 @@ function Library:ResetTitleAnimation(Label)
     end;
 end;
 
-function Library:ApplyTitleAnimation(Label, Play)
-    if not Label or not Label.Parent then return; end;
+function Library:BuildTitleAnimationPalette(State, BaseColor)
+    if not State then return; end;
 
-    Library:ResetTitleAnimation(Label);
-
-    local Mode = Library.TitleAnimation or 'None';
-    local Text = tostring(Label.Text or '');
-
-    if Mode == 'None' or Text == '' then
-        return;
-    end;
-
-    Play = Play ~= false;
-
-    local State = {
-        Alive = true;
-        Holder = nil;
-        Characters = {};
-        OriginalTransparency = Label.TextTransparency;
-        StartedAt = os.clock();
-        Mode = Mode;
-        Completed = not Play and Mode ~= 'Glint';
-    };
-    Library.TitleAnimationStates[Label] = State;
-
-    local Holder = Instance.new('Frame');
-    Holder.Name = 'FormaTitleCharacters';
-    Holder.BackgroundTransparency = 1;
-    Holder.BorderSizePixel = 0;
-    Holder.ClipsDescendants = false;
-    Holder.Position = UDim2.fromOffset(0, 0);
-    Holder.Size = UDim2.fromScale(1, 1);
-    Holder.ZIndex = Label.ZIndex + 1;
-    Holder.Parent = Label;
-    State.Holder = Holder;
-
-    Label.TextTransparency = 1;
-
-    local Characters = SplitTitleCharacters(Text);
-    local Prefix = '';
-    local BaseColor = Label.TextColor3;
-    local HighlightColor = BaseColor:Lerp(Color3.new(1, 1, 1), 0.70);
-    local Height = math.max(Label.AbsoluteSize.Y, Label.TextSize + 5, 18);
+    BaseColor = BaseColor or State.Source.TextColor3;
+    local AccentBlend = BaseColor:Lerp(Library.AccentColor, 0.46);
+    local HighlightColor = AccentBlend:Lerp(Color3.new(1, 1, 1), 0.38);
 
     State.BaseColor = BaseColor;
     State.HighlightColor = HighlightColor;
-    State.Count = #Characters;
+    State.ColorTags = {};
 
-    local function CharacterWidth(Before, WithCharacter)
-        local BeforeWidth = Library:GetTextBounds(Before, Library.Font, Label.TextSize);
-        local AfterWidth = Library:GetTextBounds(WithCharacter, Library.Font, Label.TextSize);
-        return math.max(AfterWidth - BeforeWidth, 1);
-    end
-
-    for Index, Character in ipairs(Characters) do
-        local Before = Prefix;
-        Prefix = Prefix .. Character;
-
-        local X = Library:GetTextBounds(Before, Library.Font, Label.TextSize);
-        local Width = CharacterWidth(Before, Prefix);
-
-        local CharacterLabel = Instance.new('TextLabel');
-        CharacterLabel.Name = 'Character_' .. tostring(Index);
-        CharacterLabel.BackgroundTransparency = 1;
-        CharacterLabel.BorderSizePixel = 0;
-        CharacterLabel.Position = UDim2.fromOffset(X, 0);
-        CharacterLabel.Size = UDim2.fromOffset(math.max(Width + 2, 2), Height);
-        CharacterLabel.Text = Character;
-        CharacterLabel.TextColor3 = BaseColor;
-        CharacterLabel.TextSize = Label.TextSize;
-        CharacterLabel.TextTransparency = 0;
-        CharacterLabel.TextStrokeTransparency = Label.TextStrokeTransparency;
-        CharacterLabel.TextStrokeColor3 = Label.TextStrokeColor3;
-        CharacterLabel.TextXAlignment = Enum.TextXAlignment.Left;
-        CharacterLabel.TextYAlignment = Label.TextYAlignment;
-        CharacterLabel.ZIndex = Label.ZIndex + 1;
-        CharacterLabel.Parent = Holder;
-
-        pcall(function()
-            CharacterLabel.Font = Label.Font;
-        end);
-        pcall(function()
-            CharacterLabel.FontFace = Label.FontFace;
-        end);
-
-        local CharacterScale = Instance.new('UIScale');
-        CharacterScale.Name = 'FormaTitleCharacterScale';
-        CharacterScale.Scale = 1;
-        CharacterScale.Parent = CharacterLabel;
-
-        State.Characters[Index] = {
-            Label = CharacterLabel;
-            Scale = CharacterScale;
-            BasePosition = CharacterLabel.Position;
-            OriginalCharacter = Character;
-            IsSpace = Character == ' ';
-        };
+    for Step = 0, 24 do
+        local Amount = Step / 24;
+        local Color = BaseColor:Lerp(HighlightColor, Amount);
+        State.ColorTags[Step + 1] = '<font color="' .. TitleColorHex(Color) .. '">';
     end;
 end;
 
+function Library:SyncTitleAnimationState(Label, State, ResetTime)
+    if not Label or not State or not State.Overlay then return; end;
+
+    State.Mode = Library.TitleAnimation or 'None';
+    State.PlainText = tostring(Label.Text or '');
+    State.Characters = SplitTitleCharacters(State.PlainText);
+    State.EscapedCharacters = {};
+
+    for Index, Character in ipairs(State.Characters) do
+        State.EscapedCharacters[Index] = EscapeTitleRichText(Character);
+    end;
+
+    State.Count = #State.Characters;
+    State.SourceTransparency = State.SourceTransparency or 0;
+
+    local Overlay = State.Overlay;
+    Overlay.Size = UDim2.fromScale(1, 1);
+    Overlay.Position = UDim2.fromOffset(0, 0);
+    Overlay.TextSize = Label.TextSize;
+    Overlay.TextXAlignment = Label.TextXAlignment;
+    Overlay.TextYAlignment = Label.TextYAlignment;
+    Overlay.TextStrokeTransparency = Label.TextStrokeTransparency;
+    Overlay.TextStrokeColor3 = Label.TextStrokeColor3;
+    Overlay.ZIndex = Label.ZIndex + 1;
+
+    pcall(function()
+        Overlay.Font = Label.Font;
+    end);
+    pcall(function()
+        Overlay.FontFace = Label.FontFace;
+    end);
+
+    Library:BuildTitleAnimationPalette(State, Label.TextColor3);
+
+    if ResetTime then
+        State.StartedAt = os.clock();
+    end;
+
+    State.LastRenderedText = nil;
+end;
+
+function Library:EnsureTitleAnimationState(Label, ResetTime)
+    if not Label or not Label.Parent then return nil; end;
+
+    local Mode = Library.TitleAnimation or 'None';
+    if Mode == 'None' then
+        Library:ResetTitleAnimation(Label);
+        return nil;
+    end;
+
+    local State = Library.TitleAnimationStates[Label];
+    if State and State.Overlay and State.Overlay.Parent then
+        State.Mode = Mode;
+        Library:SyncTitleAnimationState(Label, State, ResetTime);
+        Label.TextTransparency = 1;
+        return State;
+    end;
+
+    local Overlay = Instance.new('TextLabel');
+    Overlay.Name = 'FormaAnimatedTitle';
+    Overlay.BackgroundTransparency = 1;
+    Overlay.BorderSizePixel = 0;
+    Overlay.RichText = true;
+    Overlay.TextWrapped = false;
+    Overlay.TextTruncate = Enum.TextTruncate.None;
+    Overlay.ClipsDescendants = false;
+    Overlay.Parent = Label;
+
+    State = {
+        Alive = true;
+        Source = Label;
+        Overlay = Overlay;
+        SourceTransparency = Label.TextTransparency;
+        StartedAt = os.clock();
+        Mode = Mode;
+        Characters = {};
+        EscapedCharacters = {};
+        ColorTags = {};
+        LastRenderedText = nil;
+    };
+
+    Library.TitleAnimationStates[Label] = State;
+    Library:SyncTitleAnimationState(Label, State, ResetTime ~= false);
+    Label.TextTransparency = 1;
+    return State;
+end;
+
 function Library:TriggerTitleAnimation(Label)
-    if not Label or not Label.Parent then return; end;
-    Library:ApplyTitleAnimation(Label, true);
+    local State = Library:EnsureTitleAnimationState(Label, false);
+    if State then
+        State.StartedAt = os.clock();
+    end;
 end;
 
 function Library:RegisterTitleAnimationLabel(Label)
@@ -633,18 +623,28 @@ function Library:RegisterTitleAnimationLabel(Label)
         Library.TitleAnimationConnections[Label] = Connections;
 
         table.insert(Connections, Label:GetPropertyChangedSignal('Text'):Connect(function()
-            task.defer(function()
-                if Label.Parent then Library:ApplyTitleAnimation(Label, true); end
-            end);
+            local State = Library.TitleAnimationStates[Label];
+            if State and tostring(Label.Text or '') ~= State.PlainText then
+                Library:SyncTitleAnimationState(Label, State, false);
+            end;
         end));
 
         table.insert(Connections, Label:GetPropertyChangedSignal('TextSize'):Connect(function()
-            task.defer(function()
-                if Label.Parent then Library:ApplyTitleAnimation(Label, false); end
-            end);
+            local State = Library.TitleAnimationStates[Label];
+            if State and State.Overlay then
+                State.Overlay.TextSize = Label.TextSize;
+            end;
         end));
 
-        Label.AncestryChanged:Connect(function(_, Parent)
+        table.insert(Connections, Label:GetPropertyChangedSignal('TextColor3'):Connect(function()
+            local State = Library.TitleAnimationStates[Label];
+            if State then
+                Library:BuildTitleAnimationPalette(State, Label.TextColor3);
+                State.LastRenderedText = nil;
+            end;
+        end));
+
+        table.insert(Connections, Label.AncestryChanged:Connect(function(_, Parent)
             if Parent == nil then
                 Library:ResetTitleAnimation(Label);
                 Library.TitleAnimationLabels[Label] = nil;
@@ -657,10 +657,10 @@ function Library:RegisterTitleAnimationLabel(Label)
                 end;
                 Library.TitleAnimationConnections[Label] = nil;
             end;
-        end);
+        end));
     end;
 
-    Library:ApplyTitleAnimation(Label, false);
+    Library:EnsureTitleAnimationState(Label, false);
     return Label;
 end;
 
@@ -679,22 +679,57 @@ function Library:SetTitleAnimation(Name)
 
     for Label in next, Library.TitleAnimationLabels do
         if Label and Label.Parent then
-            Library:ApplyTitleAnimation(Label, true);
+            if Resolved == 'None' then
+                Library:ResetTitleAnimation(Label);
+            else
+                local State = Library:EnsureTitleAnimationState(Label, false);
+                if State then
+                    State.Mode = Resolved;
+                    State.StartedAt = os.clock();
+                    State.LastRenderedText = nil;
+                end;
+            end;
         end;
     end;
 
     return Resolved;
 end;
 
-function Library:RefreshTitleAnimations(Replay)
+function Library:RefreshTitleAnimations()
     for Label in next, Library.TitleAnimationLabels do
         if Label and Label.Parent then
-            Library:ApplyTitleAnimation(Label, Replay == true);
+            local State = Library.TitleAnimationStates[Label];
+            if Library.TitleAnimation == 'None' then
+                Library:ResetTitleAnimation(Label);
+            elseif State and State.Overlay then
+                State.Mode = Library.TitleAnimation;
+                State.Overlay.TextSize = Label.TextSize;
+                State.Overlay.TextXAlignment = Label.TextXAlignment;
+                State.Overlay.TextYAlignment = Label.TextYAlignment;
+                State.Overlay.TextStrokeTransparency = Label.TextStrokeTransparency;
+                State.Overlay.TextStrokeColor3 = Label.TextStrokeColor3;
+                pcall(function() State.Overlay.Font = Label.Font; end);
+                pcall(function() State.Overlay.FontFace = Label.FontFace; end);
+                Library:BuildTitleAnimationPalette(State, Label.TextColor3);
+                State.LastRenderedText = nil;
+                Label.TextTransparency = 1;
+            else
+                Library:EnsureTitleAnimationState(Label, false);
+            end;
         end;
     end;
 end;
 
-table.insert(Library.Signals, RenderStepped:Connect(function()
+local TitleAnimationAccumulator = 0;
+local TitleAnimationStep = 1 / 45;
+
+table.insert(Library.Signals, RenderStepped:Connect(function(Delta)
+    TitleAnimationAccumulator = TitleAnimationAccumulator + Delta;
+    if TitleAnimationAccumulator < TitleAnimationStep then
+        return;
+    end;
+    TitleAnimationAccumulator = TitleAnimationAccumulator % TitleAnimationStep;
+
     local Now = os.clock();
 
     for Label, State in next, Library.TitleAnimationStates do
@@ -702,154 +737,71 @@ table.insert(Library.Signals, RenderStepped:Connect(function()
             or not Label.Parent
             or not State
             or not State.Alive
-            or not State.Holder
-            or not State.Holder.Parent then
+            or not State.Overlay
+            or not State.Overlay.Parent then
             if Label then
                 Library:ResetTitleAnimation(Label);
-            end
+            end;
             continue;
         end;
 
-        local Mode = State.Mode;
+        local Count = math.max(State.Count or 0, 1);
+        if Count <= 0 then
+            continue;
+        end;
+
         local Time = Now - (State.StartedAt or Now);
-        local Count = math.max(State.Count or #State.Characters, 1);
+        local Mode = State.Mode or Library.TitleAnimation;
+        local Parts = table.create(Count);
 
-        if State.Completed and Mode ~= 'Glint' then
-            continue;
+        for Index, EscapedCharacter in ipairs(State.EscapedCharacters) do
+            local Character = State.Characters[Index];
+            if Character == ' ' then
+                Parts[Index] = ' ';
+                continue;
+            end;
+
+            local Intensity = 0;
+
+            if Mode == 'Cascade' then
+                local Period = 2.35;
+                local Travel = ((Time % Period) / Period) * (Count + 3.2) - 1.6;
+                local Distance = math.abs(Index - Travel);
+                local Raw = math.max(0, 1 - (Distance / 1.85));
+                Intensity = TitleSmoothStep(Raw) * 0.78;
+            elseif Mode == 'Glint' then
+                local Period = 3.1;
+                local Cycle = Time % Period;
+                if Cycle < 1.05 then
+                    local Travel = (Cycle / 1.05) * (Count + 2.4) - 1.2;
+                    local Distance = math.abs(Index - Travel);
+                    local Raw = math.max(0, 1 - (Distance / 0.92));
+                    Intensity = TitleSmoothStep(Raw);
+                end;
+            elseif Mode == 'Pop' then
+                local Phase = (Time * 3.05) - ((Index - 1) * 0.62);
+                local Pulse = (math.sin(Phase) + 1) * 0.5;
+                Pulse = Pulse * Pulse;
+                Intensity = 0.12 + (Pulse * 0.68);
+            elseif Mode == 'Decode' then
+                local Phase = (Time * 5.2) + (Index * 1.73);
+                local Carrier = (math.sin(Phase) + 1) * 0.5;
+                local Slow = (math.sin((Time * 1.15) - (Index * 0.41)) + 1) * 0.5;
+                Intensity = TitleSmoothStep(Carrier) * (0.18 + (Slow * 0.60));
+            elseif Mode == 'Slide' then
+                local Phase = (Time * 1.85) - ((Index - 1) * 0.44);
+                local Wave = (math.sin(Phase) + 1) * 0.5;
+                Intensity = 0.10 + (TitleSmoothStep(Wave) * 0.62);
+            end;
+
+            local PaletteIndex = math.clamp(math.floor((Intensity * 24) + 1.5), 1, 25);
+            Parts[Index] = State.ColorTags[PaletteIndex] .. EscapedCharacter .. '</font>';
         end;
 
-        local AllFinished = Mode ~= 'Glint';
-
-        for Index, Character in ipairs(State.Characters) do
-            local CharacterLabel = Character.Label;
-
-            if CharacterLabel and CharacterLabel.Parent then
-                local BasePosition = Character.BasePosition;
-                local BaseCharacter = Character.OriginalCharacter;
-                local Color = State.BaseColor;
-                local XOffset = 0;
-                local YOffset = 0;
-                local Scale = 1;
-                local Transparency = 0;
-                local Rotation = 0;
-                local Finished = true;
-
-                if Character.IsSpace then
-                    CharacterLabel.Text = BaseCharacter;
-                    CharacterLabel.TextTransparency = 1;
-                elseif Mode == 'Cascade' then
-                    local Delay = (Index - 1) * 0.028;
-                    local Duration = 0.32;
-                    local LocalTime = Time - Delay;
-                    local Progress = ClampTitleProgress(LocalTime / Duration);
-                    local Ease = EaseTitleOutCubic(Progress);
-
-                    YOffset = 4.0 * (1 - Ease);
-                    YOffset = YOffset - (math.sin(Progress * math.pi) * 0.28 * (1 - Progress));
-                    Scale = 0.975 + (0.025 * Ease);
-                    Transparency = 0.88 * (1 - Ease);
-                    Finished = Progress >= 1;
-                elseif Mode == 'Pop' then
-                    local Delay = (Index - 1) * 0.030;
-                    local Duration = 0.34;
-                    local LocalTime = Time - Delay;
-                    local Progress = ClampTitleProgress(LocalTime / Duration);
-                    local Ease = EaseTitleOutBack(Progress);
-                    local Fade = EaseTitleOutCubic(Progress);
-
-                    Scale = 0.88 + (0.12 * Ease);
-                    YOffset = 2.0 * (1 - Fade);
-                    Transparency = 0.92 * (1 - Fade);
-                    Finished = Progress >= 1;
-                elseif Mode == 'Slide' then
-                    local Delay = (Index - 1) * 0.026;
-                    local Duration = 0.30;
-                    local LocalTime = Time - Delay;
-                    local Progress = ClampTitleProgress(LocalTime / Duration);
-                    local Ease = EaseTitleOutCubic(Progress);
-
-                    XOffset = -4.5 * (1 - Ease);
-                    Transparency = 0.90 * (1 - Ease);
-                    Finished = Progress >= 1;
-                elseif Mode == 'Decode' then
-                    local Delay = (Index - 1) * 0.034;
-                    local LocalTime = Time - Delay;
-                    local ScrambleDuration = 0.17;
-                    local ResolveDuration = 0.15;
-
-                    if LocalTime < 0 then
-                        CharacterLabel.Text = BaseCharacter;
-                        Transparency = 1;
-                        Finished = false;
-                    elseif LocalTime < ScrambleDuration then
-                        local GlyphIndex = ((math.floor(LocalTime * 34) + Index * 3) % #TitleDecodeGlyphs) + 1;
-                        CharacterLabel.Text = TitleDecodeGlyphs[GlyphIndex];
-                        Color = State.HighlightColor;
-                        Transparency = 0.18;
-                        YOffset = 0.6;
-                        Finished = false;
-                    else
-                        CharacterLabel.Text = BaseCharacter;
-                        local Resolve = ClampTitleProgress((LocalTime - ScrambleDuration) / ResolveDuration);
-                        local Ease = EaseTitleSmooth(Resolve);
-                        Color = State.HighlightColor:Lerp(State.BaseColor, Ease);
-                        Transparency = 0.18 * (1 - Ease);
-                        YOffset = 0.6 * (1 - Ease);
-                        Finished = Resolve >= 1;
-                    end
-                elseif Mode == 'Glint' then
-                    CharacterLabel.Text = BaseCharacter;
-
-                    local Period = 2.85;
-                    local SweepDuration = 0.95;
-                    local Cycle = Time % Period;
-                    local Intensity = 0;
-
-                    if Cycle <= SweepDuration then
-                        local SweepProgress = EaseTitleSmooth(Cycle / SweepDuration);
-                        local SweepPosition = -1.25 + (SweepProgress * (Count + 2.5));
-                        local Distance = math.abs(Index - SweepPosition);
-                        local Raw = math.max(0, 1 - (Distance / 1.18));
-                        Intensity = EaseTitleSmooth(Raw);
-                    end;
-
-                    Color = State.BaseColor:Lerp(State.HighlightColor, Intensity);
-                    Finished = false;
-                end;
-
-                if Mode ~= 'Decode' then
-                    CharacterLabel.Text = BaseCharacter;
-                end;
-
-                CharacterLabel.Position = AddTitleOffset(BasePosition, XOffset, YOffset);
-                CharacterLabel.Rotation = Rotation;
-                CharacterLabel.TextColor3 = Color;
-                CharacterLabel.TextTransparency = Transparency;
-
-                if Character.Scale then
-                    Character.Scale.Scale = Scale;
-                end;
-
-                AllFinished = AllFinished and Finished;
-            end;
-        end;
-
-        if AllFinished and Mode ~= 'Glint' then
-            State.Completed = true;
-
-            for _, Character in ipairs(State.Characters) do
-                if Character.Label and Character.Label.Parent then
-                    Character.Label.Text = Character.OriginalCharacter;
-                    Character.Label.Position = Character.BasePosition;
-                    Character.Label.Rotation = 0;
-                    Character.Label.TextColor3 = State.BaseColor;
-                    Character.Label.TextTransparency = Character.IsSpace and 1 or 0;
-
-                    if Character.Scale then
-                        Character.Scale.Scale = 1;
-                    end;
-                end;
-            end;
+        local RenderedText = table.concat(Parts);
+        if RenderedText ~= State.LastRenderedText then
+            State.Overlay.Text = RenderedText;
+            State.LastRenderedText = RenderedText;
         end;
     end;
 end));
@@ -10721,7 +10673,6 @@ function Library:CreateUtilityWindow(Config)
         if State then
             Window.Visible = true;
             Window:BringToFront();
-            Library:TriggerTitleAnimation(TitleLabel);
 
             if not Outer.Visible then
                 Outer.Visible = true;
@@ -11305,9 +11256,6 @@ function Library:SetWatermarkVisibility(Bool)
         if not Watermark.Visible then
             Library:SetUnifiedFadeProgress(Watermark, 0);
             Watermark.Visible = true;
-        end
-        if Library.WatermarkTitle then
-            Library:TriggerTitleAnimation(Library.WatermarkTitle);
         end
         Library:TweenUnifiedFade(Watermark, 1, 0.20, nil, 'Fade');
     elseif Watermark.Visible then
@@ -15443,7 +15391,6 @@ function Library:CreateWindow(...)
 
             Library:Animate(Inner, { Position = UDim2.fromOffset(1, 1); }, FadeTime, nil, 'Menu');
             Library:TweenUnifiedFade(Outer, 1, math.max(FadeTime - 0.04, 0.14), nil, 'Fade');
-            Library:TriggerTitleAnimation(WindowLabel);
             StartFormaCursor();
         else
             StopFormaCursor();
