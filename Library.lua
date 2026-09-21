@@ -585,10 +585,10 @@ function Library:ApplyTitleAnimation(Label)
         CharacterLabel.Parent = Holder;
 
         pcall(function()
-            CharacterLabel.FontFace = Label.FontFace;
+            CharacterLabel.Font = Label.Font;
         end);
         pcall(function()
-            CharacterLabel.Font = Label.Font;
+            CharacterLabel.FontFace = Label.FontFace;
         end);
 
         local Scale = Instance.new('UIScale');
@@ -1455,6 +1455,9 @@ function Library:UpdateFont()
         end
         if Library.UpdateWatermarkText and Library.WatermarkText then
             Library.UpdateWatermarkText(Library.WatermarkText.Text);
+        end
+        if Library.RefreshTitleAnimations then
+            Library:RefreshTitleAnimations();
         end
     end);
 end;
