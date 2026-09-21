@@ -226,20 +226,24 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.8';
+    Version = '1.3.9';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
     UpdateManifestUrl = UpdateManifestUrl;
     UpdateManifestCache = nil;
     UpdateManifestCacheAt = 0;
-    UpdateManifestCacheSeconds = 20;
-    UpdatePollSeconds = 60;
+    UpdateManifestCacheSeconds = 5;
+    UpdatePollSeconds = 15;
     UpdateChecks = {};
     UpdatePrompted = {};
     Updatables = {};
     UpdateRestartHandler = nil;
     UpdateRestartSource = nil;
+
+    UtilityGuis = {};
+    UtilityWindows = {};
+    UtilityDisplayOrder = 30;
 };
 
 local function NormalizeGameName(Value)
@@ -2881,6 +2885,18 @@ function Library:Unload()
 
     if Library.OptionWheel and Library.OptionWheel.Destroy then
         pcall(function() Library.OptionWheel:Destroy(); end);
+    end
+
+    if Library.UtilityGuis then
+        for _, Gui in ipairs(Library.UtilityGuis) do
+            if Gui and Gui.Parent then
+                pcall(function() Gui:Destroy(); end);
+            end
+        end
+        table.clear(Library.UtilityGuis);
+    end
+    if Library.UtilityWindows then
+        table.clear(Library.UtilityWindows);
     end
 
     for Idx = #Library.Signals, 1, -1 do
@@ -9692,6 +9708,330 @@ do
     end;
 end;
 
+function Library:CreateUtilityWindow(Config)
+    Config = type(Config) == 'table' and Config or {};
+
+    local Width = math.max(tonumber(Config.Width) or 390, 240);
+    local Height = math.max(tonumber(Config.Height) or 320, 150);
+    local Title = tostring(Config.Title or 'Utility');
+    local SafeName = Title:gsub('[^%w_%-]', ''):sub(1, 36);
+    if SafeName == '' then SafeName = 'Utility'; end
+
+    Library.UtilityDisplayOrder = (Library.UtilityDisplayOrder or 30) + 1;
+
+    local UtilityGui = Instance.new('ScreenGui');
+    UtilityGui.Name = 'FormaUtility_' .. SafeName;
+    UtilityGui.ResetOnSpawn = false;
+    UtilityGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
+    UtilityGui.DisplayOrder = Library.UtilityDisplayOrder;
+
+    pcall(function()
+        ProtectGui(UtilityGui);
+    end);
+    UtilityGui.Parent = ParentGui;
+    table.insert(Library.UtilityGuis, UtilityGui);
+
+    local Window = {
+        Title = Title;
+        Gui = UtilityGui;
+        Visible = Config.Visible ~= false;
+        Destroyed = false;
+    };
+
+    local Outer = Library:Create('Frame', {
+        Active = true;
+        BackgroundColor3 = Color3.new(0, 0, 0);
+        BorderSizePixel = 0;
+        Position = Config.Position or UDim2.fromOffset(24 + (#Library.UtilityWindows * 26), 90 + (#Library.UtilityWindows * 22));
+        Size = UDim2.fromOffset(Width, Height);
+        Visible = Window.Visible;
+        ZIndex = 1;
+        Parent = UtilityGui;
+    });
+    Library:AddCorner(Outer, 4);
+
+    local Inner = Library:Create('Frame', {
+        BackgroundColor3 = Library.MainColor;
+        BorderColor3 = Library.AccentColor;
+        BorderMode = Enum.BorderMode.Inset;
+        BorderSizePixel = 1;
+        Position = UDim2.fromOffset(1, 1);
+        Size = UDim2.new(1, -2, 1, -2);
+        ZIndex = 2;
+        Parent = Outer;
+    });
+    Library:AddCorner(Inner, 3);
+    Library:AddToRegistry(Inner, {
+        BackgroundColor3 = 'MainColor';
+        BorderColor3 = 'AccentColor';
+    }, true);
+    Library:AddAccentGlow(Inner, 0.94);
+    Library:AddAccentOutline(Inner, 1);
+
+    local AccentBar = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(0, 0);
+        Size = UDim2.new(1, 0, 0, 2);
+        ZIndex = 4;
+        Parent = Inner;
+    });
+    Library:AddCorner(AccentBar, 1);
+    Library:AddToRegistry(AccentBar, { BackgroundColor3 = 'AccentColor'; }, true);
+    Library:AddMovingAccentGradient(AccentBar, 2.2);
+
+    local Header = Library:Create('Frame', {
+        Active = true;
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(0, 2);
+        Size = UDim2.new(1, 0, 0, 24);
+        ZIndex = 3;
+        Parent = Inner;
+    });
+
+    local TitleLabel = Library:CreateLabel({
+        BackgroundTransparency = 1;
+        Position = UDim2.fromOffset(8, 0);
+        Size = UDim2.new(1, Config.CloseButton == false and -12 or -38, 1, 0);
+        Text = Title;
+        TextColor3 = Library.FontColor;
+        TextSize = 14;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 4;
+        Parent = Header;
+    });
+
+    local CloseButton;
+    if Config.CloseButton ~= false then
+        CloseButton = Library:Create('TextButton', {
+            AutoButtonColor = false;
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = UDim2.new(1, -26, 0, 0);
+            Size = UDim2.fromOffset(24, 24);
+            Text = '×';
+            TextColor3 = Library.DisabledTextColor;
+            TextSize = 16;
+            TextStrokeTransparency = 1;
+            ZIndex = 5;
+            Parent = Header;
+        });
+        Library:ApplyFont(CloseButton);
+        Library:AddToRegistry(CloseButton, { TextColor3 = 'DisabledTextColor'; }, true);
+        CloseButton.MouseEnter:Connect(function()
+            Library:Animate(CloseButton, { TextColor3 = Library.FontColor; }, 0.10, nil, 'Color');
+        end);
+        CloseButton.MouseLeave:Connect(function()
+            Library:Animate(CloseButton, { TextColor3 = Library.DisabledTextColor; }, 0.10, nil, 'Color');
+        end);
+    end
+
+    local Divider = Library:Create('Frame', {
+        BackgroundColor3 = Library.OutlineColor;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(6, 26);
+        Size = UDim2.new(1, -12, 0, 1);
+        ZIndex = 3;
+        Parent = Inner;
+    });
+    Library:AddToRegistry(Divider, { BackgroundColor3 = 'OutlineColor'; }, true);
+
+    local Content = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        ClipsDescendants = true;
+        Position = UDim2.fromOffset(6, 30);
+        Size = UDim2.new(1, -12, 1, -36);
+        ZIndex = 3;
+        Parent = Inner;
+    });
+
+    Library:Create('UIListLayout', {
+        FillDirection = Enum.FillDirection.Vertical;
+        SortOrder = Enum.SortOrder.LayoutOrder;
+        Parent = Content;
+    });
+
+    local Host = { Container = Content; };
+    function Host:Resize() end;
+    setmetatable(Host, BaseGroupbox);
+
+    function Window:BringToFront()
+        if Window.Destroyed or not UtilityGui.Parent then return; end
+        Library.UtilityDisplayOrder = (Library.UtilityDisplayOrder or 30) + 1;
+        UtilityGui.DisplayOrder = Library.UtilityDisplayOrder;
+    end
+
+    function Window:SetVisible(State, Instant)
+        if Window.Destroyed then return; end
+        State = State ~= false;
+        Window.Visible = State;
+        Window:BringToFront();
+
+        if State then
+            if not Outer.Visible then
+                Outer.Visible = true;
+                Library:SetUnifiedFadeProgress(Outer, 0);
+            end
+            if Instant then
+                Library:CancelMotion(Outer);
+                Library:SetUnifiedFadeProgress(Outer, 1);
+            else
+                Library:TweenUnifiedFade(Outer, 1, 0.16, nil, 'Fade');
+            end
+        elseif Outer.Visible then
+            if Instant then
+                Library:CancelMotion(Outer);
+                Library:SetUnifiedFadeProgress(Outer, 0);
+                Outer.Visible = false;
+            else
+                Library:TweenUnifiedFade(Outer, 0, 0.14, function(StateValue)
+                    if not Window.Visible and StateValue ~= Enum.PlaybackState.Cancelled and Outer.Parent then
+                        Outer.Visible = false;
+                    end
+                end, 'Fade');
+            end
+        end
+    end
+
+    function Window:Toggle()
+        Window:SetVisible(not Window.Visible);
+    end
+
+    function Window:SetTitle(NewTitle)
+        Window.Title = tostring(NewTitle or '');
+        TitleLabel.Text = Window.Title;
+    end
+
+    function Window:SetSize(NewWidth, NewHeight)
+        if typeof(NewWidth) == 'Vector2' then
+            NewHeight = NewWidth.Y;
+            NewWidth = NewWidth.X;
+        end
+        NewWidth = math.max(tonumber(NewWidth) or Outer.AbsoluteSize.X, 240);
+        NewHeight = math.max(tonumber(NewHeight) or Outer.AbsoluteSize.Y, 150);
+        Library:Animate(Outer, { Size = UDim2.fromOffset(NewWidth, NewHeight); }, 0.16, nil, 'Resize');
+        if Window.Component and Window.Component.Root then
+            Window.Component.Root.Size = UDim2.new(1, -4, 0, math.max(NewHeight - 42, 80));
+        end
+    end
+
+    function Window:Destroy()
+        if Window.Destroyed then return; end
+        Window.Destroyed = true;
+
+        local WindowIndex = table.find(Library.UtilityWindows, Window);
+        if WindowIndex then table.remove(Library.UtilityWindows, WindowIndex); end
+        local GuiIndex = table.find(Library.UtilityGuis, UtilityGui);
+        if GuiIndex then table.remove(Library.UtilityGuis, GuiIndex); end
+
+        if UtilityGui and UtilityGui.Parent then
+            UtilityGui:Destroy();
+        end
+    end
+
+    Outer.InputBegan:Connect(function(Input)
+        if Input.UserInputType == Enum.UserInputType.MouseButton1
+            or Input.UserInputType == Enum.UserInputType.Touch then
+            Window:BringToFront();
+        end
+    end);
+
+    if CloseButton then
+        CloseButton.MouseButton1Click:Connect(function()
+            Window:SetVisible(false);
+        end);
+    end
+
+    Window.Frame = Outer;
+    Window.Inner = Inner;
+    Window.Header = Header;
+    Window.TitleLabel = TitleLabel;
+    Window.Content = Content;
+    Window.Host = Host;
+    Window.ContentHeight = math.max(Height - 42, 80);
+
+    table.insert(Library.UtilityWindows, Window);
+    Library:MakeDraggable(Outer, 28);
+    return Window;
+end;
+
+local function CreateStandaloneUtility(ComponentName, Config, DefaultTitle, DefaultWidth, DefaultHeight)
+    Config = type(Config) == 'table' and table.clone(Config) or {};
+    local Window = Library:CreateUtilityWindow({
+        Title = Config.Title or DefaultTitle;
+        Width = Config.Width or (typeof(Config.Size) == 'Vector2' and Config.Size.X) or DefaultWidth;
+        Height = Config.Height or (typeof(Config.Size) == 'Vector2' and Config.Size.Y) or DefaultHeight;
+        Position = Config.Position;
+        Visible = Config.Visible;
+        CloseButton = Config.CloseButton;
+    });
+
+    local ComponentInfo = table.clone(Config);
+    ComponentInfo.Title = nil;
+    ComponentInfo.Width = nil;
+    ComponentInfo.Position = nil;
+    ComponentInfo.Visible = nil;
+    ComponentInfo.CloseButton = nil;
+    ComponentInfo.Size = nil;
+    ComponentInfo.Height = Window.ContentHeight;
+
+    local AddMethod = Window.Host['Add' .. ComponentName];
+    assert(type(AddMethod) == 'function', 'Unknown standalone utility component: ' .. tostring(ComponentName));
+    local Component = AddMethod(Window.Host, ComponentInfo);
+    Window.Component = Component;
+    Component.Window = Window;
+    Component.Frame = Window.Frame;
+
+    local ContentSetVisible = Component.SetVisible;
+    local ContentDestroy = Component.Destroy;
+    Component.SetContentVisible = ContentSetVisible;
+    Component.DestroyContent = ContentDestroy;
+
+    function Component:SetVisible(State, Instant)
+        Window:SetVisible(State, Instant);
+    end
+
+    function Component:Toggle()
+        Window:Toggle();
+    end
+
+    function Component:SetTitle(NewTitle)
+        Window:SetTitle(NewTitle);
+    end
+
+    function Component:BringToFront()
+        Window:BringToFront();
+    end
+
+    function Component:Destroy()
+        Window:Destroy();
+    end
+
+    return Component;
+end;
+
+function Library:CreateConsole(Config)
+    return CreateStandaloneUtility('Console', Config, 'Console', 390, 320);
+end;
+
+function Library:CreateTable(Config)
+    return CreateStandaloneUtility('Table', Config, 'Table', 430, 370);
+end;
+
+function Library:CreateDataTable(Config)
+    return Library:CreateTable(Config);
+end;
+
+function Library:CreateChat(Config)
+    return CreateStandaloneUtility('Chat', Config, 'Chat', 390, 340);
+end;
+
+function Library:CreateCardGrid(Config)
+    return CreateStandaloneUtility('CardGrid', Config, 'Cards', 440, 330);
+end;
+
 function Library:CreateEmbeddedSlider(Container, Info)
     assert(Container and Container:IsA('GuiObject'), 'CreateEmbeddedSlider: invalid container.');
     local Host = { Container = Container; };
@@ -11930,7 +12270,47 @@ end;
 
 local function AddUpdateCacheBuster(Url)
     local Separator = tostring(Url):find('?', 1, true) and '&' or '?';
-    return tostring(Url) .. Separator .. 'forma_update=' .. tostring(math.floor(os.clock() * 100000));
+    local Token;
+    local Success, Guid = pcall(HttpService.GenerateGUID, HttpService, false);
+    if Success and Guid then
+        Token = tostring(Guid);
+    else
+        Token = tostring(DateTime.now().UnixTimestampMillis) .. '-' .. tostring(math.floor(os.clock() * 100000));
+    end;
+    return tostring(Url) .. Separator .. 'forma_update=' .. Token;
+end;
+
+local function FetchFreshUpdateBody(Url)
+    local FreshUrl = AddUpdateCacheBuster(Url);
+    local Request = request or http_request or (syn and syn.request);
+
+    if type(Request) == 'function' then
+        local Success, Response = pcall(Request, {
+            Url = FreshUrl;
+            Method = 'GET';
+            Headers = {
+                ['Cache-Control'] = 'no-cache, no-store, max-age=0';
+                ['Pragma'] = 'no-cache';
+                ['Expires'] = '0';
+            };
+        });
+
+        if Success and type(Response) == 'table' then
+            local Body = Response.Body or Response.body;
+            local Status = tonumber(Response.StatusCode or Response.Status or Response.status_code) or 200;
+            if Status >= 200 and Status < 300 and type(Body) == 'string' and Body ~= '' then
+                return Body;
+            end;
+        end;
+    end;
+
+    local Success, Body = pcall(function()
+        return game:HttpGet(FreshUrl);
+    end);
+    if Success and type(Body) == 'string' and Body ~= '' then
+        return Body;
+    end;
+    return nil, tostring(Body or 'failed to fetch update manifest');
 end;
 
 function Library:SetAutoUpdateEnabled(State)
@@ -11969,11 +12349,9 @@ function Library:FetchUpdateManifest(Force)
         return Library.UpdateManifestCache;
     end;
 
-    local Success, Body = pcall(function()
-        return game:HttpGet(AddUpdateCacheBuster(Library.UpdateManifestUrl));
-    end);
-    if not Success or type(Body) ~= 'string' or Body == '' then
-        return nil, tostring(Body or 'failed to fetch update manifest');
+    local Body, FetchError = FetchFreshUpdateBody(Library.UpdateManifestUrl);
+    if not Body then
+        return nil, FetchError;
     end;
 
     local DecodeSuccess, Manifest = pcall(HttpService.JSONDecode, HttpService, Body);
