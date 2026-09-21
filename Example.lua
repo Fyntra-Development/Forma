@@ -3,10 +3,14 @@
 
 local repo = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/'
 
-local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+-- Loader.lua keeps the installed Forma release cached locally. That lets the
+-- library compare the installed version against GitHub before the user chooses
+-- whether to update, instead of silently downloading main first.
+local Forma = loadstring(game:HttpGet(repo .. 'Loader.lua'))()
+local Library = Forma.Library
 Library:SetUpdateRestartSource(repo .. 'Example.lua')
-local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
-local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+local ThemeManager = Forma:LoadAddon('ThemeManager')
+local SaveManager = Forma:LoadAddon('SaveManager')
 
 local Toggles = getgenv().Toggles
 local Options = getgenv().Options
