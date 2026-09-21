@@ -428,6 +428,12 @@ local ThemeManager = {} do
 		end
 
 		local success, manager = pcall(function()
+			local env = getgenv and getgenv() or _G
+			local updater = env and env.FormaUpdater
+			if updater and type(updater.LoadAddon) == 'function' then
+				return updater:LoadAddon('MenuManager')
+			end
+
 			local source = game:HttpGet(self.MenuManagerUrl)
 			local chunk, compileError = loadstring(source)
 			if not chunk then
