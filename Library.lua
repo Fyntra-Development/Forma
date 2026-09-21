@@ -1,3 +1,18 @@
+local __FormaBootstrapEnv = getgenv and getgenv() or _G
+if not __FormaBootstrapEnv.__FormaLoaderBooting and type(loadstring) == 'function' then
+    local __Success, __Updater = pcall(function()
+        local __Url = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/Loader.lua?forma_boot=' .. tostring(math.floor(os.clock() * 100000))
+        local __Source = game:HttpGet(__Url)
+        local __Chunk, __CompileError = loadstring(__Source)
+        if not __Chunk then error(__CompileError) end
+        return __Chunk()
+    end)
+
+    if __Success and type(__Updater) == 'table' and type(__Updater.Library) == 'table' then
+        return __Updater.Library
+    end
+end
+
 local InputService = game:GetService('UserInputService');
 local ContextActionService = game:GetService('ContextActionService');
 local TextService = game:GetService('TextService');
