@@ -2,7 +2,7 @@ local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
 local contentProvider = game:GetService('ContentProvider')
 local ThemeManager = {} do
-	ThemeManager.Version = '1.5.0+build.1'
+	ThemeManager.Version = '1.6.0+build.1'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -631,6 +631,13 @@ local ThemeManager = {} do
 		local PreferredTitleAnimation = type(SavedPreferences.TitleAnimation) == 'string'
 			and SavedPreferences.TitleAnimation
 			or self.Library.TitleAnimation
+
+		local LegacyTitleAnimationMap = {
+			Shimmer = 'Glow Sweep';
+			Pulse = 'Bounce';
+			Wobble = 'Wave';
+		}
+		PreferredTitleAnimation = LegacyTitleAnimationMap[PreferredTitleAnimation] or PreferredTitleAnimation
 		if tonumber(SavedPreferences.TextSize) then
 			self.Library:SetTextSize(SavedPreferences.TextSize)
 		end
@@ -678,9 +685,9 @@ local ThemeManager = {} do
 
 		local TitleAnimations = self.Library.GetTitleAnimations
 			and self.Library:GetTitleAnimations()
-			or { 'None', 'Shimmer', 'Pulse', 'Wobble' }
+			or { 'None', 'Wave', 'Bounce', 'Glow Sweep' }
 		if not table.find(TitleAnimations, PreferredTitleAnimation) then
-			PreferredTitleAnimation = self.Library.TitleAnimation or 'Shimmer'
+			PreferredTitleAnimation = self.Library.TitleAnimation or 'Wave'
 		end
 		groupbox:AddDropdown('ThemeManager_TitleAnimation', {
 			Text = 'Title animation';
