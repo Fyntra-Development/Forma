@@ -1,7 +1,7 @@
 local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
 local ThemeManager = {} do
-	ThemeManager.Version = '1.1.0'
+	ThemeManager.Version = '1.2.0'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -620,6 +620,7 @@ local ThemeManager = {} do
 
 	function ThemeManager:SetLibrary(lib)
 		self.Library = lib
+		lib.ThemeManager = self
 		if lib.RegisterUpdatable then
 			lib:RegisterUpdatable('ThemeManager', self.Version, 'addons/ThemeManager.lua')
 		end
