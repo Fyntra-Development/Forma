@@ -5988,9 +5988,15 @@ do
                 local AV = GetCellValue(A.Data, Column, ColumnIndex);
                 local BV = GetCellValue(B.Data, Column, ColumnIndex);
                 local AN, BN = tonumber(AV), tonumber(BV);
-                local Less = (AN and BN) and AN < BN or string.lower(AV) < string.lower(BV);
-                if DataTable.SortAscending then return Less; end
-                return not Less and AV ~= BV;
+
+                if AN and BN then
+                    if AN == BN then return false; end
+                    return DataTable.SortAscending and AN < BN or AN > BN;
+                end
+
+                local AS, BS = string.lower(AV), string.lower(BV);
+                if AS == BS then return false; end
+                return DataTable.SortAscending and AS < BS or AS > BS;
             end);
 
             for Index, Row in ipairs(DataTable.Rows) do Row.Frame.LayoutOrder = Index; end
@@ -6001,7 +6007,10 @@ do
             local Index = type(RowOrIndex) == 'number' and RowOrIndex or table.find(DataTable.Rows, RowOrIndex);
             if not Index then return; end
             local Row = table.remove(DataTable.Rows, Index);
-            if DataTable.Selected == Row then DataTable.Selected = nil; end
+            if DataTable.Selected == Row then
+                DataTable.Selected = nil;
+                DataTable:RefreshDetails();
+            end;
             if Row and Row.Frame then Row.Frame:Destroy(); end
             for Order, Existing in ipairs(DataTable.Rows) do Existing.Frame.LayoutOrder = Order; end
             UpdateCanvas();
