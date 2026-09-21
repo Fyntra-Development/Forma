@@ -9556,16 +9556,18 @@ function Library:CreateOptionWheel(Config)
             MainText = MainText;
             BlurClones = BlurClones;
             BoundIndex = nil;
+            RelativeDelta = 0;
         };
 
         SlotFrame.InputBegan:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.MouseButton1 then
                 local Bound = SlotPool[i].BoundIndex;
-                if Bound then
-                    if math.abs(Bound - Wheel.SmoothIndex) < 0.45 then
+                local Delta = SlotPool[i].RelativeDelta;
+                if Bound and Delta then
+                    if math.abs(Delta) < 0.45 then
                         Wheel:ExecuteItem(Bound);
                     else
-                        Wheel.TargetIndex = Bound;
+                        Wheel.TargetIndex = Wheel.TargetIndex + math.round(Delta);
                     end
                 end
             end
@@ -9574,7 +9576,12 @@ function Library:CreateOptionWheel(Config)
 
     function Wheel:SetItems(ItemList)
         Wheel.Items = ItemList or {};
-        Wheel.TargetIndex = math.clamp(Wheel.TargetIndex, 1, math.max(#Wheel.Items, 1));
+        local Total = #Wheel.Items;
+        if Total > 0 then
+            Wheel.TargetIndex = ((Wheel.TargetIndex - 1) % Total) + 1;
+        else
+            Wheel.TargetIndex = 1;
+        end
         Wheel.SmoothIndex = Wheel.TargetIndex;
     end
 
@@ -9691,15 +9698,18 @@ function Library:CreateOptionWheel(Config)
     function Wheel:ExecuteItem(Index)
         local Item = Wheel.Items[Index];
         if Item and Item.Callback then
-            local Slot = nil;
+            local CenterSlot = nil;
             for _, S in ipairs(SlotPool) do
-                if S.BoundIndex == Index then Slot = S; break; end
+                if S.BoundIndex == Index and S.RelativeDelta and math.abs(S.RelativeDelta) < 0.5 then
+                    CenterSlot = S;
+                    break;
+                end
             end
-            if Slot and Slot.MainText then
-                local OrigCol = Slot.MainText.TextColor3;
-                Slot.MainText.TextColor3 = Library.AccentColor;
+            if CenterSlot and CenterSlot.MainText then
+                local OrigCol = CenterSlot.MainText.TextColor3;
+                CenterSlot.MainText.TextColor3 = Library.AccentColor;
                 task.delay(0.14, function()
-                    if Slot.MainText then Slot.MainText.TextColor3 = OrigCol; end
+                    if CenterSlot.MainText then CenterSlot.MainText.TextColor3 = OrigCol; end
                 end);
             end
             Library:SafeCallback(Item.Callback, Item);
@@ -9708,8 +9718,7 @@ function Library:CreateOptionWheel(Config)
 
     function Wheel:Scroll(Delta)
         if not Wheel.Open or #Wheel.Items == 0 then return; end
-        local NewTarget = Wheel.TargetIndex + Delta;
-        Wheel.TargetIndex = math.clamp(NewTarget, 1, #Wheel.Items);
+        Wheel.TargetIndex = Wheel.TargetIndex + Delta;
     end
 
     function Wheel:CycleMode(Direction)
@@ -9720,7 +9729,7 @@ function Library:CreateOptionWheel(Config)
         Wheel:SetMode(Wheel.Modes[NewIndex]);
     end
 
-    -- Continuous curved rendering step (React Bits tight vertical wheel)
+    -- Continuous curved rendering step (React Bits continuous circular/wrapping wheel)
     local StepConnection = RenderStepped:Connect(function(Dt)
         if not Wheel.Open and Wheel.Alpha <= 0.01 then
             return;
@@ -9728,6 +9737,17 @@ function Library:CreateOptionWheel(Config)
 
         local Damping = 1 - math.exp(-24 * Dt);
         Wheel.SmoothIndex = Wheel.SmoothIndex + (Wheel.TargetIndex - Wheel.SmoothIndex) * Damping;
+
+        local TotalItems = #Wheel.Items;
+        if TotalItems > 1 and math.abs(Wheel.TargetIndex - Wheel.SmoothIndex) < 0.01 then
+            local BaseTarget = math.round(Wheel.TargetIndex);
+            local Wrapped = ((BaseTarget - 1) % TotalItems) + 1;
+            if Wrapped ~= BaseTarget then
+                local Diff = Wrapped - BaseTarget;
+                Wheel.TargetIndex = Wrapped;
+                Wheel.SmoothIndex = Wheel.SmoothIndex + Diff;
+            end
+        end
 
         local Camera = workspace.CurrentCamera;
         local ViewportSize = Camera and Camera.ViewportSize or Vector2.new(1280, 720);
@@ -9741,139 +9761,151 @@ function Library:CreateOptionWheel(Config)
         local SelectedX = math.clamp(math.floor(ViewportWidth * 0.11), 110, 240);
 
         -- Vertical spacing as primary structure: evenly distributed above and below
-        local StepY = math.clamp(math.floor(ViewportHeight * 0.075), 54, 76);
+        local StepY = math.clamp(math.floor(ViewportHeight * 0.125), 90, 135);
 
         -- Header positioned cleanly above the wheel stack
-        HeaderFrame.Position = UDim2.new(0, SelectedX - 10, 0, math.clamp(math.floor(CenterY - StepY * 3.4), 24, 60));
+        HeaderFrame.Position = UDim2.new(0, SelectedX - 10, 0, math.clamp(math.floor(CenterY - StepY * 2.8), 24, 70));
 
         ModeTitleLabel.TextTransparency = 1 - MasterAlpha;
         SubHintLabel.TextTransparency = 1 - 0.55 * MasterAlpha;
 
-        local TotalItems = #Wheel.Items;
         local CurrentPos = Wheel.SmoothIndex;
+        local CenterInt = math.floor(CurrentPos + 0.5);
 
         local UsedSlots = 0;
-        for i = 1, TotalItems do
-            local Delta = i - CurrentPos;
-            local AbsDelta = math.abs(Delta);
+        if TotalItems > 0 then
+            local MinRel = (TotalItems == 1) and 0 or -4;
+            local MaxRel = (TotalItems == 1) and 0 or 4;
 
-            if AbsDelta <= 3.8 then
-                UsedSlots = UsedSlots + 1;
-                if UsedSlots > MaxVisibleSlots then break; end
+            for rel = MinRel, MaxRel do
+                local ItemInt = CenterInt + rel;
+                local Delta = ItemInt - CurrentPos;
+                local AbsDelta = math.abs(Delta);
 
-                local Slot = SlotPool[UsedSlots];
-                Slot.BoundIndex = i;
-                Slot.Frame.Visible = true;
+                if AbsDelta <= 3.5 then
+                    UsedSlots = UsedSlots + 1;
+                    if UsedSlots > MaxVisibleSlots then break; end
 
-                -- Tight vertical stack with only a very small leftward drift as options move away from selection
-                local HorizontalDrift = (AbsDelta ^ 1.30) * 3.5;
-                local X = SelectedX - HorizontalDrift;
-                local Y = CenterY + Delta * StepY;
+                    local Slot = SlotPool[UsedSlots];
+                    local ItemIndex = ((ItemInt - 1) % TotalItems) + 1;
+                    Slot.BoundIndex = ItemIndex;
+                    Slot.RelativeDelta = Delta;
+                    Slot.Frame.Visible = true;
 
-                -- Subtle rotation near center, slightly stronger toward extremes
-                local Rot = math.sign(Delta) * (AbsDelta ^ 1.85) * 0.70;
+                    -- Tight vertical stack with only a very small leftward drift as options move away from selection
+                    local HorizontalDrift = (AbsDelta ^ 1.30) * 3.5;
+                    local X = SelectedX - HorizontalDrift;
+                    local Y = CenterY + Delta * StepY;
 
-                Slot.Frame.Position = UDim2.fromOffset(X, Y);
-                Slot.Frame.Rotation = Rot;
-                Slot.Frame.ZIndex = 260 - math.floor(AbsDelta * 5);
+                    -- Subtle rotation near center, slightly stronger toward extremes
+                    local Rot = math.sign(Delta) * (AbsDelta ^ 1.6) * 0.45;
 
-                local Item = Wheel.Items[i];
-                local TextString = Item and Item.Text or '';
+                    Slot.Frame.Position = UDim2.fromOffset(X, Y);
+                    Slot.Frame.Rotation = Rot;
+                    Slot.Frame.ZIndex = 260 - math.floor(AbsDelta * 5);
 
-                -- Selected option is dramatically larger (38px); immediate neighbors clearly smaller (22px); farther options rapidly smaller
-                local BaseSize;
-                if AbsDelta < 0.25 then
-                    BaseSize = 38;
-                elseif AbsDelta <= 1.0 then
-                    BaseSize = math.floor(38 - AbsDelta * 16); -- 38 -> 22
-                elseif AbsDelta <= 2.0 then
-                    BaseSize = math.floor(22 - (AbsDelta - 1.0) * 7); -- 22 -> 15
-                else
-                    BaseSize = math.max(10, math.floor(15 - (AbsDelta - 2.0) * 3)); -- 15 -> 12 -> 10
-                end
+                    local Item = Wheel.Items[ItemIndex];
+                    local TextString = Item and Item.Text or '';
 
-                -- Opacity & Color:
-                -- Selected: bright white & perfectly sharp
-                -- Immediate neighbors: slightly blurred/faded but still readable
-                -- Farther options: rapidly dimmer, softer, less readable
-                local TextColor, BaseTrans;
-                if AbsDelta < 0.25 then
-                    TextColor = Color3.fromRGB(255, 255, 255);
-                    BaseTrans = 0;
-                elseif AbsDelta <= 1.0 then
-                    TextColor = Color3.fromRGB(195, 200, 210);
-                    BaseTrans = 0.35 + (AbsDelta - 0.25) * 0.10; -- ~0.42 at Delta=1
-                elseif AbsDelta <= 2.0 then
-                    local P = AbsDelta - 1.0;
-                    local Brightness = math.floor(195 - P * 75); -- 195 -> 120
-                    TextColor = Color3.fromRGB(Brightness, Brightness, Brightness + 6);
-                    BaseTrans = 0.45 + P * 0.25; -- ~0.70 at Delta=2
-                else
-                    local FarP = math.clamp((AbsDelta - 2.0) / 1.8, 0, 1);
-                    local Brightness = math.floor(120 - FarP * 65); -- 120 -> 55
-                    TextColor = Color3.fromRGB(Brightness, Brightness, Brightness + 5);
-                    BaseTrans = math.clamp(0.70 + FarP * 0.24, 0.70, 0.94); -- ~0.94 at Delta=3.8
-                end
-
-                local FinalMainTrans = 1 - (1 - BaseTrans) * MasterAlpha;
-
-                -- Main label
-                Slot.MainText.Text = TextString;
-                Slot.MainText.TextSize = BaseSize;
-                Slot.MainText.TextColor3 = TextColor;
-                Slot.MainText.TextTransparency = FinalMainTrans;
-                Slot.MainText.TextStrokeTransparency = 1;
-                Library:ApplyFont(Slot.MainText);
-
-                -- Blur / softness treatment:
-                -- Selected: perfectly sharp (zero blur)
-                -- Immediate neighbors: subtle soft defocus
-                -- Farther options: strong optical defocus
-                if AbsDelta < 0.25 then
-                    for _, Clone in ipairs(Slot.BlurClones) do
-                        Clone.TextTransparency = 1;
+                    -- Size progression:
+                    -- Selected is prominent (34px), 1st neighbors are still fairly large (28px),
+                    -- 2nd neighbors clearly legible (22px), outer neighbors taper off (16px -> 12px)
+                    local BaseSize;
+                    if AbsDelta <= 1.0 then
+                        BaseSize = math.floor(34 - AbsDelta * 6);
+                    elseif AbsDelta <= 2.0 then
+                        BaseSize = math.floor(28 - (AbsDelta - 1.0) * 6);
+                    elseif AbsDelta <= 3.0 then
+                        BaseSize = math.floor(22 - (AbsDelta - 2.0) * 6);
+                    else
+                        BaseSize = math.max(12, math.floor(16 - (AbsDelta - 3.0) * 4));
                     end
-                elseif AbsDelta <= 1.0 then
-                    local Radius = 0.85 * AbsDelta;
-                    local CloneTrans = 1 - (1 - 0.78) * MasterAlpha;
-                    for k, Off in ipairs(Offsets) do
-                        local Clone = Slot.BlurClones[k];
-                        Clone.Text = TextString;
-                        Clone.TextSize = BaseSize;
-                        Clone.TextColor3 = TextColor;
-                        Clone.TextTransparency = CloneTrans;
-                        Clone.TextStrokeTransparency = 1;
-                        Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
-                        Library:ApplyFont(Clone);
-                    end
-                elseif AbsDelta <= 2.0 then
-                    local Radius = 0.85 + (AbsDelta - 1.0) * 1.35;
-                    local CloneTrans = 1 - (1 - 0.85) * MasterAlpha;
-                    for k, Off in ipairs(Offsets) do
-                        local Clone = Slot.BlurClones[k];
-                        Clone.Text = TextString;
-                        Clone.TextSize = BaseSize;
-                        Clone.TextColor3 = TextColor;
-                        Clone.TextTransparency = CloneTrans;
-                        Clone.TextStrokeTransparency = 1;
-                        Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
-                        Library:ApplyFont(Clone);
-                    end
-                else
-                    local FarP = math.clamp((AbsDelta - 2.0) / 1.8, 0, 1);
-                    local Radius = 2.2 + FarP * 1.6;
-                    local TargetCloneTrans = math.clamp(BaseTrans + 0.08, 0.75, 0.98);
-                    local CloneTrans = 1 - (1 - TargetCloneTrans) * MasterAlpha;
 
-                    for k, Off in ipairs(Offsets) do
-                        local Clone = Slot.BlurClones[k];
-                        Clone.Text = TextString;
-                        Clone.TextSize = BaseSize;
-                        Clone.TextColor3 = TextColor;
-                        Clone.TextTransparency = CloneTrans;
-                        Clone.TextStrokeTransparency = 1;
-                        Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
-                        Library:ApplyFont(Clone);
+                    -- Opacity & Color progression:
+                    -- Selected: pure bright white, 100% visible
+                    -- 1st neighbors: bright silver-white, over 85% visible
+                    -- 2nd neighbors: high-contrast, over 62% visible
+                    -- Outer: soft fade showing wheel continuation
+                    local TextColor, BaseTrans;
+                    if AbsDelta < 0.25 then
+                        TextColor = Color3.fromRGB(255, 255, 255);
+                        BaseTrans = 0;
+                    elseif AbsDelta <= 1.0 then
+                        local P = (AbsDelta - 0.25) / 0.75;
+                        local C = math.floor(255 - P * 20);
+                        TextColor = Color3.fromRGB(C, C + 2, C + 8);
+                        BaseTrans = P * 0.15;
+                    elseif AbsDelta <= 2.0 then
+                        local P = AbsDelta - 1.0;
+                        local C = math.floor(235 - P * 45);
+                        TextColor = Color3.fromRGB(C, C + 2, C + 10);
+                        BaseTrans = 0.15 + P * 0.23;
+                    else
+                        local P = math.clamp((AbsDelta - 2.0) / 1.4, 0, 1);
+                        local C = math.floor(190 - P * 55);
+                        TextColor = Color3.fromRGB(C, C + 2, C + 10);
+                        BaseTrans = math.clamp(0.38 + P * 0.54, 0.38, 0.95);
+                    end
+
+                    local FinalMainTrans = 1 - (1 - BaseTrans) * MasterAlpha;
+
+                    Slot.MainText.Text = TextString;
+                    Slot.MainText.TextSize = BaseSize;
+                    Slot.MainText.TextColor3 = TextColor;
+                    Slot.MainText.TextTransparency = FinalMainTrans;
+                    Slot.MainText.TextStrokeTransparency = 1;
+                    Library:ApplyFont(Slot.MainText);
+
+                    -- Blur / optical softness treatment:
+                    -- Selected: perfectly sharp (zero blur)
+                    -- 1st neighbors: slightly smaller, moderately softened optical defocus
+                    -- 2nd neighbors: somewhat smaller and more blurred/faded
+                    -- Outer: heavily blurred/faded continuation
+                    if AbsDelta < 0.25 then
+                        for _, Clone in ipairs(Slot.BlurClones) do
+                            Clone.TextTransparency = 1;
+                        end
+                    elseif AbsDelta <= 1.0 then
+                        local Radius = 0.70 * AbsDelta;
+                        local CloneTrans = 1 - (1 - 0.70) * MasterAlpha;
+                        for k, Off in ipairs(Offsets) do
+                            local Clone = Slot.BlurClones[k];
+                            Clone.Text = TextString;
+                            Clone.TextSize = BaseSize;
+                            Clone.TextColor3 = TextColor;
+                            Clone.TextTransparency = CloneTrans;
+                            Clone.TextStrokeTransparency = 1;
+                            Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
+                            Library:ApplyFont(Clone);
+                        end
+                    elseif AbsDelta <= 2.0 then
+                        local Radius = 0.70 + (AbsDelta - 1.0) * 1.0;
+                        local CloneTrans = 1 - (1 - 0.76) * MasterAlpha;
+                        for k, Off in ipairs(Offsets) do
+                            local Clone = Slot.BlurClones[k];
+                            Clone.Text = TextString;
+                            Clone.TextSize = BaseSize;
+                            Clone.TextColor3 = TextColor;
+                            Clone.TextTransparency = CloneTrans;
+                            Clone.TextStrokeTransparency = 1;
+                            Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
+                            Library:ApplyFont(Clone);
+                        end
+                    else
+                        local FarP = math.clamp((AbsDelta - 2.0) / 1.4, 0, 1);
+                        local Radius = 1.70 + FarP * 1.1;
+                        local TargetCloneTrans = math.clamp(BaseTrans + 0.05, 0.75, 0.98);
+                        local CloneTrans = 1 - (1 - TargetCloneTrans) * MasterAlpha;
+                        for k, Off in ipairs(Offsets) do
+                            local Clone = Slot.BlurClones[k];
+                            Clone.Text = TextString;
+                            Clone.TextSize = BaseSize;
+                            Clone.TextColor3 = TextColor;
+                            Clone.TextTransparency = CloneTrans;
+                            Clone.TextStrokeTransparency = 1;
+                            Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
+                            Library:ApplyFont(Clone);
+                        end
                     end
                 end
             end
@@ -9882,6 +9914,7 @@ function Library:CreateOptionWheel(Config)
         for j = UsedSlots + 1, MaxVisibleSlots do
             SlotPool[j].Frame.Visible = false;
             SlotPool[j].BoundIndex = nil;
+            SlotPool[j].RelativeDelta = nil;
         end
     end);
     Library:GiveSignal(StepConnection);
@@ -9891,6 +9924,11 @@ function Library:CreateOptionWheel(Config)
         Wheel.Open = true;
         Wheel.AnimationId = Wheel.AnimationId + 1;
         local CurrentAnim = Wheel.AnimationId;
+
+        if Library.KeybindFrame and Library.KeybindFrame.Visible then
+            Wheel.SavedKeybindVisible = true;
+            Library.KeybindFrame.Visible = false;
+        end
 
         WheelHolder.Visible = true;
 
@@ -9917,6 +9955,11 @@ function Library:CreateOptionWheel(Config)
         Wheel.Open = false;
         Wheel.AnimationId = Wheel.AnimationId + 1;
         local CurrentAnim = Wheel.AnimationId;
+
+        if Wheel.SavedKeybindVisible and Library.KeybindFrame then
+            Wheel.SavedKeybindVisible = false;
+            Library.KeybindFrame.Visible = true;
+        end
 
         Library:Animate(ContentContainer, {
             Position = UDim2.new(0, -25, 0, 0);
@@ -9982,8 +10025,12 @@ function Library:CreateOptionWheel(Config)
         elseif Input.KeyCode == Enum.KeyCode.E or Input.KeyCode == Enum.KeyCode.Right then
             Wheel:CycleMode(1);
         elseif Input.KeyCode == Enum.KeyCode.Return or Input.KeyCode == Enum.KeyCode.Space then
-            local Selected = math.clamp(math.floor(Wheel.SmoothIndex + 0.5), 1, math.max(#Wheel.Items, 1));
-            Wheel:ExecuteItem(Selected);
+            local Total = #Wheel.Items;
+            if Total > 0 then
+                local CurrentInt = math.floor(Wheel.SmoothIndex + 0.5);
+                local Selected = ((CurrentInt - 1) % Total) + 1;
+                Wheel:ExecuteItem(Selected);
+            end
         elseif Input.KeyCode == Enum.KeyCode.Escape then
             Wheel:CloseWheel();
         end
