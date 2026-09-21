@@ -9433,12 +9433,32 @@ function Library:CreateOptionWheel(Config)
         Parent = ScreenGui;
     });
 
-    -- Sliding content container for options & subtle header (no fullscreen panel or gray wash)
+    -- Ultra-subtle vignette gradient to anchor wheel against bright scenes without forming any visible panel
+    local WheelWash = Library:Create('Frame', {
+        Name = 'OptionWheelWash';
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0);
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0, 0);
+        Size = UDim2.new(0, 280, 1, 0);
+        ZIndex = 251;
+        Parent = WheelHolder;
+    });
+
+    local WashGradient = Library:Create('UIGradient', {
+        Rotation = 0;
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1);
+            NumberSequenceKeypoint.new(1, 1);
+        });
+        Parent = WheelWash;
+    });
+
+    -- Sliding content container for options & subtle header
     local ContentContainer = Library:Create('Frame', {
         Name = 'WheelContentContainer';
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, -25, 0, 0);
+        Position = UDim2.new(0, -16, 0, 0);
         Size = UDim2.new(1, 0, 1, 0);
         ZIndex = 252;
         Parent = WheelHolder;
@@ -9449,8 +9469,9 @@ function Library:CreateOptionWheel(Config)
         Name = 'WheelHeader';
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, 80, 0, 34);
-        Size = UDim2.new(0, 340, 0, 46);
+        Position = UDim2.new(0, 0, 0, 0);
+        Size = UDim2.new(0, 0, 0, 0);
+        Visible = false; -- React Bits reference has no mode/header chrome around the wheel
         ZIndex = 253;
         Parent = ContentContainer;
     });
@@ -9487,14 +9508,16 @@ function Library:CreateOptionWheel(Config)
     });
     Library:ApplyFont(SubHintLabel);
 
-    -- Pre-create optical blur slots pool
-    local MaxVisibleSlots = 11;
+    -- A small pool is enough: the reference only shows ~5 meaningful rows.
+    -- The clone ring is deliberately very faint; strong clone opacity creates the
+    -- doubled/outlined text artifact that the previous implementation had.
+    local MaxVisibleSlots = 7;
     local SlotPool = {};
     local Offsets = {
-        Vector2.new(-1, -1), Vector2.new(1, -1),
-        Vector2.new(-1, 1), Vector2.new(1, 1),
-        Vector2.new(0, -1.3), Vector2.new(0, 1.3),
-        Vector2.new(-1.3, 0), Vector2.new(1.3, 0),
+        Vector2.new(-1.00,  0.00), Vector2.new(1.00,  0.00),
+        Vector2.new( 0.00, -1.00), Vector2.new(0.00,  1.00),
+        Vector2.new(-0.70, -0.70), Vector2.new(0.70, -0.70),
+        Vector2.new(-0.70,  0.70), Vector2.new(0.70,  0.70),
     };
 
     for i = 1, MaxVisibleSlots do
@@ -9503,7 +9526,8 @@ function Library:CreateOptionWheel(Config)
             AnchorPoint = Vector2.new(0, 0.5);
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Size = UDim2.new(0, 360, 0, 46);
+            Active = true;
+            Size = UDim2.new(0, 700, 0, 120);
             ZIndex = 260;
             Visible = false;
             Parent = ContentContainer;
@@ -9729,17 +9753,31 @@ function Library:CreateOptionWheel(Config)
         Wheel:SetMode(Wheel.Modes[NewIndex]);
     end
 
-    -- Continuous curved rendering step (React Bits continuous circular/wrapping wheel)
+    -- React Bits-inspired wheel rendering. The reference image is 1078x736.
+    -- Scale from the smaller screen dimension so ultrawide/tall windows do not
+    -- stretch the wheel into a huge menu.
+    local function WheelCurve(AbsDelta, CenterValue, FirstValue, SecondValue, ThirdValue)
+        if AbsDelta <= 1 then
+            return CenterValue + (FirstValue - CenterValue) * AbsDelta;
+        elseif AbsDelta <= 2 then
+            return FirstValue + (SecondValue - FirstValue) * (AbsDelta - 1);
+        else
+            local P = math.clamp(AbsDelta - 2, 0, 1);
+            return SecondValue + (ThirdValue - SecondValue) * P;
+        end
+    end
+
     local StepConnection = RenderStepped:Connect(function(Dt)
         if not Wheel.Open and Wheel.Alpha <= 0.01 then
             return;
         end
 
-        local Damping = 1 - math.exp(-24 * Dt);
+        -- Smooth continuous movement between integer choices.
+        local Damping = 1 - math.exp(-20 * Dt);
         Wheel.SmoothIndex = Wheel.SmoothIndex + (Wheel.TargetIndex - Wheel.SmoothIndex) * Damping;
 
         local TotalItems = #Wheel.Items;
-        if TotalItems > 1 and math.abs(Wheel.TargetIndex - Wheel.SmoothIndex) < 0.01 then
+        if TotalItems > 1 and math.abs(Wheel.TargetIndex - Wheel.SmoothIndex) < 0.008 then
             local BaseTarget = math.round(Wheel.TargetIndex);
             local Wrapped = ((BaseTarget - 1) % TotalItems) + 1;
             if Wrapped ~= BaseTarget then
@@ -9749,161 +9787,159 @@ function Library:CreateOptionWheel(Config)
             end
         end
 
-        local Camera = workspace.CurrentCamera;
-        local ViewportSize = Camera and Camera.ViewportSize or Vector2.new(1280, 720);
-        local ViewportWidth = ViewportSize.X;
-        local ViewportHeight = ViewportSize.Y;
-        local CenterY = ViewportHeight * 0.5;
+        -- IMPORTANT: use the GUI's actual rendered coordinate space, not Camera.ViewportSize.
+        -- This avoids mismatches caused by topbar/safe-area insets or executor GUI parents.
+        local HolderSize = WheelHolder.AbsoluteSize;
+        local ViewportWidth = HolderSize.X;
+        local ViewportHeight = HolderSize.Y;
+        if ViewportWidth <= 2 or ViewportHeight <= 2 then
+            local Camera = workspace.CurrentCamera;
+            local Fallback = Camera and Camera.ViewportSize or Vector2.new(1078, 736);
+            ViewportWidth = Fallback.X;
+            ViewportHeight = Fallback.Y;
+        end
 
         local MasterAlpha = math.clamp(Wheel.Alpha, 0, 1);
+        local DesignScale = math.clamp(
+            math.min(ViewportWidth / 1078, ViewportHeight / 736),
+            0.78,
+            1.45
+        );
 
-        -- Anchor selected option at roughly 10–12% of screen width and near vertical center
-        local SelectedX = math.clamp(math.floor(ViewportWidth * 0.11), 110, 240);
+        -- Measured from the supplied React Bits reference:
+        -- center text begins at ~11% width and sits almost exactly at mid-height.
+        local SelectedX = math.floor(ViewportWidth * 0.108 + 0.5);
+        local CenterY = math.floor(ViewportHeight * 0.505 + 0.5);
+        local StepY = 109 * DesignScale;
+        Wheel.StepY = StepY;
 
-        -- Vertical spacing as primary structure: evenly distributed above and below
-        local StepY = math.clamp(math.floor(ViewportHeight * 0.125), 90, 135);
+        -- Keep background treatment extremely light and local. Roblox cannot apply a
+        -- true per-region world blur, so this is only a small contrast vignette.
+        local WashWidth = math.min(ViewportWidth * 0.43, 500 * DesignScale);
+        WheelWash.Size = UDim2.fromOffset(math.floor(WashWidth + 0.5), ViewportHeight);
+        WashGradient.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.00, 1 - 0.10 * MasterAlpha);
+            NumberSequenceKeypoint.new(0.30, 1 - 0.07 * MasterAlpha);
+            NumberSequenceKeypoint.new(0.68, 1 - 0.025 * MasterAlpha);
+            NumberSequenceKeypoint.new(1.00, 1.00);
+        });
 
-        -- Header positioned cleanly above the wheel stack
-        HeaderFrame.Position = UDim2.new(0, SelectedX - 10, 0, math.clamp(math.floor(CenterY - StepY * 2.8), 24, 70));
-
-        ModeTitleLabel.TextTransparency = 1 - MasterAlpha;
-        SubHintLabel.TextTransparency = 1 - 0.55 * MasterAlpha;
+        -- Intentionally hidden: the reference contains only the wheel itself.
+        HeaderFrame.Visible = false;
 
         local CurrentPos = Wheel.SmoothIndex;
         local CenterInt = math.floor(CurrentPos + 0.5);
-
         local UsedSlots = 0;
-        if TotalItems > 0 then
-            local MinRel = (TotalItems == 1) and 0 or -4;
-            local MaxRel = (TotalItems == 1) and 0 or 4;
 
-            for rel = MinRel, MaxRel do
-                local ItemInt = CenterInt + rel;
+        if TotalItems > 0 then
+            -- Never show the same wrapped item twice at once. For >=7 items show a
+            -- very faint third row at each edge; with 5 items this becomes exactly
+            -- the reference's two-above / selected / two-below silhouette.
+            local VisibleCount = math.min(TotalItems, 7);
+            local Above = math.floor((VisibleCount - 1) / 2);
+            local Below = (VisibleCount - 1) - Above;
+
+            for Rel = -Above, Below do
+                local ItemInt = CenterInt + Rel;
                 local Delta = ItemInt - CurrentPos;
                 local AbsDelta = math.abs(Delta);
 
-                if AbsDelta <= 3.5 then
+                if AbsDelta <= 3.15 then
                     UsedSlots = UsedSlots + 1;
                     if UsedSlots > MaxVisibleSlots then break; end
 
                     local Slot = SlotPool[UsedSlots];
                     local ItemIndex = ((ItemInt - 1) % TotalItems) + 1;
+                    local Item = Wheel.Items[ItemIndex];
+                    local TextString = Item and tostring(Item.Text or '') or '';
+
                     Slot.BoundIndex = ItemIndex;
                     Slot.RelativeDelta = Delta;
                     Slot.Frame.Visible = true;
 
-                    -- Tight vertical stack with only a very small leftward drift as options move away from selection
-                    local HorizontalDrift = (AbsDelta ^ 1.30) * 3.5;
-                    local X = SelectedX - HorizontalDrift;
+                    -- The reference is NOT a big sideways arc. First neighbors are
+                    -- almost vertically aligned; the bow only becomes obvious farther out.
+                    local XOffset = WheelCurve(
+                        AbsDelta,
+                        0,
+                        -5 * DesignScale,
+                        -27 * DesignScale,
+                        -41 * DesignScale
+                    );
+
+                    local X = SelectedX + XOffset;
                     local Y = CenterY + Delta * StepY;
 
-                    -- Subtle rotation near center, slightly stronger toward extremes
-                    local Rot = math.sign(Delta) * (AbsDelta ^ 1.6) * 0.45;
+                    -- Tiny rotation close to center, progressively stronger at the edges.
+                    local RotationMagnitude = WheelCurve(AbsDelta, 0, 2.5, 7.0, 9.5);
+                    local Rotation = math.sign(Delta) * RotationMagnitude;
 
-                    Slot.Frame.Position = UDim2.fromOffset(X, Y);
-                    Slot.Frame.Rotation = Rot;
-                    Slot.Frame.ZIndex = 260 - math.floor(AbsDelta * 5);
+                    -- Font sizes measured to reproduce the reference silhouette.
+                    -- Selected is deliberately much larger, but first neighbors are
+                    -- still substantial rather than collapsing into tiny labels.
+                    local TextSize = WheelCurve(
+                        AbsDelta,
+                        68 * DesignScale,
+                        52 * DesignScale,
+                        44 * DesignScale,
+                        35 * DesignScale
+                    );
 
-                    local Item = Wheel.Items[ItemIndex];
-                    local TextString = Item and Item.Text or '';
+                    -- Strong depth falloff. Keep color white and let opacity create the
+                    -- gray appearance, like the reference against its dark background.
+                    local BaseTransparency = WheelCurve(AbsDelta, 0.00, 0.56, 0.82, 0.965);
+                    local MainTransparency = 1 - (1 - BaseTransparency) * MasterAlpha;
 
-                    -- Size progression:
-                    -- Selected is prominent (34px), 1st neighbors are still fairly large (28px),
-                    -- 2nd neighbors clearly legible (22px), outer neighbors taper off (16px -> 12px)
-                    local BaseSize;
-                    if AbsDelta <= 1.0 then
-                        BaseSize = math.floor(34 - AbsDelta * 6);
-                    elseif AbsDelta <= 2.0 then
-                        BaseSize = math.floor(28 - (AbsDelta - 1.0) * 6);
-                    elseif AbsDelta <= 3.0 then
-                        BaseSize = math.floor(22 - (AbsDelta - 2.0) * 6);
-                    else
-                        BaseSize = math.max(12, math.floor(16 - (AbsDelta - 3.0) * 4));
-                    end
-
-                    -- Opacity & Color progression:
-                    -- Selected: pure bright white, 100% visible
-                    -- 1st neighbors: bright silver-white, over 85% visible
-                    -- 2nd neighbors: high-contrast, over 62% visible
-                    -- Outer: soft fade showing wheel continuation
-                    local TextColor, BaseTrans;
-                    if AbsDelta < 0.25 then
-                        TextColor = Color3.fromRGB(255, 255, 255);
-                        BaseTrans = 0;
-                    elseif AbsDelta <= 1.0 then
-                        local P = (AbsDelta - 0.25) / 0.75;
-                        local C = math.floor(255 - P * 20);
-                        TextColor = Color3.fromRGB(C, C + 2, C + 8);
-                        BaseTrans = P * 0.15;
-                    elseif AbsDelta <= 2.0 then
-                        local P = AbsDelta - 1.0;
-                        local C = math.floor(235 - P * 45);
-                        TextColor = Color3.fromRGB(C, C + 2, C + 10);
-                        BaseTrans = 0.15 + P * 0.23;
-                    else
-                        local P = math.clamp((AbsDelta - 2.0) / 1.4, 0, 1);
-                        local C = math.floor(190 - P * 55);
-                        TextColor = Color3.fromRGB(C, C + 2, C + 10);
-                        BaseTrans = math.clamp(0.38 + P * 0.54, 0.38, 0.95);
-                    end
-
-                    local FinalMainTrans = 1 - (1 - BaseTrans) * MasterAlpha;
+                    Slot.Frame.Position = UDim2.fromOffset(math.floor(X + 0.5), math.floor(Y + 0.5));
+                    Slot.Frame.Size = UDim2.new(
+                        1,
+                        -math.floor(X + 10),
+                        0,
+                        math.floor(116 * DesignScale + 0.5)
+                    );
+                    Slot.Frame.Rotation = Rotation;
+                    Slot.Frame.ZIndex = 270 - math.floor(AbsDelta * 5);
 
                     Slot.MainText.Text = TextString;
-                    Slot.MainText.TextSize = BaseSize;
-                    Slot.MainText.TextColor3 = TextColor;
-                    Slot.MainText.TextTransparency = FinalMainTrans;
+                    Slot.MainText.TextSize = math.max(10, math.floor(TextSize + 0.5));
+                    Slot.MainText.TextColor3 = Color3.fromRGB(255, 255, 255);
+                    Slot.MainText.TextTransparency = MainTransparency;
                     Slot.MainText.TextStrokeTransparency = 1;
+                    Slot.MainText.TextXAlignment = Enum.TextXAlignment.Left;
+                    Slot.MainText.TextYAlignment = Enum.TextYAlignment.Center;
                     Library:ApplyFont(Slot.MainText);
 
-                    -- Blur / optical softness treatment:
-                    -- Selected: perfectly sharp (zero blur)
-                    -- 1st neighbors: slightly smaller, moderately softened optical defocus
-                    -- 2nd neighbors: somewhat smaller and more blurred/faded
-                    -- Outer: heavily blurred/faded continuation
-                    if AbsDelta < 0.25 then
-                        for _, Clone in ipairs(Slot.BlurClones) do
+                    -- Roblox TextLabels do not expose a real Gaussian blur. Simulate only
+                    -- a *soft defocus* with extremely faint offset copies. The old version
+                    -- made these clones far too opaque, which is why the text looked doubled.
+                    local BlurRadius = WheelCurve(
+                        AbsDelta,
+                        0,
+                        0.95 * DesignScale,
+                        1.75 * DesignScale,
+                        2.35 * DesignScale
+                    );
+                    local CloneBaseTransparency = WheelCurve(AbsDelta, 1.0, 0.975, 0.987, 0.994);
+                    local CloneTransparency = 1 - (1 - CloneBaseTransparency) * MasterAlpha;
+
+                    for K, Clone in ipairs(Slot.BlurClones) do
+                        if AbsDelta < 0.10 or BlurRadius <= 0.05 then
                             Clone.TextTransparency = 1;
-                        end
-                    elseif AbsDelta <= 1.0 then
-                        local Radius = 0.70 * AbsDelta;
-                        local CloneTrans = 1 - (1 - 0.70) * MasterAlpha;
-                        for k, Off in ipairs(Offsets) do
-                            local Clone = Slot.BlurClones[k];
+                        else
+                            local Off = Offsets[K];
                             Clone.Text = TextString;
-                            Clone.TextSize = BaseSize;
-                            Clone.TextColor3 = TextColor;
-                            Clone.TextTransparency = CloneTrans;
+                            Clone.TextSize = Slot.MainText.TextSize;
+                            Clone.TextColor3 = Color3.fromRGB(255, 255, 255);
+                            Clone.TextTransparency = CloneTransparency;
                             Clone.TextStrokeTransparency = 1;
-                            Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
-                            Library:ApplyFont(Clone);
-                        end
-                    elseif AbsDelta <= 2.0 then
-                        local Radius = 0.70 + (AbsDelta - 1.0) * 1.0;
-                        local CloneTrans = 1 - (1 - 0.76) * MasterAlpha;
-                        for k, Off in ipairs(Offsets) do
-                            local Clone = Slot.BlurClones[k];
-                            Clone.Text = TextString;
-                            Clone.TextSize = BaseSize;
-                            Clone.TextColor3 = TextColor;
-                            Clone.TextTransparency = CloneTrans;
-                            Clone.TextStrokeTransparency = 1;
-                            Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
-                            Library:ApplyFont(Clone);
-                        end
-                    else
-                        local FarP = math.clamp((AbsDelta - 2.0) / 1.4, 0, 1);
-                        local Radius = 1.70 + FarP * 1.1;
-                        local TargetCloneTrans = math.clamp(BaseTrans + 0.05, 0.75, 0.98);
-                        local CloneTrans = 1 - (1 - TargetCloneTrans) * MasterAlpha;
-                        for k, Off in ipairs(Offsets) do
-                            local Clone = Slot.BlurClones[k];
-                            Clone.Text = TextString;
-                            Clone.TextSize = BaseSize;
-                            Clone.TextColor3 = TextColor;
-                            Clone.TextTransparency = CloneTrans;
-                            Clone.TextStrokeTransparency = 1;
-                            Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
+                            Clone.TextXAlignment = Enum.TextXAlignment.Left;
+                            Clone.TextYAlignment = Enum.TextYAlignment.Center;
+                            Clone.Position = UDim2.new(
+                                0,
+                                Off.X * BlurRadius,
+                                0.5,
+                                Off.Y * BlurRadius
+                            );
                             Library:ApplyFont(Clone);
                         end
                     end
@@ -9911,10 +9947,10 @@ function Library:CreateOptionWheel(Config)
             end
         end
 
-        for j = UsedSlots + 1, MaxVisibleSlots do
-            SlotPool[j].Frame.Visible = false;
-            SlotPool[j].BoundIndex = nil;
-            SlotPool[j].RelativeDelta = nil;
+        for J = UsedSlots + 1, MaxVisibleSlots do
+            SlotPool[J].Frame.Visible = false;
+            SlotPool[J].BoundIndex = nil;
+            SlotPool[J].RelativeDelta = nil;
         end
     end);
     Library:GiveSignal(StepConnection);
@@ -9933,7 +9969,7 @@ function Library:CreateOptionWheel(Config)
         WheelHolder.Visible = true;
 
         Library:CancelMotion(ContentContainer);
-        ContentContainer.Position = UDim2.new(0, -25, 0, 0);
+        ContentContainer.Position = UDim2.new(0, -16, 0, 0);
 
         Library:Animate(ContentContainer, {
             Position = UDim2.new(0, 0, 0, 0);
@@ -9962,7 +9998,7 @@ function Library:CreateOptionWheel(Config)
         end
 
         Library:Animate(ContentContainer, {
-            Position = UDim2.new(0, -25, 0, 0);
+            Position = UDim2.new(0, -16, 0, 0);
         }, 0.18, nil, 'Cubic');
 
         local Driver = Instance.new('NumberValue');
