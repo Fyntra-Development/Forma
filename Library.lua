@@ -74,10 +74,9 @@ local Fonts = {
         Ttf = "ComicMono.ttf",
         RepoPath = "fonts/ComicMono.ttf",
         Url = RepoFontBaseUrl .. "fonts/ComicMono.ttf",
-        FaceName = "Normal",
+        FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
-        DirectTtf = true,
     },
 };
 
@@ -907,18 +906,29 @@ function Library:LoadFont(Name)
         local FontUrl = Info.Url or (RepoFontBaseUrl .. RepoPath);
 
         local HasFile = isfile and isfile(TtfPath);
+        if HasFile and readfile and Info.Ttf == 'ComicMono.ttf' then
+            local CurrentContent = readfile(TtfPath);
+            if not CurrentContent or #CurrentContent < 18000 then
+                HasFile = false;
+            end;
+        end;
+
         if not HasFile then
             local LocalFallback = isfile and (isfile('Forma/' .. RepoPath) and ('Forma/' .. RepoPath) or (isfile(RepoPath) and RepoPath));
             if LocalFallback and readfile then
-                pcall(writefile, TtfPath, readfile(LocalFallback));
-                HasFile = isfile and isfile(TtfPath);
+                local FallbackContent = readfile(LocalFallback);
+                if FallbackContent and (#FallbackContent >= 18000 or Info.Ttf ~= 'ComicMono.ttf') then
+                    pcall(writefile, TtfPath, FallbackContent);
+                    HasFile = isfile and isfile(TtfPath);
+                end;
             end;
         end;
 
         if not HasFile then
             local DownloadSuccess, Content = pcall(game.HttpGet, game, FontUrl);
-            if DownloadSuccess and Content and #Content > 0 then
+            if DownloadSuccess and Content and #Content > 0 and (#Content >= 18000 or Info.Ttf ~= 'ComicMono.ttf') then
                 pcall(writefile, TtfPath, Content);
+                HasFile = isfile and isfile(TtfPath);
             end;
         end;
 
@@ -936,19 +946,15 @@ function Library:LoadFont(Name)
             };
         };
 
-        if not isfile or not isfile(FamilyPath) then
-            pcall(writefile, FamilyPath, HttpService:JSONEncode(FamilyData));
-        end;
+        pcall(writefile, FamilyPath, HttpService:JSONEncode(FamilyData));
 
+        local FamilyAsset = GetCustomAsset(FamilyPath);
         local Face;
-        if not Info.DirectTtf then
-            local FamilyAsset = GetCustomAsset(FamilyPath);
-            pcall(function()
-                Face = Font.new(FamilyAsset, Info.Weight or Enum.FontWeight.Regular, Enum.FontStyle.Normal);
-            end);
-        end;
+        pcall(function()
+            Face = Font.new(FamilyAsset, Info.Weight or Enum.FontWeight.Regular, Enum.FontStyle.Normal);
+        end);
 
-        if not Face or Info.DirectTtf then
+        if not Face then
             pcall(function()
                 Face = Font.new(TtfAsset);
             end);
@@ -3233,7 +3239,7 @@ do
         local VisualTextElapsed = 0;
         local ModeAnimationId = 0;
         local ModeButtons = {};
-        local SettingsContent, FadeDependency, Color1Preview, Color2Preview;
+        local SettingsContent, FadeDependency, Color1Preview, Color2Preview, CopyPasteRow;
         local SpeedSection, SpeedSlider;
         local SelectTab, SetEditorFromColor, RefreshSettingsVisuals, UpdateModeLayout, PrepareManualEdit, ApplyOutputColor, ComputeAnimatedColor;
 
@@ -3476,6 +3482,7 @@ do
             end;
             Color1Preview = MakeFadeRow('Color 1', 0, 1);
             Color2Preview = MakeFadeRow('Color 2', 29, 2);
+            Library:PrimeFadeTree(FadeDependency);
 
             SpeedSection = Library:Create('Frame', {
                 BackgroundTransparency = 1;
@@ -3515,8 +3522,9 @@ do
                     Descendant.ZIndex = Descendant.ZIndex + 16;
                 end;
             end;
+            Library:PrimeFadeTree(SpeedSection);
 
-            local CopyPasteRow = Library:Create('Frame', {
+            CopyPasteRow = Library:Create('Frame', {
                 BackgroundTransparency = 1;
                 BorderSizePixel = 0;
                 Position = UDim2.fromOffset(7, 70);
@@ -4051,16 +4059,20 @@ do
                 FadeDependency.Visible = true;
                 if Instant then
                     FadeDependency.Size = UDim2.new(1, -14, 0, 58);
+                    Library:SetUnifiedFadeProgress(FadeDependency, 1);
                 else
                     if FadeDependency.Size.Y.Offset <= 0 then
                         FadeDependency.Size = UDim2.new(1, -14, 0, 0);
+                        Library:SetUnifiedFadeProgress(FadeDependency, 0);
                     end;
                     Library:Animate(FadeDependency, {
                         Size = UDim2.new(1, -14, 0, 58);
                     }, 0.22, nil, 'ColorPickerMode');
+                    Library:TweenUnifiedFade(FadeDependency, 1, 0.22, nil, 'Fade');
                 end;
             elseif Instant then
                 FadeDependency.Size = UDim2.new(1, -14, 0, 0);
+                Library:SetUnifiedFadeProgress(FadeDependency, 0);
                 FadeDependency.Visible = false;
             elseif FadeDependency.Visible then
                 Library:Animate(FadeDependency, {
@@ -4070,6 +4082,7 @@ do
                         FadeDependency.Visible = false;
                     end;
                 end, 'ColorPickerMode');
+                Library:TweenUnifiedFade(FadeDependency, 0, 0.18, nil, 'Fade');
             end;
 
             if ShowSpeed then
@@ -4077,16 +4090,20 @@ do
                 SpeedSection.Visible = true;
                 if Instant then
                     SpeedSection.Position = UDim2.fromOffset(7, SpeedY);
+                    Library:SetUnifiedFadeProgress(SpeedSection, 1);
                 else
                     if not WasVisible then
                         SpeedSection.Position = UDim2.fromOffset(7, SpeedY + 6);
+                        Library:SetUnifiedFadeProgress(SpeedSection, 0);
                     end;
                     Library:Animate(SpeedSection, {
                         Position = UDim2.fromOffset(7, SpeedY);
                     }, 0.22, nil, 'ColorPickerMode');
+                    Library:TweenUnifiedFade(SpeedSection, 1, 0.22, nil, 'Fade');
                 end;
             elseif Instant then
                 SpeedSection.Position = UDim2.fromOffset(7, 70);
+                Library:SetUnifiedFadeProgress(SpeedSection, 0);
                 SpeedSection.Visible = false;
             elseif SpeedSection.Visible then
                 local CurrentY = SpeedSection.Position.Y.Offset;
@@ -4098,6 +4115,7 @@ do
                         SpeedSection.Position = UDim2.fromOffset(7, 70);
                     end;
                 end, 'ColorPickerMode');
+                Library:TweenUnifiedFade(SpeedSection, 0, 0.18, nil, 'Fade');
             end;
 
             if CopyPasteRow then
@@ -8229,21 +8247,21 @@ do
     end));
 
     local WatermarkOuter = Library:Create('Frame', {
-        BackgroundColor3 = Library.Inline;
-        BorderColor3 = Color3.new(0, 0, 0);
-        BorderSizePixel = 1;
+        BackgroundColor3 = Library.OutlineColor;
+        BorderSizePixel = 0;
         Position = UDim2.new(0, 100, 0, -25);
         Size = UDim2.new(0, 230, 0, 26);
         ZIndex = 200;
         Visible = false;
         Parent = ScreenGui;
     });
-    Library:AddToRegistry(WatermarkOuter, { BackgroundColor3 = 'Inline'; });
+    Library:AddToRegistry(WatermarkOuter, { BackgroundColor3 = 'OutlineColor'; });
+    Library:AddCorner(WatermarkOuter, 4);
 
     local WatermarkInner = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
-        BorderColor3 = Library.OutlineColor;
-        BorderMode = Enum.BorderMode.Inset;
+        BorderSizePixel = 0;
+        ClipsDescendants = true;
         Position = UDim2.fromOffset(1, 1);
         Size = UDim2.new(1, -2, 1, -2);
         ZIndex = 201;
@@ -8252,17 +8270,19 @@ do
 
     Library:AddToRegistry(WatermarkInner, {
         BackgroundColor3 = 'MainColor';
-        BorderColor3 = 'OutlineColor';
     });
+    Library:AddCorner(WatermarkInner, 3);
 
     local InnerFrame = Library:Create('Frame', {
         BackgroundColor3 = Color3.new(1, 1, 1);
         BorderSizePixel = 0;
+        ClipsDescendants = true;
         Position = UDim2.new(0, 1, 0, 1);
         Size = UDim2.new(1, -2, 1, -2);
         ZIndex = 202;
         Parent = WatermarkInner;
     });
+    Library:AddCorner(InnerFrame, 2);
 
     local Gradient = Library:Create('UIGradient', {
         Color = ColorSequence.new({
@@ -8291,6 +8311,7 @@ do
         Parent = WatermarkInner;
     });
     Library:AddToRegistry(AccentBar, { BackgroundColor3 = 'AccentColor'; });
+    Library:AddCorner(AccentBar, 1);
 
     Library:AddMovingAccentGradient(AccentBar, 2.4);
 
@@ -9373,6 +9394,634 @@ function Library:CreateTargetHUD(Config)
     return HUD;
 end;
 
+function Library:CreateOptionWheel(Config)
+    Config = Config or {};
+
+    if Library.OptionWheel and Library.OptionWheel.Destroy then
+        Library.OptionWheel:Destroy();
+    end
+
+    local Wheel = {
+        Open = false;
+        ActiveMode = Config.DefaultMode or 'Configs';
+        Modes = { 'Configs', 'Themes', 'Presets', 'Actions' };
+        Items = {};
+        TargetIndex = 1;
+        SmoothIndex = 1;
+        AnimationId = 0;
+        Keybind = Config.Keybind or 'V';
+        Enabled = Config.Enabled ~= false;
+        Connections = {};
+        Slots = {};
+        Alpha = 0;
+    };
+
+    -- Clean up any residual lighting blur
+    local Lighting = game:GetService('Lighting');
+    local OldBlur = Lighting:FindFirstChild('FormaOptionWheelBlur');
+    if OldBlur then pcall(function() OldBlur:Destroy(); end); end
+
+    -- Wheel root container
+    local WheelHolder = Library:Create('Frame', {
+        Name = 'OptionWheelHolder';
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0, 0);
+        Size = UDim2.new(1, 0, 1, 0);
+        ZIndex = 250;
+        Visible = false;
+        Parent = ScreenGui;
+    });
+
+    -- Clean, subtle, localized left-side background treatment (no dark or gray band across the screen)
+    local WheelWash = Library:Create('Frame', {
+        Name = 'OptionWheelWash';
+        BackgroundColor3 = Color3.fromRGB(8, 10, 15);
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0, 0);
+        Size = UDim2.new(0, 190, 1, 0);
+        ZIndex = 251;
+        Parent = WheelHolder;
+    });
+
+    local WashGradient = Library:Create('UIGradient', {
+        Rotation = 0;
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.70);
+            NumberSequenceKeypoint.new(0.40, 0.85);
+            NumberSequenceKeypoint.new(0.75, 0.96);
+            NumberSequenceKeypoint.new(1, 1);
+        });
+        Parent = WheelWash;
+    });
+
+    -- Sliding content container for options & subtle header
+    local ContentContainer = Library:Create('Frame', {
+        Name = 'WheelContentContainer';
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, -25, 0, 0);
+        Size = UDim2.new(1, 0, 1, 0);
+        ZIndex = 252;
+        Parent = WheelHolder;
+    });
+
+    -- Minimalist elegant header (pure clean text using configured Library font)
+    local HeaderFrame = Library:Create('Frame', {
+        Name = 'WheelHeader';
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 52, 0, 36);
+        Size = UDim2.new(0, 320, 0, 46);
+        ZIndex = 253;
+        Parent = ContentContainer;
+    });
+
+    local ModeTitleLabel = Library:Create('TextLabel', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0, 0);
+        Size = UDim2.new(1, 0, 0, 16);
+        Text = string.upper(Wheel.ActiveMode);
+        TextSize = 13;
+        TextColor3 = Library.AccentColor;
+        TextStrokeTransparency = 1;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 254;
+        Parent = HeaderFrame;
+    });
+    Library:ApplyFont(ModeTitleLabel);
+    Library:AddToRegistry(ModeTitleLabel, { TextColor3 = 'AccentColor'; });
+
+    local SubHintLabel = Library:Create('TextLabel', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0, 18);
+        Size = UDim2.new(1, 0, 0, 14);
+        Text = 'Scroll to browse  •  [Q / E] Mode  •  [Enter / Click] Select';
+        TextSize = 11;
+        TextColor3 = Color3.fromRGB(190, 195, 205);
+        TextTransparency = 0.45;
+        TextStrokeTransparency = 1;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 254;
+        Parent = HeaderFrame;
+    });
+    Library:ApplyFont(SubHintLabel);
+
+    -- Pre-create optical blur slots pool
+    local MaxVisibleSlots = 11;
+    local SlotPool = {};
+    local Offsets = {
+        Vector2.new(-1, -1), Vector2.new(1, -1),
+        Vector2.new(-1, 1), Vector2.new(1, 1),
+        Vector2.new(0, -1.3), Vector2.new(0, 1.3),
+        Vector2.new(-1.3, 0), Vector2.new(1.3, 0),
+    };
+
+    for i = 1, MaxVisibleSlots do
+        local SlotFrame = Library:Create('Frame', {
+            Name = 'WheelSlot_' .. i;
+            AnchorPoint = Vector2.new(0, 0.5);
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Size = UDim2.new(0, 320, 0, 42);
+            ZIndex = 260;
+            Visible = false;
+            Parent = ContentContainer;
+        });
+
+        local BlurClones = {};
+        for k = 1, #Offsets do
+            local Clone = Library:Create('TextLabel', {
+                Name = 'BlurClone_' .. k;
+                AnchorPoint = Vector2.new(0, 0.5);
+                BackgroundTransparency = 1;
+                BorderSizePixel = 0;
+                Position = UDim2.new(0, 0, 0.5, 0);
+                Size = UDim2.new(1, 0, 1, 0);
+                Text = '';
+                TextSize = 28;
+                TextColor3 = Color3.fromRGB(220, 220, 230);
+                TextTransparency = 1;
+                TextStrokeTransparency = 1;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                TextYAlignment = Enum.TextYAlignment.Center;
+                ZIndex = 259;
+                Parent = SlotFrame;
+            });
+            Library:ApplyFont(Clone);
+            BlurClones[k] = Clone;
+        end
+
+        local MainText = Library:Create('TextLabel', {
+            Name = 'MainText';
+            AnchorPoint = Vector2.new(0, 0.5);
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = UDim2.new(0, 0, 0.5, 0);
+            Size = UDim2.new(1, 0, 1, 0);
+            Text = '';
+            TextSize = 32;
+            TextColor3 = Color3.fromRGB(255, 255, 255);
+            TextTransparency = 0;
+            TextStrokeTransparency = 1;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            TextYAlignment = Enum.TextYAlignment.Center;
+            ZIndex = 261;
+            Parent = SlotFrame;
+        });
+        Library:ApplyFont(MainText);
+
+        SlotPool[i] = {
+            Frame = SlotFrame;
+            MainText = MainText;
+            BlurClones = BlurClones;
+            BoundIndex = nil;
+        };
+
+        SlotFrame.InputBegan:Connect(function(Input)
+            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                local Bound = SlotPool[i].BoundIndex;
+                if Bound then
+                    if math.abs(Bound - Wheel.SmoothIndex) < 0.45 then
+                        Wheel:ExecuteItem(Bound);
+                    else
+                        Wheel.TargetIndex = Bound;
+                    end
+                end
+            end
+        end);
+    end
+
+    function Wheel:SetItems(ItemList)
+        Wheel.Items = ItemList or {};
+        Wheel.TargetIndex = math.clamp(Wheel.TargetIndex, 1, math.max(#Wheel.Items, 1));
+        Wheel.SmoothIndex = Wheel.TargetIndex;
+    end
+
+    function Wheel:SetMode(Mode)
+        Wheel.ActiveMode = Mode;
+        ModeTitleLabel.Text = string.upper(Mode);
+
+        local List = {};
+        if Mode == 'Configs' then
+            table.insert(List, {
+                Text = 'Save Active Config';
+                Callback = function()
+                    if Library.SaveManager then
+                        local Success = Library.SaveManager:Save('forma_default');
+                        Library:Notify(Success and 'Saved config: forma_default' or 'Failed to save config', 2);
+                    else
+                        Library:Notify('SaveManager not attached', 2);
+                    end
+                end;
+            });
+            if Library.SaveManager and isfolder and isfolder(Library.SaveManager.Folder .. '/settings') then
+                local Files = listfiles(Library.SaveManager.Folder .. '/settings');
+                for _, FilePath in ipairs(Files) do
+                    local Name = FilePath:match('([^/\\]+)%.json$');
+                    if Name then
+                        table.insert(List, {
+                            Text = Name;
+                            Callback = function()
+                                Library.SaveManager:Load(Name);
+                                Library:Notify('Loaded config: ' .. Name, 2);
+                            end;
+                        });
+                    end
+                end
+            end
+            if #List == 1 then
+                for _, Sample in ipairs({ 'Legit Default', 'HvH Rage', 'Movement', 'Casual' }) do
+                    table.insert(List, {
+                        Text = Sample;
+                        Callback = function()
+                            Library:Notify('Selected config preset: ' .. Sample, 2);
+                        end;
+                    });
+                end
+            end
+        elseif Mode == 'Themes' then
+            local BuiltIn = { 'Default', 'Dark', 'Midnight', 'Forma Classic', 'Neon', 'Pastel', 'Emerald', 'Amethyst' };
+            for _, ThemeName in ipairs(BuiltIn) do
+                table.insert(List, {
+                    Text = ThemeName;
+                    Callback = function()
+                        if Library.ThemeManager then
+                            Library.ThemeManager:ApplyTheme(ThemeName);
+                            Library:Notify('Applied theme: ' .. ThemeName, 2);
+                        else
+                            Library:Notify('ThemeManager not attached', 2);
+                        end
+                    end;
+                });
+            end
+        elseif Mode == 'Presets' then
+            local Presets = {
+                { Name = 'Legit Mode'; Desc = 'Subtle visual & aim assists' };
+                { Name = 'Semi-Rage'; Desc = 'Balanced aggressive options' };
+                { Name = 'Rage Mode'; Desc = 'Maximum performance values' };
+                { Name = 'Casual'; Desc = 'Quality of life visuals' };
+                { Name = 'Performance'; Desc = 'Max FPS stripped visuals' };
+            };
+            for _, P in ipairs(Presets) do
+                table.insert(List, {
+                    Text = P.Name;
+                    Callback = function()
+                        Library:Notify('Applied preset: ' .. P.Name, 2);
+                    end;
+                });
+            end
+        elseif Mode == 'Actions' then
+            table.insert(List, {
+                Text = 'Toggle Keybinds Window';
+                Callback = function()
+                    if Library.KeybindFrame then
+                        Library.KeybindFrame.Visible = not Library.KeybindFrame.Visible;
+                    end
+                end;
+            });
+            table.insert(List, {
+                Text = 'Toggle Watermark';
+                Callback = function()
+                    if Library.Watermark then
+                        Library:SetWatermarkVisibility(not Library.Watermark.Visible);
+                    end
+                end;
+            });
+            table.insert(List, {
+                Text = 'Reset Menu Positions';
+                Callback = function()
+                    if Library.MainFrame then
+                        Library.MainFrame.Position = UDim2.fromOffset(175, 50);
+                    end
+                    Library:Notify('Reset menu positions', 2);
+                end;
+            });
+            table.insert(List, {
+                Text = 'Unload Library';
+                Callback = function()
+                    Library:Unload();
+                end;
+            });
+        end
+
+        Wheel:SetItems(List);
+    end
+
+    function Wheel:ExecuteItem(Index)
+        local Item = Wheel.Items[Index];
+        if Item and Item.Callback then
+            local Slot = nil;
+            for _, S in ipairs(SlotPool) do
+                if S.BoundIndex == Index then Slot = S; break; end
+            end
+            if Slot and Slot.MainText then
+                local OrigCol = Slot.MainText.TextColor3;
+                Slot.MainText.TextColor3 = Library.AccentColor;
+                task.delay(0.14, function()
+                    if Slot.MainText then Slot.MainText.TextColor3 = OrigCol; end
+                end);
+            end
+            Library:SafeCallback(Item.Callback, Item);
+        end
+    end
+
+    function Wheel:Scroll(Delta)
+        if not Wheel.Open or #Wheel.Items == 0 then return; end
+        local NewTarget = Wheel.TargetIndex + Delta;
+        Wheel.TargetIndex = math.clamp(NewTarget, 1, #Wheel.Items);
+    end
+
+    function Wheel:CycleMode(Direction)
+        local CurIndex = table.find(Wheel.Modes, Wheel.ActiveMode) or 1;
+        local NewIndex = CurIndex + Direction;
+        if NewIndex < 1 then NewIndex = #Wheel.Modes;
+        elseif NewIndex > #Wheel.Modes then NewIndex = 1; end;
+        Wheel:SetMode(Wheel.Modes[NewIndex]);
+    end
+
+    -- Continuous curved rendering step
+    local StepConnection = RenderStepped:Connect(function(Dt)
+        if not Wheel.Open and Wheel.Alpha <= 0.01 then
+            return;
+        end
+
+        local Damping = 1 - math.exp(-24 * Dt);
+        Wheel.SmoothIndex = Wheel.SmoothIndex + (Wheel.TargetIndex - Wheel.SmoothIndex) * Damping;
+
+        local Camera = workspace.CurrentCamera;
+        local ViewportSize = Camera and Camera.ViewportSize or Vector2.new(1280, 720);
+        local ViewportWidth = ViewportSize.X;
+        local ViewportHeight = ViewportSize.Y;
+        local CenterY = ViewportHeight * 0.5;
+
+        local MasterAlpha = math.clamp(Wheel.Alpha, 0, 1);
+
+        -- Position wheel comfortably near the left screen edge (not projecting toward center)
+        local BaseX = math.clamp(math.floor(ViewportWidth * 0.05), 65, 85);
+
+        -- Distribute cleanly from near top to near bottom with consistent spacing
+        local StepY = math.clamp(ViewportHeight * 0.12, 75, 110);
+
+        -- Header & wash align neatly with BaseX
+        HeaderFrame.Position = UDim2.new(0, BaseX - 16, 0, math.clamp(math.floor(ViewportHeight * 0.045), 30, 48));
+        WheelWash.Size = UDim2.new(0, math.clamp(math.floor(ViewportWidth * 0.12), 170, 220), 1, 0);
+
+        ModeTitleLabel.TextTransparency = 1 - MasterAlpha;
+        SubHintLabel.TextTransparency = 1 - 0.55 * MasterAlpha;
+
+        WashGradient.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1 - (1 - 0.70) * MasterAlpha);
+            NumberSequenceKeypoint.new(0.40, 1 - (1 - 0.85) * MasterAlpha);
+            NumberSequenceKeypoint.new(0.75, 1 - (1 - 0.96) * MasterAlpha);
+            NumberSequenceKeypoint.new(1, 1);
+        });
+
+        local TotalItems = #Wheel.Items;
+        local CurrentPos = Wheel.SmoothIndex;
+
+        local UsedSlots = 0;
+        for i = 1, TotalItems do
+            local Delta = i - CurrentPos;
+            local AbsDelta = math.abs(Delta);
+
+            if AbsDelta <= 4.2 then
+                UsedSlots = UsedSlots + 1;
+                if UsedSlots > MaxVisibleSlots then break; end
+
+                local Slot = SlotPool[UsedSlots];
+                Slot.BoundIndex = i;
+                Slot.Frame.Visible = true;
+
+                -- Mostly vertical list gently bending left as it recedes:
+                -- Selected option sits only slightly farther right (drift is ~3px for neighbors, tapering gracefully)
+                local HorizontalDrift = (AbsDelta ^ 1.35) * 3.2;
+                local X = BaseX - HorizontalDrift;
+                local Y = CenterY + Delta * StepY;
+
+                -- Extremely subtle rotation near selection, noticeable rotation reserved for farthest options
+                local Rot = math.sign(Delta) * (AbsDelta ^ 2.1) * 0.45;
+
+                Slot.Frame.Position = UDim2.fromOffset(X, Y);
+                Slot.Frame.Rotation = Rot;
+                Slot.Frame.ZIndex = 260 - math.floor(AbsDelta * 5);
+
+                local Item = Wheel.Items[i];
+                local TextString = Item and Item.Text or '';
+
+                -- Selected option is 32px; gentle falloff for first 1-2 neighbors, then much stronger falloff
+                local BaseSize;
+                if AbsDelta <= 1 then
+                    BaseSize = math.floor(32 - AbsDelta * 9); -- 32 -> 23
+                elseif AbsDelta <= 2 then
+                    BaseSize = math.floor(23 - (AbsDelta - 1) * 5); -- 23 -> 18
+                else
+                    BaseSize = math.max(11, math.floor(18 - (AbsDelta - 2) * 3.5)); -- 18 -> 14.5 -> 11
+                end
+
+                -- Opacity & Color:
+                -- First 1-2 neighbors remain clearly readable (Midnight & Neon), then much stronger falloff
+                local TextColor, BaseTrans;
+                if AbsDelta < 0.25 then
+                    TextColor = Color3.fromRGB(255, 255, 255);
+                    BaseTrans = 0;
+                elseif AbsDelta <= 1.15 then
+                    TextColor = Color3.fromRGB(225, 230, 240);
+                    BaseTrans = 0.20 + (AbsDelta - 0.25) * 0.05;
+                elseif AbsDelta <= 2.15 then
+                    TextColor = Color3.fromRGB(165, 170, 180);
+                    BaseTrans = 0.25 + (AbsDelta - 1.15) * 0.25;
+                else
+                    local FarProgress = math.clamp((AbsDelta - 2.15) / 1.85, 0, 1);
+                    local Brightness = math.floor(160 - FarProgress * 110);
+                    TextColor = Color3.fromRGB(Brightness, Brightness, Brightness + 5);
+                    BaseTrans = math.clamp(0.50 + FarProgress * 0.44, 0.50, 0.94);
+                end
+
+                local FinalMainTrans = 1 - (1 - BaseTrans) * MasterAlpha;
+
+                -- Main label
+                Slot.MainText.Text = TextString;
+                Slot.MainText.TextSize = BaseSize;
+                Slot.MainText.TextColor3 = TextColor;
+                Slot.MainText.TextTransparency = FinalMainTrans;
+                Slot.MainText.TextStrokeTransparency = 1;
+                Library:ApplyFont(Slot.MainText);
+
+                -- Blur treatment:
+                -- Reserved strictly for distant options; nearby options have 0 blur for complete sharpness
+                if AbsDelta <= 1.35 then
+                    for _, Clone in ipairs(Slot.BlurClones) do
+                        Clone.TextTransparency = 1;
+                    end
+                elseif AbsDelta <= 2.15 then
+                    local Radius = (AbsDelta - 1.35) * 1.2;
+                    local CloneTrans = 1 - (1 - 0.82) * MasterAlpha;
+                    for k, Off in ipairs(Offsets) do
+                        local Clone = Slot.BlurClones[k];
+                        Clone.Text = TextString;
+                        Clone.TextSize = BaseSize;
+                        Clone.TextColor3 = TextColor;
+                        Clone.TextTransparency = CloneTrans;
+                        Clone.TextStrokeTransparency = 1;
+                        Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
+                        Library:ApplyFont(Clone);
+                    end
+                else
+                    local FarProgress = math.clamp((AbsDelta - 2.15) / 1.85, 0, 1);
+                    local Radius = 1.0 + FarProgress * 2.8;
+                    local TargetCloneTrans = math.clamp(BaseTrans + 0.12, 0.70, 0.98);
+                    local CloneTrans = 1 - (1 - TargetCloneTrans) * MasterAlpha;
+
+                    for k, Off in ipairs(Offsets) do
+                        local Clone = Slot.BlurClones[k];
+                        Clone.Text = TextString;
+                        Clone.TextSize = BaseSize;
+                        Clone.TextColor3 = TextColor;
+                        Clone.TextTransparency = CloneTrans;
+                        Clone.TextStrokeTransparency = 1;
+                        Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
+                        Library:ApplyFont(Clone);
+                    end
+                end
+            end
+        end
+
+        for j = UsedSlots + 1, MaxVisibleSlots do
+            SlotPool[j].Frame.Visible = false;
+            SlotPool[j].BoundIndex = nil;
+        end
+    end);
+    Library:GiveSignal(StepConnection);
+
+    function Wheel:OpenWheel()
+        if Wheel.Open or not Wheel.Enabled then return; end
+        Wheel.Open = true;
+        Wheel.AnimationId = Wheel.AnimationId + 1;
+        local CurrentAnim = Wheel.AnimationId;
+
+        WheelHolder.Visible = true;
+
+        Library:CancelMotion(ContentContainer);
+        ContentContainer.Position = UDim2.new(0, -25, 0, 0);
+
+        Library:Animate(ContentContainer, {
+            Position = UDim2.new(0, 0, 0, 0);
+        }, 0.24, nil, 'Quart');
+
+        local Driver = Instance.new('NumberValue');
+        Driver.Value = Wheel.Alpha;
+        Wheel.FadeDriver = Driver;
+        Library:Animate(Driver, { Value = 1 }, 0.22, function()
+            Driver:Destroy();
+        end, 'Fade');
+        Driver.Changed:Connect(function(Val)
+            Wheel.Alpha = Val;
+        end);
+    end
+
+    function Wheel:CloseWheel()
+        if not Wheel.Open then return; end
+        Wheel.Open = false;
+        Wheel.AnimationId = Wheel.AnimationId + 1;
+        local CurrentAnim = Wheel.AnimationId;
+
+        Library:Animate(ContentContainer, {
+            Position = UDim2.new(0, -25, 0, 0);
+        }, 0.18, nil, 'Cubic');
+
+        local Driver = Instance.new('NumberValue');
+        Driver.Value = Wheel.Alpha;
+        Wheel.FadeDriver = Driver;
+        Library:Animate(Driver, { Value = 0 }, 0.18, function(State)
+            Driver:Destroy();
+            if CurrentAnim == Wheel.AnimationId and State ~= Enum.PlaybackState.Cancelled then
+                WheelHolder.Visible = false;
+            end
+        end, 'Fade');
+        Driver.Changed:Connect(function(Val)
+            Wheel.Alpha = Val;
+        end);
+    end
+
+    function Wheel:Toggle()
+        if Wheel.Open then
+            Wheel:CloseWheel();
+        else
+            Wheel:OpenWheel();
+        end
+    end
+
+    -- Mouse scroll input
+    local InputConn = InputService.InputChanged:Connect(function(Input)
+        if not Wheel.Open then return; end
+        if Input.UserInputType == Enum.UserInputType.MouseWheel then
+            if Input.Position.Z > 0 then
+                Wheel:Scroll(-1);
+            elseif Input.Position.Z < 0 then
+                Wheel:Scroll(1);
+            end
+        end
+    end);
+    Library:GiveSignal(InputConn);
+
+    -- Keyboard navigation when wheel is active
+    local KeyConn = InputService.InputBegan:Connect(function(Input, GameProcessed)
+        if GameProcessed then return; end
+
+        -- Toggle keybind check
+        local BoundKeyCode = typeof(Wheel.Keybind) == 'EnumItem' and Wheel.Keybind or nil;
+        if not BoundKeyCode and type(Wheel.Keybind) == 'string' then
+            pcall(function() BoundKeyCode = Enum.KeyCode[Wheel.Keybind]; end);
+        end
+        if BoundKeyCode and Input.KeyCode == BoundKeyCode then
+            Wheel:Toggle();
+            return;
+        end
+
+        if not Wheel.Open then return; end
+
+        if Input.KeyCode == Enum.KeyCode.Up or Input.KeyCode == Enum.KeyCode.W then
+            Wheel:Scroll(-1);
+        elseif Input.KeyCode == Enum.KeyCode.Down or Input.KeyCode == Enum.KeyCode.S then
+            Wheel:Scroll(1);
+        elseif Input.KeyCode == Enum.KeyCode.Q or Input.KeyCode == Enum.KeyCode.Left then
+            Wheel:CycleMode(-1);
+        elseif Input.KeyCode == Enum.KeyCode.E or Input.KeyCode == Enum.KeyCode.Right then
+            Wheel:CycleMode(1);
+        elseif Input.KeyCode == Enum.KeyCode.Return or Input.KeyCode == Enum.KeyCode.Space then
+            local Selected = math.clamp(math.floor(Wheel.SmoothIndex + 0.5), 1, math.max(#Wheel.Items, 1));
+            Wheel:ExecuteItem(Selected);
+        elseif Input.KeyCode == Enum.KeyCode.Escape then
+            Wheel:CloseWheel();
+        end
+    end);
+    Library:GiveSignal(KeyConn);
+
+    function Wheel:SetKeybind(Key)
+        Wheel.Keybind = Key;
+    end
+
+    function Wheel:SetEnabled(Bool)
+        Wheel.Enabled = not not Bool;
+        if not Wheel.Enabled and Wheel.Open then
+            Wheel:CloseWheel();
+        end
+    end
+
+    function Wheel:Destroy()
+        Wheel:CloseWheel();
+        for _, Conn in ipairs(Wheel.Connections) do pcall(function() Conn:Disconnect(); end); end
+        pcall(function() WheelHolder:Destroy(); end);
+    end
+
+    Wheel:SetMode(Wheel.ActiveMode);
+    Library.OptionWheel = Wheel;
+    return Wheel;
+end;
+
 function Library:Notify(Text, Time, Title)
     if type(Text) == 'table' then
         local Info = Text;
@@ -9557,6 +10206,10 @@ function Library:CreateWindow(...)
     GameName = tostring(GameName)
     if Config.GameName or Config.Game or Config.Subtitle then
         Library:SetWatermarkInfo({ GameName = GameName; });
+    end
+
+    if not Library.OptionWheel then
+        Library:CreateOptionWheel({ Keybind = Config.OptionWheelKeybind or "V" });
     end
     if type(Config.TabPadding) ~= 'number' then Config.TabPadding = 0 end
     if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.24 end
@@ -10026,17 +10679,20 @@ function Library:CreateWindow(...)
 
             if not TabFrame.Visible then
                 Library:CancelMotion(TabFrame);
-                TabFrame.Position = UDim2.new(0, 0, 0, 4);
+                TabFrame.Position = UDim2.new(0, 0, 0, 8);
                 Library:SetUnifiedFadeProgress(TabFrame, 0);
             end;
             TabFrame.Visible = true;
             Library:Animate(TabFrame, {
                 Position = UDim2.new(0, 0, 0, 0);
-            }, 0.24, nil, 'Tab');
-            Library:TweenUnifiedFade(TabFrame, 1, 0.24, nil, 'Fade');
-            for _, RevealState in ipairs(Tab.ScrollRevealStates) do
-                if RevealState then RevealState:QueueRefresh(); end
-            end
+            }, 0.28, nil, 'Tab');
+            Library:TweenUnifiedFade(TabFrame, 1, 0.28, function(State)
+                if Tab.Active and State ~= Enum.PlaybackState.Cancelled then
+                    for _, RevealState in ipairs(Tab.ScrollRevealStates) do
+                        if RevealState then RevealState:QueueRefresh(); end
+                    end
+                end;
+            end, 'Fade');
         end;
 
         function Tab:HideTab(Instant)
@@ -10049,8 +10705,8 @@ function Library:CreateWindow(...)
             local CurrentAnimation = Tab.ContentAnimationId;
 
             if TabButton and Blocker then
-                Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.14);
-                Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.14);
+                Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.16);
+                Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.16);
                 Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
             end;
 
@@ -10067,9 +10723,9 @@ function Library:CreateWindow(...)
             end;
 
             Library:Animate(TabFrame, {
-                Position = UDim2.new(0, 0, 0, -3);
-            }, 0.14, nil, 'TabExit');
-            local ExitTween = Library:TweenUnifiedFade(TabFrame, 0, 0.14, function(State)
+                Position = UDim2.new(0, 0, 0, -6);
+            }, 0.18, nil, 'TabExit');
+            local ExitTween = Library:TweenUnifiedFade(TabFrame, 0, 0.18, function(State)
                 if State == Enum.PlaybackState.Cancelled then return; end
                 if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                     TabFrame.Visible = false;
@@ -10592,6 +11248,7 @@ function Library:CreateWindow(...)
     Window.Holder = Outer;
     Library.WindowHolder = Outer;
 
+    Library.Window = Window;
     return Window;
 end;
 
