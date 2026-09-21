@@ -2,8 +2,14 @@
   "schema": 2,
   "Components": {
     "Library": {
-      "version": "1.5.1+build.1",
+      "version": "1.5.2+build.1",
       "path": "Library.lua",
+      "release": "HF",
+      "build": 1
+    },
+    "Loader": {
+      "version": "1.5.2+build.1",
+      "path": "Loader.lua",
       "release": "HF",
       "build": 1
     },
