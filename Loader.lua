@@ -260,7 +260,7 @@ local function CleanupExistingForma()
 
     for _, Parent in ipairs(Parents) do
         for _, Child in ipairs(Parent:GetChildren()) do
-            if Child.Name == 'FormaGui' then
+            if Child.Name == 'FormaGui' or Child.Name:sub(1, 13) == 'FormaUtility_' then
                 pcall(function() Child:Destroy() end)
             end
         end
