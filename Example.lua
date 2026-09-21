@@ -622,6 +622,7 @@ ConsoleView:Info('Library initialized')
 ConsoleView:Warn('This is a warning example')
 ConsoleView:Error('Errors use the current Forma risk color')
 
+local RefreshPlayerTable
 local PlayerTable = Tabs.Utilities:AddTable({
     Title = 'Players',
     Height = 320,
@@ -659,7 +660,7 @@ local PlayerTable = Tabs.Utilities:AddTable({
     end,
 })
 
-local function RefreshPlayerTable()
+RefreshPlayerTable = function()
     local Rows = {}
     for _, Player in ipairs(Players:GetPlayers()) do
         table.insert(Rows, {
