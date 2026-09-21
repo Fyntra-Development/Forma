@@ -1,7 +1,3 @@
--- Forma persistent loader
--- Loads the installed/cached Forma release first, then lets Library.lua compare
--- that installed version against versions.json before the user chooses to update.
-
 local HttpService = game:GetService('HttpService')
 local UserInputService = game:GetService('UserInputService')
 local CoreGui = game:GetService('CoreGui')
@@ -120,7 +116,6 @@ function Updater:InstallManifest(Manifest, Progress)
 
     Report('Preparing update...', 0.08)
 
-    -- Download and compile-check every Lua component before replacing any file.
     local Staged = {}
     local Count = math.max(#Entries, 1)
     for Index, Entry in ipairs(Entries) do
@@ -186,8 +181,6 @@ function Updater:EnsureInstalled()
         return true
     end
 
-    -- First run seeds the current release. From the next release onward this
-    -- cached copy remains installed until the player presses Yes.
     local Manifest, Error = self:FetchManifest()
     if not Manifest then return false, Error end
     return self:InstallManifest(Manifest)
@@ -235,8 +228,6 @@ function Updater:InstallUpdate(ComponentName, RemoteInfo, Progress)
     local Manifest, Error = self:FetchManifest()
     if not Manifest then return false, Error end
 
-    -- Forma releases are installed atomically as one set so Library and all
-    -- managers can never end up on mismatched versions after a restart.
     return self:InstallManifest(Manifest, Progress)
 end
 
@@ -253,7 +244,6 @@ local function CleanupExistingForma()
         pcall(Existing.Unload, Existing)
     end
 
-    -- Clean up any orphaned GUI from interrupted reloads or older builds.
     local Parents = {}
     local Seen = {}
     local function AddParent(Parent)
@@ -276,8 +266,6 @@ local function CleanupExistingForma()
         end
     end
 
-    -- Older Forma builds could leave Roblox's native cursor disabled when
-    -- unloading/restarting. A new boot always starts from a visible cursor.
     pcall(function()
         UserInputService.MouseIconEnabled = true
     end)
@@ -358,6 +346,9 @@ function Updater:StyleUpdatePrompt(Outer, Info, BodyText)
 
     local Parts = FindUpdateParts(Outer)
     if Parts.Yes then
+        Parts.Yes.AnchorPoint = Vector2.new(1, 0)
+        Parts.Yes.Position = UDim2.new(1, -82, 0, 0)
+        Parts.Yes.Size = UDim2.fromOffset(76, 25)
         Parts.Yes.BackgroundColor3 = Library.Contrast
         Parts.Yes.TextColor3 = Library.FontColor
 
@@ -374,6 +365,9 @@ function Updater:StyleUpdatePrompt(Outer, Info, BodyText)
         end
     end
     if Parts.No then
+        Parts.No.AnchorPoint = Vector2.new(1, 0)
+        Parts.No.Position = UDim2.new(1, 0, 0, 0)
+        Parts.No.Size = UDim2.fromOffset(76, 25)
         Parts.No.BackgroundColor3 = Library.Contrast
         Parts.No.TextColor3 = Library.DisabledTextColor
     end
@@ -470,8 +464,6 @@ function Updater:BeginUpdateAnimation(Outer, Info)
     return Update, Fail
 end
 
--- Patch update presentation at the loader level so even an older cached
--- Library receives the newest updater UI before its deferred version check runs.
 function Library:PerformUpdateRestart(ComponentName, RemoteInfo)
     local Progress = Library.__FormaUpdateProgress
     local function Report(Text, Value)
