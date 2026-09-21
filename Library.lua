@@ -6158,11 +6158,11 @@ do
 
             SendButton.MouseButton1Click:Connect(Submit);
             ComposerBox.FocusLost:Connect(function(EnterPressed)
-                SendRefreshUtilityButton(Button, false);
+                RefreshUtilityButton(SendButton, false);
                 if EnterPressed then Submit(); end
             end);
             ComposerBox.Focused:Connect(function()
-                SendRefreshUtilityButton(Button, true);
+                RefreshUtilityButton(SendButton, true);
             end);
 
             Chat.Input = ComposerBox;
