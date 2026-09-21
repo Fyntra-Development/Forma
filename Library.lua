@@ -72,6 +72,17 @@ local Fonts = {
         FaceName = "Light",
         Weight = Enum.FontWeight.Light,
         WeightValue = 300,
+        VisualScale = 1,
+    },
+    ["SF Pro"] = {
+        Ttf = "SF-Pro.ttf",
+        RepoPath = "fonts/SF-Pro.ttf",
+        Url = RepoFontBaseUrl .. "fonts/SF-Pro.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+        VisualScale = 0.994,
+        LocalAliases = { "SF-Pro.ttf", "SF Pro.ttf", "SFPro.ttf" },
     },
     Miracode = {
         Ttf = "Miracode.ttf",
@@ -80,6 +91,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
+        VisualScale = 0.933,
     },
     Monocraft = {
         Ttf = "Monocraft.ttf",
@@ -88,6 +100,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
+        VisualScale = 0.900,
     },
     ProggyClean = {
         Ttf = "ProggyClean.ttf",
@@ -96,6 +109,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
+        VisualScale = 1.400,
     },
     ProggyTiny = {
         Ttf = "ProggyTiny.ttf",
@@ -104,6 +118,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
+        VisualScale = 1.600,
     },
     ["XP Tahoma"] = {
         Ttf = "XP-Tahoma.ttf",
@@ -112,6 +127,7 @@ local Fonts = {
         FaceName = "Bold",
         Weight = Enum.FontWeight.Bold,
         WeightValue = 700,
+        VisualScale = 0.963,
     },
     ["Smallest Pixel"] = {
         Ttf = "Smallest-Pixel.ttf",
@@ -120,6 +136,7 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
+        VisualScale = 1.400,
     },
     ["Comic Mono"] = {
         Ttf = "ComicMono.ttf",
@@ -128,11 +145,13 @@ local Fonts = {
         FaceName = "Regular",
         Weight = Enum.FontWeight.Regular,
         WeightValue = 400,
+        VisualScale = 1.215,
     },
 };
 
 local FontOrder = {
     "Rubik Light",
+    "SF Pro",
     "Miracode",
     "Monocraft",
     "ProggyClean",
@@ -207,7 +226,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.3.5';
+    Version = '1.3.6';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
