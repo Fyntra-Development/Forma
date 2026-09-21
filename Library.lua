@@ -226,7 +226,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.4.0+build.1';
+    Version = '1.5.0+build.1';
     Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -10075,7 +10075,7 @@ function Library:CreateUtilityWindow(Config)
     local Window = {
         Title = Title;
         Gui = UtilityGui;
-        Visible = Config.Visible ~= false;
+        Visible = Config.Visible == true;
         Destroyed = false;
         Id = Config.Id or (SafeName .. '_' .. tostring(UtilitySerial));
     };
@@ -11750,7 +11750,7 @@ function Library:CreateOptionWheel(Config)
     local Wheel = {
         Open = false;
         ActiveMode = Config.DefaultMode or 'Configs';
-        Modes = { 'Configs', 'Themes', 'Shortcuts' };
+        Modes = { 'Configs', 'Themes', 'Utilities', 'Shortcuts' };
         Items = {};
         Views = {};
         TargetIndex = tonumber(Config.DefaultIndex) or 1;
@@ -12149,6 +12149,57 @@ function Library:CreateOptionWheel(Config)
                     Text = 'No themes available';
                     Callback = function()
                         Library:Notify('ThemeManager is not attached.', 2);
+                    end;
+                });
+            end
+        elseif Mode == 'Utilities' then
+            local Utilities = {};
+
+            for _, UtilityWindow in ipairs(Library.UtilityWindows or {}) do
+                if type(UtilityWindow) == 'table'
+                    and not UtilityWindow.Destroyed
+                    and UtilityWindow.Frame
+                    and UtilityWindow.Frame.Parent then
+                    table.insert(Utilities, UtilityWindow);
+                end
+            end
+
+            table.sort(Utilities, function(A, B)
+                return string.lower(tostring(A.Title or A.Id or 'Utility'))
+                    < string.lower(tostring(B.Title or B.Id or 'Utility'));
+            end);
+
+            for _, UtilityWindow in ipairs(Utilities) do
+                local Window = UtilityWindow;
+                local Title = tostring(Window.Title or Window.Id or 'Utility');
+
+                table.insert(List, {
+                    Text = Window.Visible and ('Hide ' .. Title) or Title;
+                    Callback = function()
+                        if Window.Destroyed then
+                            Library:Notify('That utility is no longer available.', 2);
+                            return;
+                        end
+
+                        if Window.Visible then
+                            Window:SetVisible(false);
+                        else
+                            Window:SetVisible(true);
+                            Window:BringToFront();
+                        end
+
+                        if Wheel.Open then
+                            Wheel:CloseWheel();
+                        end
+                    end;
+                });
+            end
+
+            if #List == 0 then
+                table.insert(List, {
+                    Text = 'No utilities available';
+                    Callback = function()
+                        Library:Notify('No utility windows have been created yet.', 2);
                     end;
                 });
             end
