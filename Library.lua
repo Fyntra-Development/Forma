@@ -9433,29 +9433,7 @@ function Library:CreateOptionWheel(Config)
         Parent = ScreenGui;
     });
 
-    -- Clean, subtle, localized left-side background treatment (no dark or gray band across the screen)
-    local WheelWash = Library:Create('Frame', {
-        Name = 'OptionWheelWash';
-        BackgroundColor3 = Color3.fromRGB(8, 10, 15);
-        BorderSizePixel = 0;
-        Position = UDim2.new(0, 0, 0, 0);
-        Size = UDim2.new(0, 190, 1, 0);
-        ZIndex = 251;
-        Parent = WheelHolder;
-    });
-
-    local WashGradient = Library:Create('UIGradient', {
-        Rotation = 0;
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.70);
-            NumberSequenceKeypoint.new(0.40, 0.85);
-            NumberSequenceKeypoint.new(0.75, 0.96);
-            NumberSequenceKeypoint.new(1, 1);
-        });
-        Parent = WheelWash;
-    });
-
-    -- Sliding content container for options & subtle header
+    -- Sliding content container for options & subtle header (no fullscreen panel or gray wash)
     local ContentContainer = Library:Create('Frame', {
         Name = 'WheelContentContainer';
         BackgroundTransparency = 1;
@@ -9466,13 +9444,13 @@ function Library:CreateOptionWheel(Config)
         Parent = WheelHolder;
     });
 
-    -- Minimalist elegant header (pure clean text using configured Library font)
+    -- Minimalist elegant header floating above the wheel
     local HeaderFrame = Library:Create('Frame', {
         Name = 'WheelHeader';
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, 52, 0, 36);
-        Size = UDim2.new(0, 320, 0, 46);
+        Position = UDim2.new(0, 80, 0, 34);
+        Size = UDim2.new(0, 340, 0, 46);
         ZIndex = 253;
         Parent = ContentContainer;
     });
@@ -9525,7 +9503,7 @@ function Library:CreateOptionWheel(Config)
             AnchorPoint = Vector2.new(0, 0.5);
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Size = UDim2.new(0, 320, 0, 42);
+            Size = UDim2.new(0, 360, 0, 46);
             ZIndex = 260;
             Visible = false;
             Parent = ContentContainer;
@@ -9541,8 +9519,8 @@ function Library:CreateOptionWheel(Config)
                 Position = UDim2.new(0, 0, 0.5, 0);
                 Size = UDim2.new(1, 0, 1, 0);
                 Text = '';
-                TextSize = 28;
-                TextColor3 = Color3.fromRGB(220, 220, 230);
+                TextSize = 22;
+                TextColor3 = Color3.fromRGB(200, 205, 215);
                 TextTransparency = 1;
                 TextStrokeTransparency = 1;
                 TextXAlignment = Enum.TextXAlignment.Left;
@@ -9562,7 +9540,7 @@ function Library:CreateOptionWheel(Config)
             Position = UDim2.new(0, 0, 0.5, 0);
             Size = UDim2.new(1, 0, 1, 0);
             Text = '';
-            TextSize = 32;
+            TextSize = 38;
             TextColor3 = Color3.fromRGB(255, 255, 255);
             TextTransparency = 0;
             TextStrokeTransparency = 1;
@@ -9742,7 +9720,7 @@ function Library:CreateOptionWheel(Config)
         Wheel:SetMode(Wheel.Modes[NewIndex]);
     end
 
-    -- Continuous curved rendering step
+    -- Continuous curved rendering step (React Bits tight vertical wheel)
     local StepConnection = RenderStepped:Connect(function(Dt)
         if not Wheel.Open and Wheel.Alpha <= 0.01 then
             return;
@@ -9759,25 +9737,17 @@ function Library:CreateOptionWheel(Config)
 
         local MasterAlpha = math.clamp(Wheel.Alpha, 0, 1);
 
-        -- Position wheel comfortably near the left screen edge (not projecting toward center)
-        local BaseX = math.clamp(math.floor(ViewportWidth * 0.05), 65, 85);
+        -- Anchor selected option at roughly 10–12% of screen width and near vertical center
+        local SelectedX = math.clamp(math.floor(ViewportWidth * 0.11), 110, 240);
 
-        -- Distribute cleanly from near top to near bottom with consistent spacing
-        local StepY = math.clamp(ViewportHeight * 0.12, 75, 110);
+        -- Vertical spacing as primary structure: evenly distributed above and below
+        local StepY = math.clamp(math.floor(ViewportHeight * 0.075), 54, 76);
 
-        -- Header & wash align neatly with BaseX
-        HeaderFrame.Position = UDim2.new(0, BaseX - 16, 0, math.clamp(math.floor(ViewportHeight * 0.045), 30, 48));
-        WheelWash.Size = UDim2.new(0, math.clamp(math.floor(ViewportWidth * 0.12), 170, 220), 1, 0);
+        -- Header positioned cleanly above the wheel stack
+        HeaderFrame.Position = UDim2.new(0, SelectedX - 10, 0, math.clamp(math.floor(CenterY - StepY * 3.4), 24, 60));
 
         ModeTitleLabel.TextTransparency = 1 - MasterAlpha;
         SubHintLabel.TextTransparency = 1 - 0.55 * MasterAlpha;
-
-        WashGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1 - (1 - 0.70) * MasterAlpha);
-            NumberSequenceKeypoint.new(0.40, 1 - (1 - 0.85) * MasterAlpha);
-            NumberSequenceKeypoint.new(0.75, 1 - (1 - 0.96) * MasterAlpha);
-            NumberSequenceKeypoint.new(1, 1);
-        });
 
         local TotalItems = #Wheel.Items;
         local CurrentPos = Wheel.SmoothIndex;
@@ -9787,7 +9757,7 @@ function Library:CreateOptionWheel(Config)
             local Delta = i - CurrentPos;
             local AbsDelta = math.abs(Delta);
 
-            if AbsDelta <= 4.2 then
+            if AbsDelta <= 3.8 then
                 UsedSlots = UsedSlots + 1;
                 if UsedSlots > MaxVisibleSlots then break; end
 
@@ -9795,14 +9765,13 @@ function Library:CreateOptionWheel(Config)
                 Slot.BoundIndex = i;
                 Slot.Frame.Visible = true;
 
-                -- Mostly vertical list gently bending left as it recedes:
-                -- Selected option sits only slightly farther right (drift is ~3px for neighbors, tapering gracefully)
-                local HorizontalDrift = (AbsDelta ^ 1.35) * 3.2;
-                local X = BaseX - HorizontalDrift;
+                -- Tight vertical stack with only a very small leftward drift as options move away from selection
+                local HorizontalDrift = (AbsDelta ^ 1.30) * 3.5;
+                local X = SelectedX - HorizontalDrift;
                 local Y = CenterY + Delta * StepY;
 
-                -- Extremely subtle rotation near selection, noticeable rotation reserved for farthest options
-                local Rot = math.sign(Delta) * (AbsDelta ^ 2.1) * 0.45;
+                -- Subtle rotation near center, slightly stronger toward extremes
+                local Rot = math.sign(Delta) * (AbsDelta ^ 1.85) * 0.70;
 
                 Slot.Frame.Position = UDim2.fromOffset(X, Y);
                 Slot.Frame.Rotation = Rot;
@@ -9811,33 +9780,39 @@ function Library:CreateOptionWheel(Config)
                 local Item = Wheel.Items[i];
                 local TextString = Item and Item.Text or '';
 
-                -- Selected option is 32px; gentle falloff for first 1-2 neighbors, then much stronger falloff
+                -- Selected option is dramatically larger (38px); immediate neighbors clearly smaller (22px); farther options rapidly smaller
                 local BaseSize;
-                if AbsDelta <= 1 then
-                    BaseSize = math.floor(32 - AbsDelta * 9); -- 32 -> 23
-                elseif AbsDelta <= 2 then
-                    BaseSize = math.floor(23 - (AbsDelta - 1) * 5); -- 23 -> 18
+                if AbsDelta < 0.25 then
+                    BaseSize = 38;
+                elseif AbsDelta <= 1.0 then
+                    BaseSize = math.floor(38 - AbsDelta * 16); -- 38 -> 22
+                elseif AbsDelta <= 2.0 then
+                    BaseSize = math.floor(22 - (AbsDelta - 1.0) * 7); -- 22 -> 15
                 else
-                    BaseSize = math.max(11, math.floor(18 - (AbsDelta - 2) * 3.5)); -- 18 -> 14.5 -> 11
+                    BaseSize = math.max(10, math.floor(15 - (AbsDelta - 2.0) * 3)); -- 15 -> 12 -> 10
                 end
 
                 -- Opacity & Color:
-                -- First 1-2 neighbors remain clearly readable (Midnight & Neon), then much stronger falloff
+                -- Selected: bright white & perfectly sharp
+                -- Immediate neighbors: slightly blurred/faded but still readable
+                -- Farther options: rapidly dimmer, softer, less readable
                 local TextColor, BaseTrans;
                 if AbsDelta < 0.25 then
                     TextColor = Color3.fromRGB(255, 255, 255);
                     BaseTrans = 0;
-                elseif AbsDelta <= 1.15 then
-                    TextColor = Color3.fromRGB(225, 230, 240);
-                    BaseTrans = 0.20 + (AbsDelta - 0.25) * 0.05;
-                elseif AbsDelta <= 2.15 then
-                    TextColor = Color3.fromRGB(165, 170, 180);
-                    BaseTrans = 0.25 + (AbsDelta - 1.15) * 0.25;
+                elseif AbsDelta <= 1.0 then
+                    TextColor = Color3.fromRGB(195, 200, 210);
+                    BaseTrans = 0.35 + (AbsDelta - 0.25) * 0.10; -- ~0.42 at Delta=1
+                elseif AbsDelta <= 2.0 then
+                    local P = AbsDelta - 1.0;
+                    local Brightness = math.floor(195 - P * 75); -- 195 -> 120
+                    TextColor = Color3.fromRGB(Brightness, Brightness, Brightness + 6);
+                    BaseTrans = 0.45 + P * 0.25; -- ~0.70 at Delta=2
                 else
-                    local FarProgress = math.clamp((AbsDelta - 2.15) / 1.85, 0, 1);
-                    local Brightness = math.floor(160 - FarProgress * 110);
+                    local FarP = math.clamp((AbsDelta - 2.0) / 1.8, 0, 1);
+                    local Brightness = math.floor(120 - FarP * 65); -- 120 -> 55
                     TextColor = Color3.fromRGB(Brightness, Brightness, Brightness + 5);
-                    BaseTrans = math.clamp(0.50 + FarProgress * 0.44, 0.50, 0.94);
+                    BaseTrans = math.clamp(0.70 + FarP * 0.24, 0.70, 0.94); -- ~0.94 at Delta=3.8
                 end
 
                 local FinalMainTrans = 1 - (1 - BaseTrans) * MasterAlpha;
@@ -9850,15 +9825,30 @@ function Library:CreateOptionWheel(Config)
                 Slot.MainText.TextStrokeTransparency = 1;
                 Library:ApplyFont(Slot.MainText);
 
-                -- Blur treatment:
-                -- Reserved strictly for distant options; nearby options have 0 blur for complete sharpness
-                if AbsDelta <= 1.35 then
+                -- Blur / softness treatment:
+                -- Selected: perfectly sharp (zero blur)
+                -- Immediate neighbors: subtle soft defocus
+                -- Farther options: strong optical defocus
+                if AbsDelta < 0.25 then
                     for _, Clone in ipairs(Slot.BlurClones) do
                         Clone.TextTransparency = 1;
                     end
-                elseif AbsDelta <= 2.15 then
-                    local Radius = (AbsDelta - 1.35) * 1.2;
-                    local CloneTrans = 1 - (1 - 0.82) * MasterAlpha;
+                elseif AbsDelta <= 1.0 then
+                    local Radius = 0.85 * AbsDelta;
+                    local CloneTrans = 1 - (1 - 0.78) * MasterAlpha;
+                    for k, Off in ipairs(Offsets) do
+                        local Clone = Slot.BlurClones[k];
+                        Clone.Text = TextString;
+                        Clone.TextSize = BaseSize;
+                        Clone.TextColor3 = TextColor;
+                        Clone.TextTransparency = CloneTrans;
+                        Clone.TextStrokeTransparency = 1;
+                        Clone.Position = UDim2.new(0, Off.X * Radius, 0.5, Off.Y * Radius);
+                        Library:ApplyFont(Clone);
+                    end
+                elseif AbsDelta <= 2.0 then
+                    local Radius = 0.85 + (AbsDelta - 1.0) * 1.35;
+                    local CloneTrans = 1 - (1 - 0.85) * MasterAlpha;
                     for k, Off in ipairs(Offsets) do
                         local Clone = Slot.BlurClones[k];
                         Clone.Text = TextString;
@@ -9870,9 +9860,9 @@ function Library:CreateOptionWheel(Config)
                         Library:ApplyFont(Clone);
                     end
                 else
-                    local FarProgress = math.clamp((AbsDelta - 2.15) / 1.85, 0, 1);
-                    local Radius = 1.0 + FarProgress * 2.8;
-                    local TargetCloneTrans = math.clamp(BaseTrans + 0.12, 0.70, 0.98);
+                    local FarP = math.clamp((AbsDelta - 2.0) / 1.8, 0, 1);
+                    local Radius = 2.2 + FarP * 1.6;
+                    local TargetCloneTrans = math.clamp(BaseTrans + 0.08, 0.75, 0.98);
                     local CloneTrans = 1 - (1 - TargetCloneTrans) * MasterAlpha;
 
                     for k, Off in ipairs(Offsets) do
