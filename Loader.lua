@@ -143,6 +143,9 @@ end
 
 function Updater:EnsureInstalled()
     if not self.Persistent then
+        local Manifest, Error = self:FetchManifest()
+        if not Manifest then return false, Error end
+        self.InstalledManifest = Manifest
         self.RemoteOnly = true
         return true
     end
@@ -221,7 +224,13 @@ end
 local LibraryChunk, CompileError = loadstring(LibrarySource)
 if not LibraryChunk then error(CompileError) end
 
-Updater.Library = LibraryChunk()
+local Environment = getgenv and getgenv() or _G
+Environment.__FormaLoaderBooting = true
+local LibrarySuccess, LibraryResult = pcall(LibraryChunk)
+Environment.__FormaLoaderBooting = nil
+if not LibrarySuccess then error(LibraryResult) end
+
+Updater.Library = LibraryResult
 Updater.Library:SetUpdateRestartSource(Updater.LoaderUrl)
 
 return Updater
