@@ -1,7 +1,8 @@
 local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
+local contentProvider = game:GetService('ContentProvider')
 local ThemeManager = {} do
-	ThemeManager.Version = '1.3.0+build.1'
+	ThemeManager.Version = '1.4.0+build.1'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -9,7 +10,7 @@ local ThemeManager = {} do
 	ThemeManager.OverlayBaseUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/assets/idfk/'
 	ThemeManager.MenuManagerUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/addons/MenuManager.lua'
 	ThemeManager.MenuManager = nil
-	ThemeManager.OverlayOrder = { 'EDP445', 'Jane Doe', 'Ibuki', 'Marin Kitagawa' }
+	ThemeManager.OverlayOrder = { 'EDP445', 'Jane Doe', 'Ibuki', 'Marin Kitagawa', 'Alya' }
 	ThemeManager.OverlayVisualInset = Vector2.new(10, 2)
 	ThemeManager.OverlayAssets = {
 		['EDP445'] = {
@@ -32,15 +33,24 @@ local ThemeManager = {} do
 			Size = UDim2.fromOffset(300, 300);
 			VisibleAnchor = Vector2.new(0.08, 0.842);
 		};
+		['Alya'] = {
+			File = 'alya.png';
+			Size = UDim2.fromOffset(300, 300);
+			VisibleAnchor = Vector2.new(0.08, 0.842);
+		};
 	}
 	ThemeManager.OverlayEnabled = false
 	ThemeManager.OverlaySelection = 'Jane Doe'
 	ThemeManager.OverlayImage = nil
+	ThemeManager.OverlayBuffer = nil
 	ThemeManager.OverlayTween = nil
+	ThemeManager.OverlayTweens = {}
 	ThemeManager.OverlayAnimationId = 0
 	ThemeManager.OverlaySessionId = httpService:GenerateGUID(false)
 	ThemeManager.OverlayAssetCache = {}
 	ThemeManager.OverlayCachePrepared = false
+	ThemeManager.OverlayCacheVersion = 2
+	ThemeManager.OverlayWarmupStarted = false
 	ThemeManager.PreferencesFileName = 'forma-ui-preferences.json'
 	ThemeManager.PreferenceSaveId = 0
 	ThemeManager.ThemeFields = {
@@ -79,6 +89,11 @@ local ThemeManager = {} do
 		['Ash'] = { 22, httpService:JSONDecode('{"FontColor":"f0f0f0","MainColor":"1a1a1a","AccentColor":"a8a8a8","BlendShade":"252525","BackgroundColor":"121212","OutlineColor":"3a3a3a","DisabledTextColor":"8a8a8a","Contrast":"222222","Inline":"0a0a0a"}') },
 		['Terminal'] = { 23, httpService:JSONDecode('{"FontColor":"c7ffd3","MainColor":"0a100b","AccentColor":"55ff7a","BlendShade":"0b2a13","BackgroundColor":"050805","OutlineColor":"1f3b27","DisabledTextColor":"65916e","Contrast":"0e1a11","Inline":"020402"}') },
 		['AMOLED'] = { 24, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"050505","AccentColor":"4f8cff","BlendShade":"07172c","BackgroundColor":"000000","OutlineColor":"222222","DisabledTextColor":"808080","Contrast":"0d0d0d","Inline":"000000"}') },
+		['Synthwave 84'] = { 25, httpService:JSONDecode('{"FontColor":"f8e9ff","MainColor":"1b1530","AccentColor":"ff4ecd","BlendShade":"35112f","BackgroundColor":"100b1f","OutlineColor":"514060","DisabledTextColor":"a887b0","Contrast":"241942","Inline":"090613"}') },
+		['Solar Flare'] = { 26, httpService:JSONDecode('{"FontColor":"fff4d6","MainColor":"211a10","AccentColor":"ffb627","BlendShade":"3b2608","BackgroundColor":"120e08","OutlineColor":"51422a","DisabledTextColor":"a49375","Contrast":"2b2113","Inline":"090704"}') },
+		['Deep Ocean'] = { 27, httpService:JSONDecode('{"FontColor":"dffcff","MainColor":"10242b","AccentColor":"28c7d8","BlendShade":"0a3138","BackgroundColor":"081419","OutlineColor":"28505a","DisabledTextColor":"749aa1","Contrast":"16323a","Inline":"040b0e"}') },
+		['Void Pulse'] = { 28, httpService:JSONDecode('{"FontColor":"f1ebff","MainColor":"151022","AccentColor":"9b5cff","BlendShade":"231044","BackgroundColor":"09070f","OutlineColor":"3c3154","DisabledTextColor":"87799e","Contrast":"1d162d","Inline":"050308"}') },
+		['Sakura Neon'] = { 29, httpService:JSONDecode('{"FontColor":"ffeaf4","MainColor":"25131e","AccentColor":"ff6fae","BlendShade":"42152b","BackgroundColor":"140a10","OutlineColor":"563245","DisabledTextColor":"ad8294","Contrast":"311a27","Inline":"0b0508"}') },
 	}
 
 	function ThemeManager:ApplyTheme(theme)
@@ -170,6 +185,7 @@ local ThemeManager = {} do
 			TextSize = Options and Options.ThemeManager_TextSize and Options.ThemeManager_TextSize.Value or self.Library.TextSize;
 			OverlayEnabled = Toggles and Toggles.ThemeManager_OverlayEnabled and Toggles.ThemeManager_OverlayEnabled.Value or self.OverlayEnabled;
 			OverlayImage = Options and Options.ThemeManager_OverlayImage and Options.ThemeManager_OverlayImage.Value or self.OverlaySelection;
+			Cursor = Options and Options.ThemeManager_Cursor and Options.ThemeManager_Cursor.Value or self.Library.CursorStyle;
 		}
 
 		local success, encoded = pcall(httpService.JSONEncode, httpService, data)
@@ -204,8 +220,11 @@ local ThemeManager = {} do
 			return
 		end
 
+		local currentPrefix = 'forma-overlay-v' .. tostring(self.OverlayCacheVersion) .. '-'
 		for _, file in next, files do
-			if type(file) == 'string' and file:find('forma-overlay-', 1, true) then
+			if type(file) == 'string'
+				and file:find('forma-overlay-', 1, true)
+				and not file:find(currentPrefix, 1, true) then
 				pcall(delfile, file)
 			end
 		end
@@ -264,23 +283,43 @@ local ThemeManager = {} do
 
 		self:PrepareOverlayCache()
 
-		local url = self.OverlayBaseUrl .. info.File .. '?v=' .. self.OverlaySessionId
-		local ok, data = pcall(function()
-			return game:HttpGet(url)
-		end)
+		local safeFile = info.File:gsub('[^%w%._%-]', '_')
+		local localPath = 'FormaAssets/idfk/forma-overlay-v'
+			.. tostring(self.OverlayCacheVersion)
+			.. '-'
+			.. safeFile
 
-		if not ok or not self:IsValidOverlayPng(data) then
-			return nil
+		local data
+		if isfile and readfile and isfile(localPath) then
+			local readOk, cachedData = pcall(readfile, localPath)
+			if readOk and self:IsValidOverlayPng(cachedData) then
+				data = cachedData
+			end
+		end
+
+		if not data then
+			local url = self.OverlayBaseUrl
+				.. info.File
+				.. '?v='
+				.. tostring(self.OverlayCacheVersion)
+				.. '&session='
+				.. self.OverlaySessionId
+			local ok, downloaded = pcall(function()
+				return game:HttpGet(url)
+			end)
+
+			if not ok or not self:IsValidOverlayPng(downloaded) then
+				return nil
+			end
+
+			data = downloaded
+			local wrote = pcall(writefile, localPath, data)
+			if not wrote then
+				return nil
+			end
 		end
 
 		info.SourceSize = self:GetPngSize(data)
-
-		local safeFile = info.File:gsub('[^%w%._%-]', '_')
-		local localPath = 'FormaAssets/idfk/forma-overlay-' .. self.OverlaySessionId .. '-' .. safeFile
-		local wrote = pcall(writefile, localPath, data)
-		if not wrote then
-			return nil
-		end
 
 		local assetOk, asset = pcall(getCustomAsset, localPath)
 		if not assetOk or not asset then
@@ -289,6 +328,28 @@ local ThemeManager = {} do
 
 		self.OverlayAssetCache[name] = asset
 		return asset
+	end
+
+	function ThemeManager:CreateOverlayLabel(holder, name)
+		local overlay = self.Library:Create('ImageLabel', {
+			Name = name;
+			Active = false;
+			AnchorPoint = Vector2.new(0, 0);
+			BackgroundTransparency = 1;
+			BorderSizePixel = 0;
+			Image = '';
+			ImageTransparency = 1;
+			ScaleType = Enum.ScaleType.Fit;
+			Visible = false;
+			ZIndex = 500;
+			Parent = holder;
+		})
+
+		pcall(function()
+			overlay.ResampleMode = Enum.ResamplerMode.Default
+		end)
+
+		return overlay
 	end
 
 	function ThemeManager:EnsureOverlay()
@@ -302,28 +363,57 @@ local ThemeManager = {} do
 			self.OverlayImage:Destroy()
 			self.OverlayImage = nil
 		end
-
-		if not self.OverlayImage then
-			self.OverlayImage = self.Library:Create('ImageLabel', {
-				Name = 'FormaThemeOverlay';
-				Active = false;
-				AnchorPoint = Vector2.new(0, 0);
-				BackgroundTransparency = 1;
-				BorderSizePixel = 0;
-				Image = '';
-				ImageTransparency = 1;
-				ScaleType = Enum.ScaleType.Fit;
-				Visible = false;
-				ZIndex = 500;
-				Parent = holder;
-			})
-
-			pcall(function()
-				self.OverlayImage.ResampleMode = Enum.ResamplerMode.Default
-			end)
+		if self.OverlayBuffer and self.OverlayBuffer.Parent ~= holder then
+			self.OverlayBuffer:Destroy()
+			self.OverlayBuffer = nil
 		end
 
-		return self.OverlayImage
+		if not self.OverlayImage then
+			self.OverlayImage = self:CreateOverlayLabel(holder, 'FormaThemeOverlayA')
+		end
+		if not self.OverlayBuffer then
+			self.OverlayBuffer = self:CreateOverlayLabel(holder, 'FormaThemeOverlayB')
+		end
+
+		return self.OverlayImage, self.OverlayBuffer
+	end
+
+	function ThemeManager:CancelOverlayTweens()
+		for _, tween in ipairs(self.OverlayTweens or {}) do
+			pcall(function()
+				tween:Cancel()
+			end)
+		end
+		table.clear(self.OverlayTweens)
+		self.OverlayTween = nil
+	end
+
+	function ThemeManager:GetOverlayPosition(info)
+		if info.Position then
+			return info.Position
+		end
+
+		return UDim2.fromOffset(
+			self.OverlayVisualInset.X - (info.Size.X.Offset * info.VisibleAnchor.X),
+			self.OverlayVisualInset.Y - (info.Size.Y.Offset * info.VisibleAnchor.Y)
+		)
+	end
+
+	function ThemeManager:ApplyOverlayLayout(overlay, info)
+		overlay.Size = info.Size
+		overlay.Position = self:GetOverlayPosition(info)
+		overlay.AnchorPoint = Vector2.new(0, 0)
+		overlay.ScaleType = Enum.ScaleType.Fit
+	end
+
+	function ThemeManager:PreloadOverlay(overlay)
+		if not overlay then
+			return
+		end
+
+		pcall(function()
+			contentProvider:PreloadAsync({ overlay })
+		end)
 	end
 
 	function ThemeManager:TweenOverlayTransparency(target)
@@ -332,44 +422,38 @@ local ThemeManager = {} do
 			return
 		end
 
-		self.OverlayAnimationId = self.OverlayAnimationId + 1
-		local animationId = self.OverlayAnimationId
-
-		if self.OverlayTween then
-			pcall(function()
-				self.OverlayTween:Cancel()
-			end)
-		end
+		self:CancelOverlayTweens()
 
 		local tween = tweenService:Create(
 			overlay,
-			TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 			{ ImageTransparency = target }
 		)
 
 		self.OverlayTween = tween
+		table.insert(self.OverlayTweens, tween)
 		tween:Play()
-
-		tween.Completed:Connect(function()
-			if animationId ~= self.OverlayAnimationId then
-				return
-			end
-
-			if target >= 1 and not self.OverlayEnabled then
-				overlay.Visible = false
-			end
-
-			if self.OverlayTween == tween then
-				self.OverlayTween = nil
-			end
-		end)
 	end
 
-	function ThemeManager:GetOverlayPosition(info)
-		return UDim2.fromOffset(
-			self.OverlayVisualInset.X - (info.Size.X.Offset * info.VisibleAnchor.X),
-			self.OverlayVisualInset.Y - (info.Size.Y.Offset * info.VisibleAnchor.Y)
-		)
+	function ThemeManager:WarmOverlayAssets()
+		if self.OverlayWarmupStarted then
+			return
+		end
+
+		self.OverlayWarmupStarted = true
+		task.spawn(function()
+			local preferred = self.OverlaySelection
+			if preferred and self.OverlayAssets[preferred] then
+				pcall(self.GetOverlayAsset, self, preferred)
+			end
+
+			for _, name in ipairs(self.OverlayOrder) do
+				if name ~= preferred then
+					pcall(self.GetOverlayAsset, self, name)
+					task.wait()
+				end
+			end
+		end)
 	end
 
 	function ThemeManager:SetOverlayImage(name)
@@ -379,47 +463,114 @@ local ThemeManager = {} do
 		end
 
 		self.OverlaySelection = name
+		self.OverlayAnimationId = self.OverlayAnimationId + 1
+		local animationId = self.OverlayAnimationId
 
-		local overlay = self:EnsureOverlay()
-		if not overlay then
+		local front, buffer = self:EnsureOverlay()
+		if not front or not buffer or not self.OverlayEnabled then
 			return
 		end
 
-		overlay.Size = info.Size
-		overlay.Position = self:GetOverlayPosition(info)
+		task.spawn(function()
+			local asset = self:GetOverlayAsset(name)
+			if animationId ~= self.OverlayAnimationId
+				or not self.OverlayEnabled
+				or not asset then
+				return
+			end
 
-		if not self.OverlayEnabled then
-			overlay.Visible = false
-			return
-		end
+			front, buffer = self:EnsureOverlay()
+			if not front or not buffer then
+				return
+			end
 
-		local asset = self:GetOverlayAsset(name)
-		if not asset then
-			overlay.Visible = false
-			return
-		end
+			self:ApplyOverlayLayout(buffer, info)
+			buffer.Image = asset
+			buffer.ImageTransparency = 1
+			buffer.Visible = true
+			self:PreloadOverlay(buffer)
 
-		overlay.Image = asset
-		overlay.ImageTransparency = 1
-		overlay.Visible = true
-		self:TweenOverlayTransparency(0)
+			if animationId ~= self.OverlayAnimationId or not self.OverlayEnabled then
+				buffer.Visible = false
+				return
+			end
+
+			self:CancelOverlayTweens()
+
+			local fadeIn = tweenService:Create(
+				buffer,
+				TweenInfo.new(0.13, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ ImageTransparency = 0 }
+			)
+			table.insert(self.OverlayTweens, fadeIn)
+
+			local hadFront = front.Visible and front.Image ~= ''
+			local fadeOut
+			if hadFront then
+				fadeOut = tweenService:Create(
+					front,
+					TweenInfo.new(0.11, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+					{ ImageTransparency = 1 }
+				)
+				table.insert(self.OverlayTweens, fadeOut)
+				fadeOut:Play()
+			end
+
+			fadeIn:Play()
+			fadeIn.Completed:Connect(function()
+				if animationId ~= self.OverlayAnimationId or not self.OverlayEnabled then
+					return
+				end
+
+				front.Visible = false
+				front.ImageTransparency = 1
+				self.OverlayImage = buffer
+				self.OverlayBuffer = front
+				self.OverlayImage.ImageTransparency = 0
+				self.OverlayImage.Visible = true
+				self.OverlayTween = nil
+				table.clear(self.OverlayTweens)
+			end)
+		end)
 	end
 
 	function ThemeManager:SetOverlayEnabled(enabled)
 		self.OverlayEnabled = not not enabled
 
-		local overlay = self:EnsureOverlay()
-		if not overlay then
+		if self.OverlayEnabled then
+			self:SetOverlayImage(self.OverlaySelection)
 			return
 		end
 
-		if self.OverlayEnabled then
-			self:SetOverlayImage(self.OverlaySelection)
-		elseif overlay.Visible then
-			self:TweenOverlayTransparency(1)
-		else
-			overlay.Visible = false
+		self.OverlayAnimationId = self.OverlayAnimationId + 1
+		local animationId = self.OverlayAnimationId
+		local front, buffer = self:EnsureOverlay()
+		self:CancelOverlayTweens()
+
+		for _, overlay in ipairs({ front, buffer }) do
+			if overlay and overlay.Visible then
+				local tween = tweenService:Create(
+					overlay,
+					TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+					{ ImageTransparency = 1 }
+				)
+				table.insert(self.OverlayTweens, tween)
+				tween:Play()
+			end
 		end
+
+		task.delay(0.13, function()
+			if animationId ~= self.OverlayAnimationId or self.OverlayEnabled then
+				return
+			end
+			for _, overlay in ipairs({ front, buffer }) do
+				if overlay then
+					overlay.Visible = false
+					overlay.ImageTransparency = 1
+				end
+			end
+			table.clear(self.OverlayTweens)
+		end)
 	end
 
 	function ThemeManager:EnsureMenuManager()
@@ -475,6 +626,7 @@ local ThemeManager = {} do
 	function ThemeManager:CreateThemeManager(groupbox)
 		local SavedPreferences = self:LoadPreferences()
 		local PreferredFont = type(SavedPreferences.Font) == 'string' and SavedPreferences.Font or self.Library.FontName
+		local PreferredCursor = type(SavedPreferences.Cursor) == 'string' and SavedPreferences.Cursor or self.Library.CursorStyle
 		if tonumber(SavedPreferences.TextSize) then
 			self.Library:SetTextSize(SavedPreferences.TextSize)
 		end
@@ -484,6 +636,10 @@ local ThemeManager = {} do
 		if type(SavedPreferences.OverlayEnabled) == 'boolean' then
 			self.OverlayEnabled = SavedPreferences.OverlayEnabled
 		end
+		if self.Library.SetCursorStyle then
+			self.Library:SetCursorStyle(PreferredCursor)
+		end
+		self:WarmOverlayAssets()
 
 		for _, entry in ipairs(self.ThemeFields) do
 			groupbox:AddLabel(entry.Label):AddColorPicker(entry.Key, { Default = self.Library[entry.Key] });
@@ -496,6 +652,20 @@ local ThemeManager = {} do
 		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex, Searchable = true })
 		Options.ThemeManager_Font:OnChanged(function()
 			self.Library:SetFont(Options.ThemeManager_Font.Value)
+			self:QueueSavePreferences()
+		end)
+
+		local CursorStyles = self.Library.GetCursorStyles and self.Library:GetCursorStyles() or { 'Arrow', 'Dot', 'System' }
+		if not table.find(CursorStyles, PreferredCursor) then PreferredCursor = self.Library.CursorStyle or 'Arrow' end
+		groupbox:AddDropdown('ThemeManager_Cursor', {
+			Text = 'Cursor';
+			Values = CursorStyles;
+			Default = table.find(CursorStyles, PreferredCursor) or 1;
+		})
+		Options.ThemeManager_Cursor:OnChanged(function()
+			if self.Library.SetCursorStyle then
+				self.Library:SetCursorStyle(Options.ThemeManager_Cursor.Value)
+			end
 			self:QueueSavePreferences()
 		end)
 
