@@ -158,7 +158,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.0.0';
+    Version = '1.1.0';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
