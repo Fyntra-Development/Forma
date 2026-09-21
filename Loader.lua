@@ -6,6 +6,12 @@ local Updater = {}
 Updater.RepoBaseUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/'
 Updater.LoaderUrl = Updater.RepoBaseUrl .. 'Loader.lua'
 Updater.ManifestUrl = Updater.RepoBaseUrl .. 'versions.json'
+Updater.ManifestSources = {
+    Updater.ManifestUrl,
+    'https://raw.githubusercontent.com/Fyntra-Development/Forma/refs/heads/main/versions.json',
+    'https://github.com/Fyntra-Development/Forma/raw/refs/heads/main/versions.json',
+}
+Updater.ManifestApiUrl = 'https://api.github.com/repos/Fyntra-Development/Forma/contents/versions.json?ref=main'
 Updater.CacheRoot = 'FormaCache'
 Updater.ManifestPath = Updater.CacheRoot .. '/installed.json'
 Updater.Persistent = type(isfile) == 'function'
@@ -18,10 +24,42 @@ local function CacheBust(Url)
     return tostring(Url) .. Separator .. 'forma_loader=' .. tostring(math.floor(os.clock() * 100000))
 end
 
-local function Fetch(PathOrUrl)
+local function Fetch(PathOrUrl, ExtraHeaders)
     local Url = tostring(PathOrUrl)
     if not Url:match('^https?://') then
         Url = Updater.RepoBaseUrl .. Url
+    end
+
+    local Request = request or http_request or (syn and syn.request)
+    if type(Request) == 'function' then
+        local Headers = {
+            ['Cache-Control'] = 'no-cache, no-store, max-age=0',
+            ['Pragma'] = 'no-cache',
+            ['Expires'] = '0',
+            ['User-Agent'] = 'Forma-Updater',
+        }
+        if type(ExtraHeaders) == 'table' then
+            for Key, Value in next, ExtraHeaders do
+                Headers[Key] = Value
+            end
+        end
+
+        local Success, Response = pcall(Request, {
+            Url = CacheBust(Url),
+            Method = 'GET',
+            Headers = Headers,
+        })
+        if Success and type(Response) == 'table' then
+            local Body = Response.Body or Response.body
+            local Status = tonumber(Response.StatusCode or Response.Status or Response.status_code) or 200
+            if Status >= 200 and Status < 300 and type(Body) == 'string' and Body ~= '' then
+                return Body
+            end
+        end
+    end
+
+    if ExtraHeaders and next(ExtraHeaders) then
+        return nil, 'header-capable request unavailable'
     end
 
     local Success, Body = pcall(function()
@@ -64,11 +102,30 @@ local function LocalPath(RemotePath)
 end
 
 function Updater:FetchManifest()
-    local Body, Error = Fetch(self.ManifestUrl)
-    if not Body then return nil, Error end
-    local Manifest = DecodeJson(Body)
-    if not Manifest then return nil, 'invalid versions.json' end
-    return Manifest
+    local ApiBody = Fetch(self.ManifestApiUrl, {
+        ['Accept'] = 'application/vnd.github.raw+json',
+        ['X-GitHub-Api-Version'] = '2022-11-28',
+    })
+    local ApiManifest = DecodeJson(ApiBody)
+    local ApiComponents = ApiManifest and (ApiManifest.Components or ApiManifest.components)
+    if type(ApiComponents) == 'table' and type(ApiComponents.Library) == 'table' then
+        return ApiManifest
+    end
+
+    for _, Url in ipairs(self.ManifestSources or { self.ManifestUrl }) do
+        local Body, Error = Fetch(Url)
+        if Body then
+            local Manifest = DecodeJson(Body)
+            local Components = Manifest and (Manifest.Components or Manifest.components)
+            if type(Components) == 'table' and type(Components.Library) == 'table' then
+                return Manifest
+            end
+        elseif Error then
+            self.LastManifestError = Error
+        end
+    end
+
+    return nil, self.LastManifestError or 'invalid versions.json'
 end
 
 function Updater:ReadInstalledManifest()
