@@ -9408,6 +9408,7 @@ function Library:CreateOptionWheel(Config)
         Items = {};
         TargetIndex = 1;
         SmoothIndex = 1;
+        Velocity = 0;
         AnimationId = 0;
         Keybind = Config.Keybind or 'V';
         Enabled = Config.Enabled ~= false;
@@ -9416,30 +9417,50 @@ function Library:CreateOptionWheel(Config)
         Alpha = 0;
     };
 
-    -- Clean up any residual lighting blur
+    -- Give the wheel its own full-viewport GUI so its placement is not shifted by
+    -- Roblox's topbar/safe-area inset or by the main library window hierarchy.
     local Lighting = game:GetService('Lighting');
     local OldBlur = Lighting:FindFirstChild('FormaOptionWheelBlur');
     if OldBlur then pcall(function() OldBlur:Destroy(); end); end
 
-    -- Wheel root container
+    local OldWheelGui = ParentGui and ParentGui:FindFirstChild('FormaOptionWheelGui');
+    if OldWheelGui then pcall(function() OldWheelGui:Destroy(); end); end
+
+    local WheelGui = Instance.new('ScreenGui');
+    WheelGui.Name = 'FormaOptionWheelGui';
+    WheelGui.ResetOnSpawn = false;
+    WheelGui.IgnoreGuiInset = true;
+    WheelGui.ZIndexBehavior = Enum.ZIndexBehavior.Global;
+    WheelGui.DisplayOrder = 100000;
+    pcall(function() ProtectGui(WheelGui); end);
+    WheelGui.Parent = ParentGui;
+
+    -- A tiny global world blur helps the left vignette read as soft focus. The
+    -- amount stays deliberately low so the right side of the game is not washed out.
+    local SceneBlur = Instance.new('BlurEffect');
+    SceneBlur.Name = 'FormaOptionWheelBlur';
+    SceneBlur.Size = 0;
+    SceneBlur.Parent = Lighting;
+
     local WheelHolder = Library:Create('Frame', {
         Name = 'OptionWheelHolder';
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, 0, 0, 0);
-        Size = UDim2.new(1, 0, 1, 0);
+        Position = UDim2.fromScale(0, 0);
+        Size = UDim2.fromScale(1, 1);
         ZIndex = 250;
         Visible = false;
-        Parent = ScreenGui;
+        Parent = WheelGui;
     });
 
-    -- Ultra-subtle vignette gradient to anchor wheel against bright scenes without forming any visible panel
+    -- Localized dark vignette. It is intentionally black/purple-black rather than
+    -- gray so it feels like the React Bits backdrop instead of a translucent panel.
     local WheelWash = Library:Create('Frame', {
         Name = 'OptionWheelWash';
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0);
+        BackgroundColor3 = Color3.fromRGB(13, 11, 18);
         BorderSizePixel = 0;
-        Position = UDim2.new(0, 0, 0, 0);
-        Size = UDim2.new(0, 280, 1, 0);
+        Position = UDim2.fromScale(0, 0);
+        Size = UDim2.new(0.46, 0, 1, 0);
         ZIndex = 251;
         Parent = WheelHolder;
     });
@@ -9453,65 +9474,25 @@ function Library:CreateOptionWheel(Config)
         Parent = WheelWash;
     });
 
-    -- Sliding content container for options & subtle header
+    -- Zero-size anchor located exactly where the selected text begins. Every wheel
+    -- item is positioned locally from this point, eliminating double-X-offset bugs.
     local ContentContainer = Library:Create('Frame', {
-        Name = 'WheelContentContainer';
+        Name = 'WheelAnchor';
         BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, -16, 0, 0);
-        Size = UDim2.new(1, 0, 1, 0);
+        Position = UDim2.new(0.108, -14, 0.505, 0);
+        Size = UDim2.fromOffset(0, 0);
         ZIndex = 252;
         Parent = WheelHolder;
     });
 
-    -- Minimalist elegant header floating above the wheel
-    local HeaderFrame = Library:Create('Frame', {
-        Name = 'WheelHeader';
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Position = UDim2.new(0, 0, 0, 0);
-        Size = UDim2.new(0, 0, 0, 0);
-        Visible = false; -- React Bits reference has no mode/header chrome around the wheel
-        ZIndex = 253;
-        Parent = ContentContainer;
-    });
+    -- No mode title, instructions, key hints, or other chrome: the wheel itself is the UI.
 
-    local ModeTitleLabel = Library:Create('TextLabel', {
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Position = UDim2.new(0, 0, 0, 0);
-        Size = UDim2.new(1, 0, 0, 16);
-        Text = string.upper(Wheel.ActiveMode);
-        TextSize = 13;
-        TextColor3 = Library.AccentColor;
-        TextStrokeTransparency = 1;
-        TextXAlignment = Enum.TextXAlignment.Left;
-        ZIndex = 254;
-        Parent = HeaderFrame;
-    });
-    Library:ApplyFont(ModeTitleLabel);
-    Library:AddToRegistry(ModeTitleLabel, { TextColor3 = 'AccentColor'; });
-
-    local SubHintLabel = Library:Create('TextLabel', {
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Position = UDim2.new(0, 0, 0, 18);
-        Size = UDim2.new(1, 0, 0, 14);
-        Text = 'Scroll to browse  •  [Q / E] Mode  •  [Enter / Click] Select';
-        TextSize = 11;
-        TextColor3 = Color3.fromRGB(190, 195, 205);
-        TextTransparency = 0.45;
-        TextStrokeTransparency = 1;
-        TextXAlignment = Enum.TextXAlignment.Left;
-        ZIndex = 254;
-        Parent = HeaderFrame;
-    });
-    Library:ApplyFont(SubHintLabel);
 
     -- A small pool is enough: the reference only shows ~5 meaningful rows.
     -- The clone ring is deliberately very faint; strong clone opacity creates the
     -- doubled/outlined text artifact that the previous implementation had.
-    local MaxVisibleSlots = 7;
+    local MaxVisibleSlots = 5;
     local SlotPool = {};
     local Offsets = {
         Vector2.new(-1.00,  0.00), Vector2.new(1.00,  0.00),
@@ -9607,11 +9588,11 @@ function Library:CreateOptionWheel(Config)
             Wheel.TargetIndex = 1;
         end
         Wheel.SmoothIndex = Wheel.TargetIndex;
+        Wheel.Velocity = 0;
     end
 
     function Wheel:SetMode(Mode)
         Wheel.ActiveMode = Mode;
-        ModeTitleLabel.Text = string.upper(Mode);
 
         local List = {};
         if Mode == 'Configs' then
@@ -9753,89 +9734,66 @@ function Library:CreateOptionWheel(Config)
         Wheel:SetMode(Wheel.Modes[NewIndex]);
     end
 
-    -- React Bits-inspired wheel rendering. The reference image is 1078x736.
-    -- Scale from the smaller screen dimension so ultrawide/tall windows do not
-    -- stretch the wheel into a huge menu.
-    local function WheelCurve(AbsDelta, CenterValue, FirstValue, SecondValue, ThirdValue)
-        if AbsDelta <= 1 then
-            return CenterValue + (FirstValue - CenterValue) * AbsDelta;
-        elseif AbsDelta <= 2 then
-            return FirstValue + (SecondValue - FirstValue) * (AbsDelta - 1);
-        else
-            local P = math.clamp(AbsDelta - 2, 0, 1);
-            return SecondValue + (ThirdValue - SecondValue) * P;
+    -- React Bits-style wheel renderer. Geometry is local to WheelAnchor, so the
+    -- selected item stays at the same screen point regardless of font size or insets.
+    local function LerpStops(D, A, B, C)
+        if D <= 1 then
+            return A + (B - A) * D;
         end
+        return B + (C - B) * math.clamp(D - 1, 0, 1);
     end
 
     local StepConnection = RenderStepped:Connect(function(Dt)
         if not Wheel.Open and Wheel.Alpha <= 0.01 then
+            SceneBlur.Size = 0;
             return;
         end
 
-        -- Smooth continuous movement between integer choices.
-        local Damping = 1 - math.exp(-20 * Dt);
-        Wheel.SmoothIndex = Wheel.SmoothIndex + (Wheel.TargetIndex - Wheel.SmoothIndex) * Damping;
+        -- Critically-damped spring. This feels much closer to the React Bits picker
+        -- than repeatedly tweening each row or linearly lerping between integer slots.
+        Wheel.Velocity = Wheel.Velocity or 0;
+        local Error = Wheel.TargetIndex - Wheel.SmoothIndex;
+        local Stiffness = 110;
+        local SpringDamping = 21;
+        Wheel.Velocity = Wheel.Velocity + (Error * Stiffness - Wheel.Velocity * SpringDamping) * Dt;
+        Wheel.SmoothIndex = Wheel.SmoothIndex + Wheel.Velocity * Dt;
+
+        if math.abs(Error) < 0.0008 and math.abs(Wheel.Velocity) < 0.002 then
+            Wheel.SmoothIndex = Wheel.TargetIndex;
+            Wheel.Velocity = 0;
+        end
 
         local TotalItems = #Wheel.Items;
-        if TotalItems > 1 and math.abs(Wheel.TargetIndex - Wheel.SmoothIndex) < 0.008 then
-            local BaseTarget = math.round(Wheel.TargetIndex);
-            local Wrapped = ((BaseTarget - 1) % TotalItems) + 1;
-            if Wrapped ~= BaseTarget then
-                local Diff = Wrapped - BaseTarget;
-                Wheel.TargetIndex = Wrapped;
-                Wheel.SmoothIndex = Wheel.SmoothIndex + Diff;
-            end
-        end
-
-        -- IMPORTANT: use the GUI's actual rendered coordinate space, not Camera.ViewportSize.
-        -- This avoids mismatches caused by topbar/safe-area insets or executor GUI parents.
-        local HolderSize = WheelHolder.AbsoluteSize;
-        local ViewportWidth = HolderSize.X;
-        local ViewportHeight = HolderSize.Y;
-        if ViewportWidth <= 2 or ViewportHeight <= 2 then
-            local Camera = workspace.CurrentCamera;
-            local Fallback = Camera and Camera.ViewportSize or Vector2.new(1078, 736);
-            ViewportWidth = Fallback.X;
-            ViewportHeight = Fallback.Y;
-        end
-
         local MasterAlpha = math.clamp(Wheel.Alpha, 0, 1);
-        local DesignScale = math.clamp(
-            math.min(ViewportWidth / 1078, ViewportHeight / 736),
-            0.78,
-            1.45
-        );
+        local ViewportWidth = math.max(WheelHolder.AbsoluteSize.X, 1);
+        local ViewportHeight = math.max(WheelHolder.AbsoluteSize.Y, 1);
 
-        -- Measured from the supplied React Bits reference:
-        -- center text begins at ~11% width and sits almost exactly at mid-height.
-        local SelectedX = math.floor(ViewportWidth * 0.108 + 0.5);
-        local CenterY = math.floor(ViewportHeight * 0.505 + 0.5);
-        local StepY = 109 * DesignScale;
+        -- Horizontal typography scale follows width; vertical spacing follows height.
+        -- This prevents tall Roblox windows from collapsing the wheel into a tiny stack.
+        local TypeScale = math.clamp(ViewportWidth / 1078, 0.82, 1.28);
+        local StepY = math.clamp(ViewportHeight * 0.145, 96, 170);
         Wheel.StepY = StepY;
 
-        -- Keep background treatment extremely light and local. Roblox cannot apply a
-        -- true per-region world blur, so this is only a small contrast vignette.
-        local WashWidth = math.min(ViewportWidth * 0.43, 500 * DesignScale);
-        WheelWash.Size = UDim2.fromOffset(math.floor(WashWidth + 0.5), ViewportHeight);
+        -- The reference is dark around the wheel. Keep the treatment localized and
+        -- let it disappear before the middle of the screen.
+        WheelWash.Size = UDim2.new(0.46, 0, 1, 0);
         WashGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0.00, 1 - 0.10 * MasterAlpha);
-            NumberSequenceKeypoint.new(0.30, 1 - 0.07 * MasterAlpha);
-            NumberSequenceKeypoint.new(0.68, 1 - 0.025 * MasterAlpha);
+            NumberSequenceKeypoint.new(0.00, 1 - 0.46 * MasterAlpha);
+            NumberSequenceKeypoint.new(0.24, 1 - 0.34 * MasterAlpha);
+            NumberSequenceKeypoint.new(0.58, 1 - 0.13 * MasterAlpha);
+            NumberSequenceKeypoint.new(0.82, 1 - 0.035 * MasterAlpha);
             NumberSequenceKeypoint.new(1.00, 1.00);
         });
-
-        -- Intentionally hidden: the reference contains only the wheel itself.
-        HeaderFrame.Visible = false;
+        SceneBlur.Size = 3.2 * MasterAlpha;
 
         local CurrentPos = Wheel.SmoothIndex;
         local CenterInt = math.floor(CurrentPos + 0.5);
         local UsedSlots = 0;
 
         if TotalItems > 0 then
-            -- Never show the same wrapped item twice at once. For >=7 items show a
-            -- very faint third row at each edge; with 5 items this becomes exactly
-            -- the reference's two-above / selected / two-below silhouette.
-            local VisibleCount = math.min(TotalItems, 7);
+            -- Exactly the reference silhouette: two above, selected, two below.
+            -- With fewer items, do not duplicate the same option just to fill slots.
+            local VisibleCount = math.min(TotalItems, 5);
             local Above = math.floor((VisibleCount - 1) / 2);
             local Below = (VisibleCount - 1) - Above;
 
@@ -9844,7 +9802,7 @@ function Library:CreateOptionWheel(Config)
                 local Delta = ItemInt - CurrentPos;
                 local AbsDelta = math.abs(Delta);
 
-                if AbsDelta <= 3.15 then
+                if AbsDelta <= 2.35 then
                     UsedSlots = UsedSlots + 1;
                     if UsedSlots > MaxVisibleSlots then break; end
 
@@ -9857,79 +9815,71 @@ function Library:CreateOptionWheel(Config)
                     Slot.RelativeDelta = Delta;
                     Slot.Frame.Visible = true;
 
-                    -- The reference is NOT a big sideways arc. First neighbors are
-                    -- almost vertically aligned; the bow only becomes obvious farther out.
-                    local XOffset = WheelCurve(
+                    -- Measured silhouette from the supplied React Bits reference:
+                    -- first neighbors are almost vertically aligned; the outer rows
+                    -- pull left enough to reveal the shallow wheel arc.
+                    local XOffset = LerpStops(
                         AbsDelta,
                         0,
-                        -5 * DesignScale,
-                        -27 * DesignScale,
-                        -41 * DesignScale
+                        -4 * TypeScale,
+                        -28 * TypeScale
                     );
+                    local YOffset = Delta * StepY;
 
-                    local X = SelectedX + XOffset;
-                    local Y = CenterY + Delta * StepY;
-
-                    -- Tiny rotation close to center, progressively stronger at the edges.
-                    local RotationMagnitude = WheelCurve(AbsDelta, 0, 2.5, 7.0, 9.5);
+                    -- Near-center rows are almost unrotated. Rotation belongs mostly
+                    -- to the outer rows, which is what gives the reference its depth.
+                    local RotationMagnitude = LerpStops(AbsDelta, 0, 1.2, 9.0);
                     local Rotation = math.sign(Delta) * RotationMagnitude;
 
-                    -- Font sizes measured to reproduce the reference silhouette.
-                    -- Selected is deliberately much larger, but first neighbors are
-                    -- still substantial rather than collapsing into tiny labels.
-                    local TextSize = WheelCurve(
+                    -- Selected is intentionally dramatic. First neighbors retain enough
+                    -- size to feel like the same wheel, not separate menu labels.
+                    local TextSize = LerpStops(
                         AbsDelta,
-                        68 * DesignScale,
-                        52 * DesignScale,
-                        44 * DesignScale,
-                        35 * DesignScale
+                        72 * TypeScale,
+                        50 * TypeScale,
+                        38 * TypeScale
                     );
 
-                    -- Strong depth falloff. Keep color white and let opacity create the
-                    -- gray appearance, like the reference against its dark background.
-                    local BaseTransparency = WheelCurve(AbsDelta, 0.00, 0.56, 0.82, 0.965);
+                    -- Rapid but smooth depth falloff.
+                    local BaseTransparency = LerpStops(AbsDelta, 0.00, 0.50, 0.86);
                     local MainTransparency = 1 - (1 - BaseTransparency) * MasterAlpha;
 
-                    Slot.Frame.Position = UDim2.fromOffset(math.floor(X + 0.5), math.floor(Y + 0.5));
-                    Slot.Frame.Size = UDim2.new(
-                        1,
-                        -math.floor(X + 10),
-                        0,
-                        math.floor(116 * DesignScale + 0.5)
+                    Slot.Frame.Position = UDim2.fromOffset(
+                        math.floor(XOffset + 0.5),
+                        math.floor(YOffset + 0.5)
+                    );
+                    Slot.Frame.Size = UDim2.fromOffset(
+                        math.max(520, math.floor(ViewportWidth * 0.72)),
+                        math.floor(118 * TypeScale + 0.5)
                     );
                     Slot.Frame.Rotation = Rotation;
-                    Slot.Frame.ZIndex = 270 - math.floor(AbsDelta * 5);
+                    Slot.Frame.ZIndex = 270 - math.floor(AbsDelta * 6);
 
                     Slot.MainText.Text = TextString;
-                    Slot.MainText.TextSize = math.max(10, math.floor(TextSize + 0.5));
-                    Slot.MainText.TextColor3 = Color3.fromRGB(255, 255, 255);
+                    Slot.MainText.TextSize = math.max(11, math.floor(TextSize + 0.5));
+                    Slot.MainText.TextColor3 = Library.FontColor or Color3.new(1, 1, 1);
                     Slot.MainText.TextTransparency = MainTransparency;
-                    Slot.MainText.TextStrokeTransparency = 1;
+                    Slot.MainText.TextStrokeColor3 = Library.FontColor or Color3.new(1, 1, 1);
+                    Slot.MainText.TextStrokeTransparency = math.clamp(MainTransparency + 0.34, 0.88, 1);
                     Slot.MainText.TextXAlignment = Enum.TextXAlignment.Left;
                     Slot.MainText.TextYAlignment = Enum.TextYAlignment.Center;
                     Library:ApplyFont(Slot.MainText);
 
-                    -- Roblox TextLabels do not expose a real Gaussian blur. Simulate only
-                    -- a *soft defocus* with extremely faint offset copies. The old version
-                    -- made these clones far too opaque, which is why the text looked doubled.
-                    local BlurRadius = WheelCurve(
-                        AbsDelta,
-                        0,
-                        0.95 * DesignScale,
-                        1.75 * DesignScale,
-                        2.35 * DesignScale
-                    );
-                    local CloneBaseTransparency = WheelCurve(AbsDelta, 1.0, 0.975, 0.987, 0.994);
+                    -- Roblox has no per-TextLabel Gaussian blur. These copies are kept
+                    -- extremely faint so they create soft defocus instead of readable
+                    -- duplicate/ghost text.
+                    local BlurRadius = LerpStops(AbsDelta, 0, 1.65 * TypeScale, 3.6 * TypeScale);
+                    local CloneBaseTransparency = LerpStops(AbsDelta, 1.0, 0.985, 0.994);
                     local CloneTransparency = 1 - (1 - CloneBaseTransparency) * MasterAlpha;
 
                     for K, Clone in ipairs(Slot.BlurClones) do
-                        if AbsDelta < 0.10 or BlurRadius <= 0.05 then
+                        if AbsDelta < 0.08 or BlurRadius <= 0.05 then
                             Clone.TextTransparency = 1;
                         else
                             local Off = Offsets[K];
                             Clone.Text = TextString;
                             Clone.TextSize = Slot.MainText.TextSize;
-                            Clone.TextColor3 = Color3.fromRGB(255, 255, 255);
+                            Clone.TextColor3 = Library.FontColor or Color3.new(1, 1, 1);
                             Clone.TextTransparency = CloneTransparency;
                             Clone.TextStrokeTransparency = 1;
                             Clone.TextXAlignment = Enum.TextXAlignment.Left;
@@ -9953,6 +9903,7 @@ function Library:CreateOptionWheel(Config)
             SlotPool[J].RelativeDelta = nil;
         end
     end);
+    table.insert(Wheel.Connections, StepConnection);
     Library:GiveSignal(StepConnection);
 
     function Wheel:OpenWheel()
@@ -9969,11 +9920,11 @@ function Library:CreateOptionWheel(Config)
         WheelHolder.Visible = true;
 
         Library:CancelMotion(ContentContainer);
-        ContentContainer.Position = UDim2.new(0, -16, 0, 0);
+        ContentContainer.Position = UDim2.new(0.108, -18, 0.505, 0);
 
         Library:Animate(ContentContainer, {
-            Position = UDim2.new(0, 0, 0, 0);
-        }, 0.24, nil, 'Quart');
+            Position = UDim2.new(0.108, 0, 0.505, 0);
+        }, 0.24, nil, 'Picker');
 
         local Driver = Instance.new('NumberValue');
         Driver.Value = Wheel.Alpha;
@@ -9998,8 +9949,8 @@ function Library:CreateOptionWheel(Config)
         end
 
         Library:Animate(ContentContainer, {
-            Position = UDim2.new(0, -16, 0, 0);
-        }, 0.18, nil, 'Cubic');
+            Position = UDim2.new(0.108, -18, 0.505, 0);
+        }, 0.18, nil, 'PopupExit');
 
         local Driver = Instance.new('NumberValue');
         Driver.Value = Wheel.Alpha;
@@ -10034,6 +9985,7 @@ function Library:CreateOptionWheel(Config)
             end
         end
     end);
+    table.insert(Wheel.Connections, InputConn);
     Library:GiveSignal(InputConn);
 
     -- Keyboard navigation when wheel is active
@@ -10071,6 +10023,7 @@ function Library:CreateOptionWheel(Config)
             Wheel:CloseWheel();
         end
     end);
+    table.insert(Wheel.Connections, KeyConn);
     Library:GiveSignal(KeyConn);
 
     function Wheel:SetKeybind(Key)
@@ -10087,7 +10040,8 @@ function Library:CreateOptionWheel(Config)
     function Wheel:Destroy()
         Wheel:CloseWheel();
         for _, Conn in ipairs(Wheel.Connections) do pcall(function() Conn:Disconnect(); end); end
-        pcall(function() WheelHolder:Destroy(); end);
+        pcall(function() SceneBlur:Destroy(); end);
+        pcall(function() WheelGui:Destroy(); end);
     end
 
     Wheel:SetMode(Wheel.ActiveMode);
