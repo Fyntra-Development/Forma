@@ -1,7 +1,7 @@
 local __FormaBootstrapEnv = getgenv and getgenv() or _G
 if not __FormaBootstrapEnv.__FormaLoaderBooting and type(loadstring) == 'function' then
     local __Success, __Updater = pcall(function()
-        local __LoaderCacheVersion = '1.3.4'
+        local __LoaderCacheVersion = '1.3.9'
         local __LoaderCachePath = 'FormaCache/Loader-' .. __LoaderCacheVersion .. '.lua'
         local __Source
 
