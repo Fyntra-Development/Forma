@@ -224,6 +224,39 @@ LeftGroupBox:AddSlider('CompactSlider', {
     Compact = true,
 })
 
+-- Range sliders expose a minimum and maximum value on the same track.
+LeftGroupBox:AddRangeSlider('DistanceRange', {
+    Text = 'Distance range',
+    Default = { Min = 25, Max = 125 },
+    Min = 0,
+    Max = 250,
+    MinRange = 10,
+    Rounding = 0,
+    Step = 5,
+    Suffix = ' studs',
+
+    Callback = function(Value)
+        print('[cb] Distance range:', Value.Min, Value.Max)
+    end,
+})
+
+Options.DistanceRange:OnChanged(function(Value)
+    print('Range changed:', Value.Min, Value.Max)
+end)
+
+LeftGroupBox:AddRangeSlider('CompactRange', {
+    Text = 'Compact range',
+    Default = { 20, 80 },
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Step = 1,
+    Compact = true,
+})
+
+-- AddBlank can be used when a custom gap is useful between controls.
+LeftGroupBox:AddBlank(3)
+
 -- Groupbox:AddInput
 -- Arguments: Idx, Info
 --
@@ -309,10 +342,9 @@ LeftGroupBox:AddDropdown('MyTeamDropdown', {
 -- Label:AddColorPicker
 -- Arguments: Idx, Info
 --
--- Settings is a Forma extension. It adds Color / Settings tabs and exposes
--- Solid, Fade, and Rainbow modes. Fade reveals Color 1 / Color 2 previews.
--- Fade and Rainbow use the normal Forma slider for speed, and the hue/SV cursors
--- visibly follow the animated output rather than remaining static.
+-- Settings adds Color / Settings tabs and exposes Solid, Fade, Rainbow,
+-- Cycle, and Random modes. Animated modes use the built-in speed control,
+-- while Fade also exposes editable Color 1 / Color 2 endpoints.
 LeftGroupBox:AddLabel('Color'):AddColorPicker('ColorPicker', {
     Default = Color3.fromRGB(0, 170, 255),
     Title = 'Animated color',
@@ -517,6 +549,24 @@ FormaRight:AddLabel('Fade'):AddColorPicker('FadeColorPicker', {
     },
 })
 
+FormaRight:AddLabel('Cycle'):AddColorPicker('CycleColorPicker', {
+    Default = Color3.fromRGB(255, 120, 80),
+    Title = 'Cycle picker',
+    Settings = {
+        Mode = 'Cycle',
+        Speed = 1.1,
+    },
+})
+
+FormaRight:AddLabel('Random'):AddColorPicker('RandomColorPicker', {
+    Default = Color3.fromRGB(120, 220, 160),
+    Title = 'Random picker',
+    Settings = {
+        Mode = 'Random',
+        Speed = 0.9,
+    },
+})
+
 FormaRight:AddButton({
     Text = 'Set Fade mode',
     Func = function()
@@ -533,6 +583,25 @@ FormaRight:AddButton({
     Text = 'Set Solid mode',
     Func = function()
         Options.ColorPicker:SetMode('Solid')
+    end,
+})
+
+FormaRight:AddButton({
+    Text = 'Set Cycle mode',
+    Func = function()
+        Options.ColorPicker:SetMode('Cycle')
+    end,
+}):AddButton({
+    Text = 'Set Random mode',
+    Func = function()
+        Options.ColorPicker:SetMode('Random')
+    end,
+})
+
+FormaRight:AddButton({
+    Text = 'Faster animation',
+    Func = function()
+        Options.ColorPicker:SetSpeed(math.min((Options.ColorPicker.Speed or 1) + 0.5, 4))
     end,
 })
 
@@ -860,8 +929,8 @@ Library:OnUnload(function()
     Library.Unloaded = true
 end)
 
--- Forma SaveManager also persists colorpicker animation mode, speed, fade endpoints,
--- and solid color for colorpickers that enable Settings.
+-- SaveManager persists slider/range-slider values plus colorpicker animation
+-- mode, speed, fade endpoints, and the solid color used by Settings-enabled pickers.
 SaveManager:LoadAutoloadConfig()
 
 Library:Notify({
