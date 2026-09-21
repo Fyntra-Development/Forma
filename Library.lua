@@ -1,4 +1,5 @@
 local InputService = game:GetService('UserInputService');
+local ContextActionService = game:GetService('ContextActionService');
 local TextService = game:GetService('TextService');
 local CoreGui = game:GetService('CoreGui');
 local Teams = game:GetService('Teams');
@@ -158,7 +159,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.1.0';
+    Version = '1.2.0';
     AutoUpdateVersion = 1;
     AutoUpdateEnabled = true;
     UpdateRepoBaseUrl = RepoBaseUrl;
@@ -9430,16 +9431,20 @@ function Library:CreateOptionWheel(Config)
     local Wheel = {
         Open = false;
         ActiveMode = Config.DefaultMode or 'Configs';
-        Modes = { 'Configs', 'Themes', 'Presets', 'Actions' };
+        Modes = { 'Configs', 'Themes', 'Shortcuts' };
         Items = {};
         Views = {};
         TargetIndex = tonumber(Config.DefaultIndex) or 1;
         SmoothIndex = tonumber(Config.DefaultIndex) or 1;
         Alpha = 0;
         AlphaTarget = 0;
+        ModeAlpha = 1;
+        ModeAlphaTarget = 1;
+        ModeTransitionId = 0;
         Keybind = Config.Keybind or 'V';
         Enabled = Config.Enabled ~= false;
-        Loop = Config.Loop == true;
+        -- React Bits can loop; Forma's wheel now does so by default.
+        Loop = Config.Loop ~= false;
         Connections = {};
         Dragging = false;
         DragStartY = 0;
@@ -9447,6 +9452,9 @@ function Library:CreateOptionWheel(Config)
         DragMoved = false;
         LastFont = nil;
         LastRoundedSelection = nil;
+        KeybindReturnPosition = nil;
+        KeybindShifted = false;
+        MovementBlocked = false;
     };
 
     local Style = {
@@ -9698,89 +9706,155 @@ function Library:CreateOptionWheel(Config)
         RebuildViews();
     end
 
-    function Wheel:SetMode(Mode)
-        Wheel.ActiveMode = Mode;
-
+    local function BuildModeItems(Mode)
         local List = {};
+
         if Mode == 'Configs' then
-            table.insert(List, {
-                Text = 'Save Active Config';
-                Callback = function()
-                    if Library.SaveManager then
-                        local Success = Library.SaveManager:Save('forma_default');
-                        Library:Notify(Success and 'Saved config: forma_default' or 'Failed to save config', 2);
-                    else
-                        Library:Notify('SaveManager not attached', 2);
-                    end
-                end;
-            });
+            local Manager = Library.SaveManager;
+            local Names = {};
 
-            if Library.SaveManager and isfolder and isfolder(Library.SaveManager.Folder .. '/settings') then
-                local Files = listfiles(Library.SaveManager.Folder .. '/settings');
-                for _, FilePath in ipairs(Files) do
-                    local Name = FilePath:match('([^/\\]+)%.json$');
-                    if Name then
-                        table.insert(List, {
-                            Text = Name;
-                            Callback = function()
-                                Library.SaveManager:Load(Name);
-                                Library:Notify('Loaded config: ' .. Name, 2);
-                            end;
-                        });
+            if Manager and Manager.RefreshConfigList then
+                local Success, Result = pcall(Manager.RefreshConfigList, Manager);
+                if Success and type(Result) == 'table' then
+                    for _, Name in ipairs(Result) do
+                        if type(Name) == 'string' and Name ~= '' and Name ~= 'autoload' then
+                            table.insert(Names, Name);
+                        end
+                    end
+                end
+            elseif Manager and listfiles and Manager.Folder then
+                local Success, Files = pcall(listfiles, Manager.Folder .. '/settings');
+                if Success and type(Files) == 'table' then
+                    for _, FilePath in ipairs(Files) do
+                        local Name = tostring(FilePath):match('([^/\\]+)%.json$');
+                        if Name then table.insert(Names, Name); end
                     end
                 end
             end
 
-            if #List == 1 then
-                for _, Sample in ipairs({ 'Legit Default', 'HvH Rage', 'Movement', 'Casual' }) do
-                    table.insert(List, {
-                        Text = Sample;
-                        Callback = function()
-                            Library:Notify('Selected config preset: ' .. Sample, 2);
-                        end;
-                    });
-                end
-            end
-        elseif Mode == 'Themes' then
-            local BuiltIn = { 'Default', 'Dark', 'Midnight', 'Forma Classic', 'Neon', 'Pastel', 'Emerald', 'Amethyst' };
-            for _, ThemeName in ipairs(BuiltIn) do
+            table.sort(Names, function(A, B)
+                return string.lower(A) < string.lower(B);
+            end);
+
+            for _, ConfigName in ipairs(Names) do
+                local Name = ConfigName;
                 table.insert(List, {
-                    Text = ThemeName;
+                    Text = Name;
                     Callback = function()
-                        if Library.ThemeManager then
-                            Library.ThemeManager:ApplyTheme(ThemeName);
-                            Library:Notify('Applied theme: ' .. ThemeName, 2);
+                        if not Library.SaveManager or not Library.SaveManager.Load then
+                            Library:Notify('SaveManager not attached', 2);
+                            return;
+                        end
+
+                        local Success, Error = Library.SaveManager:Load(Name);
+                        if Success then
+                            Library:Notify('Loaded config: ' .. Name, 2);
                         else
-                            Library:Notify('ThemeManager not attached', 2);
+                            Library:Notify('Failed to load config: ' .. tostring(Error or Name), 3);
                         end
                     end;
                 });
             end
-        elseif Mode == 'Presets' then
-            local Presets = {
-                { Name = 'Legit Mode'; Desc = 'Subtle visual & aim assists' };
-                { Name = 'Semi-Rage'; Desc = 'Balanced aggressive options' };
-                { Name = 'Rage Mode'; Desc = 'Maximum performance values' };
-                { Name = 'Casual'; Desc = 'Quality of life visuals' };
-                { Name = 'Performance'; Desc = 'Max FPS stripped visuals' };
-            };
-            for _, P in ipairs(Presets) do
+
+            if #List == 0 then
                 table.insert(List, {
-                    Text = P.Name;
+                    Text = 'No saved configs';
                     Callback = function()
-                        Library:Notify('Applied preset: ' .. P.Name, 2);
+                        Library:Notify('No saved configs were found.', 2);
                     end;
                 });
             end
-        elseif Mode == 'Actions' then
+        elseif Mode == 'Themes' then
+            local Manager = Library.ThemeManager;
+            local ThemeEntries = {};
+            local Seen = {};
+
+            if Manager and type(Manager.BuiltInThemes) == 'table' then
+                local BuiltIn = {};
+                for Name, Data in next, Manager.BuiltInThemes do
+                    table.insert(BuiltIn, {
+                        Name = tostring(Name);
+                        Order = type(Data) == 'table' and tonumber(Data[1]) or math.huge;
+                    });
+                end
+                table.sort(BuiltIn, function(A, B)
+                    if A.Order == B.Order then return A.Name < B.Name; end
+                    return A.Order < B.Order;
+                end);
+                for _, Entry in ipairs(BuiltIn) do
+                    Seen[Entry.Name] = true;
+                    table.insert(ThemeEntries, {
+                        Display = Entry.Name;
+                        Value = Entry.Name;
+                    });
+                end
+            end
+
+            if Manager and Manager.ReloadCustomThemes then
+                local Success, CustomThemes = pcall(Manager.ReloadCustomThemes, Manager);
+                if Success and type(CustomThemes) == 'table' then
+                    table.sort(CustomThemes, function(A, B)
+                        return string.lower(tostring(A)) < string.lower(tostring(B));
+                    end);
+                    for _, FileName in ipairs(CustomThemes) do
+                        local Value = tostring(FileName);
+                        local Display = Value:gsub('%.json$', '');
+                        if not Seen[Display] then
+                            Seen[Display] = true;
+                            table.insert(ThemeEntries, {
+                                Display = Display;
+                                Value = Value;
+                            });
+                        end
+                    end
+                end
+            end
+
+            for _, Entry in ipairs(ThemeEntries) do
+                local DisplayName = Entry.Display;
+                local ThemeValue = Entry.Value;
+                table.insert(List, {
+                    Text = DisplayName;
+                    Callback = function()
+                        if not Library.ThemeManager or not Library.ThemeManager.ApplyTheme then
+                            Library:Notify('ThemeManager not attached', 2);
+                            return;
+                        end
+                        Library.ThemeManager:ApplyTheme(ThemeValue);
+                    end;
+                });
+            end
+
+            if #List == 0 then
+                table.insert(List, {
+                    Text = 'No themes available';
+                    Callback = function()
+                        Library:Notify('ThemeManager is not attached.', 2);
+                    end;
+                });
+            end
+        elseif Mode == 'Shortcuts' then
             table.insert(List, {
-                Text = 'Toggle Keybinds Window';
+                Text = 'UI Settings';
+                Callback = function()
+                    local Window = Library.Window;
+                    if Window and Window.SettingsTab and Window.SettingsTab.ShowTab then
+                        Window.SettingsTab:ShowTab();
+                    else
+                        Library:Notify('UI Settings is not available yet.', 2);
+                    end
+                end;
+            });
+
+            table.insert(List, {
+                Text = 'Toggle Keybinds';
                 Callback = function()
                     if Library.KeybindFrame then
                         Library.KeybindFrame.Visible = not Library.KeybindFrame.Visible;
                     end
                 end;
             });
+
             table.insert(List, {
                 Text = 'Toggle Watermark';
                 Callback = function()
@@ -9789,24 +9863,63 @@ function Library:CreateOptionWheel(Config)
                     end
                 end;
             });
+
             table.insert(List, {
                 Text = 'Reset Menu Positions';
                 Callback = function()
-                    if Library.MainFrame then
-                        Library.MainFrame.Position = UDim2.fromOffset(175, 50);
+                    if Library.ResetMenuPositions then
+                        Library:ResetMenuPositions(true);
+                    elseif Library.WindowHolder then
+                        Library.WindowHolder.Position = UDim2.fromOffset(175, 50);
                     end
-                    Library:Notify('Reset menu positions', 2);
                 end;
             });
-            table.insert(List, {
-                Text = 'Unload Library';
-                Callback = function()
-                    Library:Unload();
-                end;
-            });
+
+            if type(Library.OptionWheelShortcuts) == 'table' then
+                for _, Shortcut in ipairs(Library.OptionWheelShortcuts) do
+                    if type(Shortcut) == 'table'
+                        and type(Shortcut.Text) == 'string'
+                        and type(Shortcut.Callback or Shortcut.Func) == 'function' then
+                        table.insert(List, {
+                            Text = Shortcut.Text;
+                            Callback = Shortcut.Callback or Shortcut.Func;
+                        });
+                    end
+                end
+            end
         end
 
-        Wheel:SetItems(List);
+        return List;
+    end
+
+    function Wheel:SetMode(Mode, Instant)
+        if not table.find(Wheel.Modes, Mode) then return; end
+
+        Wheel.ActiveMode = Mode;
+        Wheel.ModeTransitionId = Wheel.ModeTransitionId + 1;
+        local TransitionId = Wheel.ModeTransitionId;
+        local NewItems = BuildModeItems(Mode);
+
+        local function SwapItems()
+            if TransitionId ~= Wheel.ModeTransitionId then return; end
+            Wheel.TargetIndex = 1;
+            Wheel.SmoothIndex = 1;
+            Wheel:SetItems(NewItems);
+            Wheel.ModeAlpha = Wheel.Open and 0.04 or 1;
+            Wheel.ModeAlphaTarget = 1;
+        end
+
+        if Instant or not Wheel.Open or #Wheel.Views == 0 then
+            Wheel.ModeAlpha = 1;
+            Wheel.ModeAlphaTarget = 1;
+            SwapItems();
+            return;
+        end
+
+        -- Briefly dissolve the current mode before replacing it. The geometry
+        -- remains stationary, so mode changes feel like one continuous wheel.
+        Wheel.ModeAlphaTarget = 0;
+        task.delay(0.09, SwapItems);
     end
 
     function Wheel:GetMode()
@@ -9833,7 +9946,7 @@ function Library:CreateOptionWheel(Config)
         local Next = Current + Direction;
         if Next < 1 then Next = #Wheel.Modes; end
         if Next > #Wheel.Modes then Next = 1; end
-        Wheel:SetMode(Wheel.Modes[Next]);
+        Wheel:SetMode(Wheel.Modes[Next], false);
     end
 
     local function SetViewFontState(View, Selected)
@@ -9868,6 +9981,13 @@ function Library:CreateOptionWheel(Config)
         local Count = #Wheel.Items;
         if Count <= 0 then return; end
 
+        local ModeTau = Wheel.ModeAlphaTarget < Wheel.ModeAlpha and 0.055 or 0.10;
+        local ModeK = 1 - math.exp(-math.min(Dt, 0.05) / ModeTau);
+        Wheel.ModeAlpha = Wheel.ModeAlpha + (Wheel.ModeAlphaTarget - Wheel.ModeAlpha) * ModeK;
+        if math.abs(Wheel.ModeAlphaTarget - Wheel.ModeAlpha) < 0.001 then
+            Wheel.ModeAlpha = Wheel.ModeAlphaTarget;
+        end
+
         local Tau = Style.SmoothingMs / 1000;
         local K = 1 - math.exp(-math.min(Dt, 0.05) / Tau);
         Wheel.SmoothIndex = Wheel.SmoothIndex + (Wheel.TargetIndex - Wheel.SmoothIndex) * K;
@@ -9890,7 +10010,7 @@ function Library:CreateOptionWheel(Config)
         local RowH = math.max(Style.FontSize * Style.Spacing, 1);
         local TiltRad = math.rad(Style.Tilt);
         local Radius = TiltRad > 0.0005 and (RowH / TiltRad) or 0;
-        local MasterAlpha = math.clamp(Wheel.Alpha, 0, 1);
+        local MasterAlpha = math.clamp(Wheel.Alpha * Wheel.ModeAlpha, 0, 1);
         local RoundedSelection = NormalizeIndex(math.round(Wheel.TargetIndex));
 
         if Wheel.LastFont ~= Library.Font then
@@ -9963,18 +10083,94 @@ function Library:CreateOptionWheel(Config)
     end);
     TrackConnection(StepConnection);
 
+    local MovementActionName = 'FormaOptionWheelMovement_' .. tostring(math.floor(os.clock() * 1000000));
+
+    local function BlockPlayerMovement(State)
+        if State and not Wheel.MovementBlocked then
+            Wheel.MovementBlocked = true;
+            pcall(function()
+                ContextActionService:BindActionAtPriority(
+                    MovementActionName,
+                    function()
+                        return Enum.ContextActionResult.Sink;
+                    end,
+                    false,
+                    Enum.ContextActionPriority.High.Value + 100,
+                    Enum.KeyCode.W,
+                    Enum.KeyCode.A,
+                    Enum.KeyCode.S,
+                    Enum.KeyCode.D,
+                    Enum.KeyCode.Space,
+                    Enum.KeyCode.Up,
+                    Enum.KeyCode.Down,
+                    Enum.KeyCode.Left,
+                    Enum.KeyCode.Right,
+                    Enum.KeyCode.Thumbstick1,
+                    Enum.KeyCode.DPadUp,
+                    Enum.KeyCode.DPadDown,
+                    Enum.KeyCode.DPadLeft,
+                    Enum.KeyCode.DPadRight
+                );
+            end);
+        elseif not State and Wheel.MovementBlocked then
+            Wheel.MovementBlocked = false;
+            pcall(function()
+                ContextActionService:UnbindAction(MovementActionName);
+            end);
+        end
+    end
+
+    local function ShiftKeybindPanel(Opening)
+        local Frame = Library.KeybindFrame;
+        if not Frame or not Frame.Parent then return; end
+
+        if Opening then
+            Wheel.KeybindReturnPosition = nil;
+            Wheel.KeybindShifted = false;
+            if not Frame.Visible then return; end
+
+            local HolderWidth = math.max(WheelHolder.AbsoluteSize.X, 1);
+            local FrameWidth = math.max(Frame.AbsoluteSize.X, 210);
+            local ClearanceX = math.clamp(
+                math.floor(Style.Inset + 360),
+                260,
+                math.max(260, HolderWidth - FrameWidth - 16)
+            );
+
+            if Frame.AbsolutePosition.X < ClearanceX then
+                Wheel.KeybindReturnPosition = Frame.Position;
+                Wheel.KeybindShifted = true;
+                local Target = UDim2.new(
+                    0,
+                    ClearanceX,
+                    Frame.Position.Y.Scale,
+                    Frame.Position.Y.Offset
+                );
+                Library:Animate(Frame, { Position = Target; }, 0.24, nil, 'HUD');
+            end
+        elseif Wheel.KeybindShifted and Wheel.KeybindReturnPosition and Frame.Parent then
+            local ReturnPosition = Wheel.KeybindReturnPosition;
+            Wheel.KeybindShifted = false;
+            Wheel.KeybindReturnPosition = nil;
+            Library:Animate(Frame, { Position = ReturnPosition; }, 0.24, nil, 'HUD');
+        end
+    end
+
     function Wheel:OpenWheel()
         if Wheel.Open or not Wheel.Enabled then return; end
         Wheel.Open = true;
         Wheel.AlphaTarget = 1;
+        Wheel.ModeAlphaTarget = 1;
         Wheel.Dragging = false;
         Wheel.DragMoved = false;
         WheelHolder.Visible = true;
 
-        if Library.KeybindFrame and Library.KeybindFrame.Visible then
-            Wheel.SavedKeybindVisible = true;
-            Library.KeybindFrame.Visible = false;
-        end
+        BlockPlayerMovement(true);
+        ShiftKeybindPanel(true);
+
+        -- Refresh dynamic modes each time the wheel opens so newly created
+        -- configs/themes appear without recreating the wheel.
+        Wheel:SetMode(Wheel.ActiveMode, true);
     end
 
     function Wheel:CloseWheel()
@@ -9984,10 +10180,8 @@ function Library:CreateOptionWheel(Config)
         Wheel.Dragging = false;
         Wheel.DragMoved = false;
 
-        if Wheel.SavedKeybindVisible and Library.KeybindFrame then
-            Wheel.SavedKeybindVisible = false;
-            Library.KeybindFrame.Visible = true;
-        end
+        BlockPlayerMovement(false);
+        ShiftKeybindPanel(false);
     end
 
     function Wheel:Toggle()
@@ -10024,7 +10218,7 @@ function Library:CreateOptionWheel(Config)
     TrackConnection(InputChangedConnection);
 
     local InputBeganConnection = InputService.InputBegan:Connect(function(Input, GameProcessed)
-        if GameProcessed then return; end
+        if GameProcessed and not Wheel.Open then return; end
 
         local BoundKeyCode = typeof(Wheel.Keybind) == 'EnumItem' and Wheel.Keybind or nil;
         if not BoundKeyCode and type(Wheel.Keybind) == 'string' then
@@ -10046,13 +10240,13 @@ function Library:CreateOptionWheel(Config)
             return;
         end
 
-        if Input.KeyCode == Enum.KeyCode.Up or Input.KeyCode == Enum.KeyCode.W or Input.KeyCode == Enum.KeyCode.Left then
+        if Input.KeyCode == Enum.KeyCode.Up then
             Wheel:Scroll(-1);
-        elseif Input.KeyCode == Enum.KeyCode.Down or Input.KeyCode == Enum.KeyCode.S or Input.KeyCode == Enum.KeyCode.Right then
+        elseif Input.KeyCode == Enum.KeyCode.Down then
             Wheel:Scroll(1);
-        elseif Input.KeyCode == Enum.KeyCode.Q then
+        elseif Input.KeyCode == Enum.KeyCode.Left or Input.KeyCode == Enum.KeyCode.Q then
             Wheel:CycleMode(-1);
-        elseif Input.KeyCode == Enum.KeyCode.E then
+        elseif Input.KeyCode == Enum.KeyCode.Right or Input.KeyCode == Enum.KeyCode.E then
             Wheel:CycleMode(1);
         elseif Input.KeyCode == Enum.KeyCode.Return or Input.KeyCode == Enum.KeyCode.Space then
             local Selected = NormalizeIndex(math.round(Wheel.TargetIndex));
@@ -10106,6 +10300,8 @@ function Library:CreateOptionWheel(Config)
     function Wheel:Destroy()
         Wheel.Open = false;
         Wheel.AlphaTarget = 0;
+        BlockPlayerMovement(false);
+        ShiftKeybindPanel(false);
         for _, Connection in ipairs(Wheel.Connections) do
             pcall(function() Connection:Disconnect(); end);
         end
@@ -10117,7 +10313,7 @@ function Library:CreateOptionWheel(Config)
         end
     end
 
-    Wheel:SetMode(Wheel.ActiveMode);
+    Wheel:SetMode(Wheel.ActiveMode, true);
     Library.OptionWheel = Wheel;
     return Wheel;
 end;
@@ -10235,33 +10431,11 @@ function Library:GetRemoteUpdateInfo(ComponentName, Force)
 end;
 
 function Library:BuildUpdateDescription(Info)
-    local Lines = {
+    return table.concat({
         string.format('%s  v%s  ->  v%s', tostring(Info.Name), tostring(Info.CurrentVersion), tostring(Info.Version));
         '';
-        'What changed:';
-    };
-
-    local Changes = type(Info.Changes) == 'table' and Info.Changes or {};
-    if #Changes == 0 then
-        table.insert(Lines, '- General improvements and fixes.');
-    else
-        for Index, Change in ipairs(Changes) do
-            if Index > 6 then
-                table.insert(Lines, string.format('- +%d more change(s)', #Changes - 6));
-                break;
-            end;
-            table.insert(Lines, '- ' .. tostring(Change));
-        end;
-    end;
-
-    if Info.Notes and tostring(Info.Notes) ~= '' then
-        table.insert(Lines, '');
-        table.insert(Lines, tostring(Info.Notes));
-    end;
-
-    table.insert(Lines, '');
-    table.insert(Lines, 'Update and restart the UI now?');
-    return table.concat(Lines, '\n');
+        'Update and restart the UI now?';
+    }, '\n');
 end;
 
 function Library:PerformUpdateRestart(ComponentName, RemoteInfo)
