@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.8.0+build.1';
+    Version = '1.9.0+build.1';
     Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -439,17 +439,59 @@ function Library:GetTitleAnimations()
     return table.clone(Library.TitleAnimations or { 'None', 'Shimmer', 'Pulse', 'Wobble' });
 end;
 
+local function AddTitleOffset(Position, X, Y)
+    return UDim2.new(
+        Position.X.Scale,
+        Position.X.Offset + (X or 0),
+        Position.Y.Scale,
+        Position.Y.Offset + (Y or 0)
+    );
+end;
+
+local function SplitTitleCharacters(Text)
+    local Characters = {};
+    local Success = pcall(function()
+        for _, Codepoint in utf8.codes(Text) do
+            table.insert(Characters, utf8.char(Codepoint));
+        end;
+    end);
+
+    if not Success then
+        table.clear(Characters);
+        for Index = 1, #Text do
+            table.insert(Characters, Text:sub(Index, Index));
+        end;
+    end;
+
+    return Characters;
+end;
+
 function Library:ResetTitleAnimation(Label)
     if not Label then return; end;
 
     local State = Library.TitleAnimationStates and Library.TitleAnimationStates[Label];
     if State then
-        if State.Tween then pcall(function() State.Tween:Cancel(); end); end;
-        if State.Gradient and State.Gradient.Parent then pcall(function() State.Gradient:Destroy(); end); end;
-        if State.Scale and State.Scale.Parent then pcall(function() State.Scale:Destroy(); end); end;
+        State.Alive = false;
+
+        for Tween in next, State.ActiveTweens or {} do
+            pcall(function() Tween:Cancel(); end);
+        end;
+
+        if State.Holder and State.Holder.Parent then
+            pcall(function() State.Holder:Destroy(); end);
+        end;
+
+        pcall(function()
+            Label.TextTransparency = State.OriginalTransparency or 0;
+        end);
+    else
+        pcall(function()
+            Label.TextTransparency = 0;
+        end);
     end;
 
     pcall(function() Label.Rotation = 0; end);
+
     if Library.TitleAnimationStates then
         Library.TitleAnimationStates[Label] = nil;
     end;
@@ -461,57 +503,239 @@ function Library:ApplyTitleAnimation(Label)
     Library:ResetTitleAnimation(Label);
 
     local Mode = Library.TitleAnimation or 'None';
-    if Mode == 'None' then return; end;
+    local Text = tostring(Label.Text or '');
 
-    local State = {};
+    if Mode == 'None' or Text == '' then
+        return;
+    end;
+
+    local State = {
+        Alive = true;
+        Holder = nil;
+        Characters = {};
+        ActiveTweens = {};
+        OriginalTransparency = Label.TextTransparency;
+    };
     Library.TitleAnimationStates[Label] = State;
 
-    if Mode == 'Shimmer' then
-        local Base = Label.TextColor3;
-        local Highlight = Base:Lerp(Color3.new(1, 1, 1), 0.72);
-        local Gradient = Instance.new('UIGradient');
-        Gradient.Name = 'FormaTitleShimmer';
-        Gradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Base);
-            ColorSequenceKeypoint.new(0.42, Base);
-            ColorSequenceKeypoint.new(0.5, Highlight);
-            ColorSequenceKeypoint.new(0.58, Base);
-            ColorSequenceKeypoint.new(1, Base);
-        });
-        Gradient.Offset = Vector2.new(-1, 0);
-        Gradient.Parent = Label;
+    local Holder = Instance.new('Frame');
+    Holder.Name = 'FormaTitleCharacters';
+    Holder.BackgroundTransparency = 1;
+    Holder.BorderSizePixel = 0;
+    Holder.ClipsDescendants = false;
+    Holder.Position = UDim2.fromOffset(0, 0);
+    Holder.Size = UDim2.fromScale(1, 1);
+    Holder.ZIndex = Label.ZIndex + 1;
+    Holder.Parent = Label;
+    State.Holder = Holder;
 
-        local Tween = TweenService:Create(
-            Gradient,
-            TweenInfo.new(1.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false, 0.12),
-            { Offset = Vector2.new(1, 0); }
-        );
-        State.Gradient = Gradient;
-        State.Tween = Tween;
+    Label.TextTransparency = 1;
+
+    local Characters = SplitTitleCharacters(Text);
+    local Prefix = '';
+    local BaseColor = Label.TextColor3;
+    local HighlightColor = BaseColor:Lerp(Color3.new(1, 1, 1), 0.78);
+    local Height = math.max(Label.AbsoluteSize.Y, Label.TextSize + 4, 18);
+
+    local function TrackTween(Instance, Info, Properties)
+        if not State.Alive or not Instance or not Instance.Parent then
+            return nil;
+        end;
+
+        local Tween = TweenService:Create(Instance, Info, Properties);
+        State.ActiveTweens[Tween] = true;
         Tween:Play();
-    elseif Mode == 'Pulse' then
+
+        task.spawn(function()
+            pcall(function() Tween.Completed:Wait(); end);
+            State.ActiveTweens[Tween] = nil;
+        end);
+
+        return Tween;
+    end
+
+    local function CharacterWidth(Before, WithCharacter)
+        local BeforeWidth = Library:GetTextBounds(Before, Library.Font, Label.TextSize);
+        local AfterWidth = Library:GetTextBounds(WithCharacter, Library.Font, Label.TextSize);
+        return math.max(AfterWidth - BeforeWidth, 1);
+    end
+
+    for Index, Character in ipairs(Characters) do
+        local Before = Prefix;
+        Prefix = Prefix .. Character;
+
+        local X = Library:GetTextBounds(Before, Library.Font, Label.TextSize);
+        local Width = CharacterWidth(Before, Prefix);
+
+        local CharacterLabel = Instance.new('TextLabel');
+        CharacterLabel.Name = 'Character_' .. tostring(Index);
+        CharacterLabel.BackgroundTransparency = 1;
+        CharacterLabel.BorderSizePixel = 0;
+        CharacterLabel.Position = UDim2.fromOffset(X, 0);
+        CharacterLabel.Size = UDim2.fromOffset(math.max(Width + 2, 2), Height);
+        CharacterLabel.Text = Character;
+        CharacterLabel.TextColor3 = BaseColor;
+        CharacterLabel.TextSize = Label.TextSize;
+        CharacterLabel.TextTransparency = 0;
+        CharacterLabel.TextStrokeTransparency = Label.TextStrokeTransparency;
+        CharacterLabel.TextStrokeColor3 = Label.TextStrokeColor3;
+        CharacterLabel.TextXAlignment = Enum.TextXAlignment.Left;
+        CharacterLabel.TextYAlignment = Label.TextYAlignment;
+        CharacterLabel.ZIndex = Label.ZIndex + 1;
+        CharacterLabel.Parent = Holder;
+
+        pcall(function()
+            CharacterLabel.FontFace = Label.FontFace;
+        end);
+        pcall(function()
+            CharacterLabel.Font = Label.Font;
+        end);
+
         local Scale = Instance.new('UIScale');
-        Scale.Name = 'FormaTitlePulse';
         Scale.Scale = 1;
-        Scale.Parent = Label;
+        Scale.Parent = CharacterLabel;
 
-        local Tween = TweenService:Create(
-            Scale,
-            TweenInfo.new(0.78, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-            { Scale = 1.045; }
-        );
-        State.Scale = Scale;
-        State.Tween = Tween;
-        Tween:Play();
-    elseif Mode == 'Wobble' then
-        Label.Rotation = -1.25;
-        local Tween = TweenService:Create(
-            Label,
-            TweenInfo.new(0.92, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-            { Rotation = 1.25; }
-        );
-        State.Tween = Tween;
-        Tween:Play();
+        local BasePosition = CharacterLabel.Position;
+        State.Characters[Index] = {
+            Label = CharacterLabel;
+            Scale = Scale;
+            BasePosition = BasePosition;
+        };
+
+        if Character ~= ' ' then
+            task.spawn(function()
+                local Stagger = math.min((Index - 1) * 0.045, 0.42);
+                task.wait(Stagger);
+
+                if Mode == 'Shimmer' then
+                    while State.Alive and CharacterLabel.Parent do
+                        TrackTween(
+                            CharacterLabel,
+                            TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                            {
+                                Position = AddTitleOffset(BasePosition, 0, -2);
+                                TextColor3 = HighlightColor;
+                                Rotation = (Index % 2 == 0) and 1.5 or -1.5;
+                            }
+                        );
+                        TrackTween(
+                            Scale,
+                            TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                            { Scale = 1.12; }
+                        );
+
+                        task.wait(0.16);
+                        if not State.Alive then break; end
+
+                        TrackTween(
+                            CharacterLabel,
+                            TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                            {
+                                Position = BasePosition;
+                                TextColor3 = BaseColor;
+                                Rotation = 0;
+                            }
+                        );
+                        TrackTween(
+                            Scale,
+                            TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                            { Scale = 1; }
+                        );
+
+                        task.wait(math.max(0.78, 1.35 - (#Characters * 0.025)));
+                    end
+                elseif Mode == 'Pulse' then
+                    while State.Alive and CharacterLabel.Parent do
+                        TrackTween(
+                            CharacterLabel,
+                            TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                            {
+                                Position = AddTitleOffset(BasePosition, 0, -4);
+                                Rotation = (Index % 2 == 0) and 2 or -2;
+                            }
+                        );
+                        TrackTween(
+                            Scale,
+                            TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                            { Scale = 1.18; }
+                        );
+
+                        task.wait(0.13);
+                        if not State.Alive then break; end
+
+                        TrackTween(
+                            CharacterLabel,
+                            TweenInfo.new(0.26, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out),
+                            {
+                                Position = BasePosition;
+                                Rotation = 0;
+                            }
+                        );
+                        TrackTween(
+                            Scale,
+                            TweenInfo.new(0.20, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                            { Scale = 1; }
+                        );
+
+                        task.wait(math.max(0.9, 1.55 - (#Characters * 0.02)));
+                    end
+                elseif Mode == 'Wobble' then
+                    local Direction = (Index % 2 == 0) and 1 or -1;
+
+                    while State.Alive and CharacterLabel.Parent do
+                        TrackTween(
+                            CharacterLabel,
+                            TweenInfo.new(0.24, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                            {
+                                Position = AddTitleOffset(BasePosition, Direction, -2);
+                                Rotation = 5 * Direction;
+                            }
+                        );
+                        TrackTween(
+                            Scale,
+                            TweenInfo.new(0.24, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                            { Scale = 1.06; }
+                        );
+
+                        task.wait(0.25);
+                        if not State.Alive then break; end
+
+                        TrackTween(
+                            CharacterLabel,
+                            TweenInfo.new(0.28, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                            {
+                                Position = AddTitleOffset(BasePosition, -Direction, 1);
+                                Rotation = -4 * Direction;
+                            }
+                        );
+                        TrackTween(
+                            Scale,
+                            TweenInfo.new(0.28, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                            { Scale = 0.97; }
+                        );
+
+                        task.wait(0.29);
+                        if not State.Alive then break; end
+
+                        TrackTween(
+                            CharacterLabel,
+                            TweenInfo.new(0.20, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                            {
+                                Position = BasePosition;
+                                Rotation = 0;
+                            }
+                        );
+                        TrackTween(
+                            Scale,
+                            TweenInfo.new(0.20, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                            { Scale = 1; }
+                        );
+
+                        task.wait(0.44 + ((Index % 3) * 0.07));
+                    end
+                end
+            end);
+        end;
     end;
 end;
 
@@ -519,15 +743,40 @@ function Library:RegisterTitleAnimationLabel(Label)
     if not Label then return Label; end;
 
     Library.TitleAnimationLabels[Label] = true;
+
+    if not Library.TitleAnimationConnections[Label] then
+        local Connections = {};
+        Library.TitleAnimationConnections[Label] = Connections;
+
+        table.insert(Connections, Label:GetPropertyChangedSignal('Text'):Connect(function()
+            task.defer(function()
+                if Label.Parent then Library:ApplyTitleAnimation(Label); end
+            end);
+        end));
+
+        table.insert(Connections, Label:GetPropertyChangedSignal('TextSize'):Connect(function()
+            task.defer(function()
+                if Label.Parent then Library:ApplyTitleAnimation(Label); end
+            end);
+        end));
+
+        Label.AncestryChanged:Connect(function(_, Parent)
+            if Parent == nil then
+                Library:ResetTitleAnimation(Label);
+                Library.TitleAnimationLabels[Label] = nil;
+
+                local Stored = Library.TitleAnimationConnections[Label];
+                if Stored then
+                    for _, Connection in ipairs(Stored) do
+                        pcall(function() Connection:Disconnect(); end);
+                    end;
+                end;
+                Library.TitleAnimationConnections[Label] = nil;
+            end;
+        end);
+    end;
+
     Library:ApplyTitleAnimation(Label);
-
-    Label.AncestryChanged:Connect(function(_, Parent)
-        if Parent == nil then
-            Library:ResetTitleAnimation(Label);
-            Library.TitleAnimationLabels[Label] = nil;
-        end;
-    end);
-
     return Label;
 end;
 
@@ -590,6 +839,7 @@ Library.ScrollRevealStates = setmetatable({}, { __mode = 'k' });
 Library.TypingControllers = setmetatable({}, { __mode = 'k' });
 Library.TitleAnimationLabels = setmetatable({}, { __mode = 'k' });
 Library.TitleAnimationStates = setmetatable({}, { __mode = 'k' });
+Library.TitleAnimationConnections = setmetatable({}, { __mode = 'k' });
 
 local MotionTransparencyProperties = {
     BackgroundTransparency = true;
@@ -10869,14 +11119,13 @@ do
         Position = UDim2.fromOffset(8, 1);
         Size = UDim2.new(0, 0, 1, -2);
         Text = '';
-        TextColor3 = Library.AccentColor;
+        TextColor3 = Library.FontColor;
         TextSize = 15;
         TextXAlignment = Enum.TextXAlignment.Left;
         ZIndex = 207;
         Parent = InnerFrame;
     });
-    Library.RegistryMap[WatermarkTitle].Properties.TextColor3 = 'AccentColor';
-    Library:RegisterTitleAnimationLabel(WatermarkTitle);
+    Library.RegistryMap[WatermarkTitle].Properties.TextColor3 = 'FontColor';
 
     local WatermarkStats = Library:CreateLabel({
         Position = UDim2.fromOffset(8, 1);
