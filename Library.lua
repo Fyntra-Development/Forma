@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.9.0+build.1';
+    Version = '1.10.0+build.1';
     Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -303,8 +303,8 @@ local Library = {
     CursorDisplayOrder = 1000000;
     CursorStyle = 'Arrow';
     CursorStyles = { 'Arrow', 'Dot', 'System' };
-    TitleAnimation = 'Shimmer';
-    TitleAnimations = { 'None', 'Shimmer', 'Pulse', 'Wobble' };
+    TitleAnimation = 'Wave';
+    TitleAnimations = { 'None', 'Wave', 'Bounce', 'Glow Sweep' };
 };
 
 local function NormalizeGameName(Value)
@@ -436,7 +436,7 @@ function Library:SetCursorStyle(Style)
 end;
 
 function Library:GetTitleAnimations()
-    return table.clone(Library.TitleAnimations or { 'None', 'Shimmer', 'Pulse', 'Wobble' });
+    return table.clone(Library.TitleAnimations or { 'None', 'Wave', 'Bounce', 'Glow Sweep' });
 end;
 
 local function AddTitleOffset(Position, X, Y)
@@ -472,10 +472,6 @@ function Library:ResetTitleAnimation(Label)
     local State = Library.TitleAnimationStates and Library.TitleAnimationStates[Label];
     if State then
         State.Alive = false;
-
-        for Tween in next, State.ActiveTweens or {} do
-            pcall(function() Tween:Cancel(); end);
-        end;
 
         if State.Holder and State.Holder.Parent then
             pcall(function() State.Holder:Destroy(); end);
@@ -513,8 +509,9 @@ function Library:ApplyTitleAnimation(Label)
         Alive = true;
         Holder = nil;
         Characters = {};
-        ActiveTweens = {};
         OriginalTransparency = Label.TextTransparency;
+        StartedAt = os.clock();
+        Mode = Mode;
     };
     Library.TitleAnimationStates[Label] = State;
 
@@ -534,25 +531,12 @@ function Library:ApplyTitleAnimation(Label)
     local Characters = SplitTitleCharacters(Text);
     local Prefix = '';
     local BaseColor = Label.TextColor3;
-    local HighlightColor = BaseColor:Lerp(Color3.new(1, 1, 1), 0.78);
-    local Height = math.max(Label.AbsoluteSize.Y, Label.TextSize + 4, 18);
+    local HighlightColor = BaseColor:Lerp(Color3.new(1, 1, 1), 0.72);
+    local Height = math.max(Label.AbsoluteSize.Y, Label.TextSize + 5, 18);
 
-    local function TrackTween(Instance, Info, Properties)
-        if not State.Alive or not Instance or not Instance.Parent then
-            return nil;
-        end;
-
-        local Tween = TweenService:Create(Instance, Info, Properties);
-        State.ActiveTweens[Tween] = true;
-        Tween:Play();
-
-        task.spawn(function()
-            pcall(function() Tween.Completed:Wait(); end);
-            State.ActiveTweens[Tween] = nil;
-        end);
-
-        return Tween;
-    end
+    State.BaseColor = BaseColor;
+    State.HighlightColor = HighlightColor;
+    State.Count = #Characters;
 
     local function CharacterWidth(Before, WithCharacter)
         local BeforeWidth = Library:GetTextBounds(Before, Library.Font, Label.TextSize);
@@ -591,151 +575,11 @@ function Library:ApplyTitleAnimation(Label)
             CharacterLabel.FontFace = Label.FontFace;
         end);
 
-        local Scale = Instance.new('UIScale');
-        Scale.Scale = 1;
-        Scale.Parent = CharacterLabel;
-
-        local BasePosition = CharacterLabel.Position;
         State.Characters[Index] = {
             Label = CharacterLabel;
-            Scale = Scale;
-            BasePosition = BasePosition;
+            BasePosition = CharacterLabel.Position;
+            IsSpace = Character == ' ';
         };
-
-        if Character ~= ' ' then
-            task.spawn(function()
-                local Stagger = math.min((Index - 1) * 0.045, 0.42);
-                task.wait(Stagger);
-
-                if Mode == 'Shimmer' then
-                    while State.Alive and CharacterLabel.Parent do
-                        TrackTween(
-                            CharacterLabel,
-                            TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                            {
-                                Position = AddTitleOffset(BasePosition, 0, -2);
-                                TextColor3 = HighlightColor;
-                                Rotation = (Index % 2 == 0) and 1.5 or -1.5;
-                            }
-                        );
-                        TrackTween(
-                            Scale,
-                            TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-                            { Scale = 1.12; }
-                        );
-
-                        task.wait(0.16);
-                        if not State.Alive then break; end
-
-                        TrackTween(
-                            CharacterLabel,
-                            TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-                            {
-                                Position = BasePosition;
-                                TextColor3 = BaseColor;
-                                Rotation = 0;
-                            }
-                        );
-                        TrackTween(
-                            Scale,
-                            TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-                            { Scale = 1; }
-                        );
-
-                        task.wait(math.max(0.78, 1.35 - (#Characters * 0.025)));
-                    end
-                elseif Mode == 'Pulse' then
-                    while State.Alive and CharacterLabel.Parent do
-                        TrackTween(
-                            CharacterLabel,
-                            TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                            {
-                                Position = AddTitleOffset(BasePosition, 0, -4);
-                                Rotation = (Index % 2 == 0) and 2 or -2;
-                            }
-                        );
-                        TrackTween(
-                            Scale,
-                            TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-                            { Scale = 1.18; }
-                        );
-
-                        task.wait(0.13);
-                        if not State.Alive then break; end
-
-                        TrackTween(
-                            CharacterLabel,
-                            TweenInfo.new(0.26, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out),
-                            {
-                                Position = BasePosition;
-                                Rotation = 0;
-                            }
-                        );
-                        TrackTween(
-                            Scale,
-                            TweenInfo.new(0.20, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-                            { Scale = 1; }
-                        );
-
-                        task.wait(math.max(0.9, 1.55 - (#Characters * 0.02)));
-                    end
-                elseif Mode == 'Wobble' then
-                    local Direction = (Index % 2 == 0) and 1 or -1;
-
-                    while State.Alive and CharacterLabel.Parent do
-                        TrackTween(
-                            CharacterLabel,
-                            TweenInfo.new(0.24, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                            {
-                                Position = AddTitleOffset(BasePosition, Direction, -2);
-                                Rotation = 5 * Direction;
-                            }
-                        );
-                        TrackTween(
-                            Scale,
-                            TweenInfo.new(0.24, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                            { Scale = 1.06; }
-                        );
-
-                        task.wait(0.25);
-                        if not State.Alive then break; end
-
-                        TrackTween(
-                            CharacterLabel,
-                            TweenInfo.new(0.28, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                            {
-                                Position = AddTitleOffset(BasePosition, -Direction, 1);
-                                Rotation = -4 * Direction;
-                            }
-                        );
-                        TrackTween(
-                            Scale,
-                            TweenInfo.new(0.28, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                            { Scale = 0.97; }
-                        );
-
-                        task.wait(0.29);
-                        if not State.Alive then break; end
-
-                        TrackTween(
-                            CharacterLabel,
-                            TweenInfo.new(0.20, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-                            {
-                                Position = BasePosition;
-                                Rotation = 0;
-                            }
-                        );
-                        TrackTween(
-                            Scale,
-                            TweenInfo.new(0.20, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-                            { Scale = 1; }
-                        );
-
-                        task.wait(0.44 + ((Index % 3) * 0.07));
-                    end
-                end
-            end);
-        end;
     end;
 end;
 
@@ -809,6 +653,63 @@ function Library:RefreshTitleAnimations()
         end;
     end;
 end;
+
+table.insert(Library.Signals, RenderStepped:Connect(function()
+    local Now = os.clock();
+
+    for Label, State in next, Library.TitleAnimationStates do
+        if not Label
+            or not Label.Parent
+            or not State
+            or not State.Alive
+            or not State.Holder
+            or not State.Holder.Parent then
+            if Label then
+                Library:ResetTitleAnimation(Label);
+            end
+            continue;
+        end;
+
+        local Mode = State.Mode;
+        local Time = Now - (State.StartedAt or Now);
+        local Count = math.max(State.Count or #State.Characters, 1);
+
+        for Index, Character in ipairs(State.Characters) do
+            local CharacterLabel = Character.Label;
+
+            if CharacterLabel and CharacterLabel.Parent and not Character.IsSpace then
+                local Position = Character.BasePosition;
+                local Rotation = 0;
+                local Color = State.BaseColor;
+                local YOffset = 0;
+
+                if Mode == 'Wave' then
+                    local Phase = (Time * 3.35) - ((Index - 1) * 0.58);
+                    local Wave = math.sin(Phase);
+                    YOffset = Wave * 1.85;
+                    Rotation = Wave * 1.15;
+                elseif Mode == 'Bounce' then
+                    local Cycle = (Time * 2.55) - ((Index - 1) * 0.48);
+                    local Hop = math.max(math.sin(Cycle), 0);
+                    Hop = Hop * Hop;
+                    YOffset = -3.25 * Hop;
+                    Rotation = math.sin(Cycle * 0.5) * 0.45 * Hop;
+                elseif Mode == 'Glow Sweep' then
+                    local Sweep = ((Time * 0.52) - ((Index - 1) / Count)) % 1;
+                    local Distance = math.min(Sweep, 1 - Sweep);
+                    local Intensity = math.max(0, 1 - (Distance / 0.19));
+                    Intensity = Intensity * Intensity * (3 - (2 * Intensity));
+                    Color = State.BaseColor:Lerp(State.HighlightColor, Intensity);
+                    YOffset = -0.65 * Intensity;
+                end;
+
+                CharacterLabel.Position = AddTitleOffset(Position, 0, YOffset);
+                CharacterLabel.Rotation = Rotation;
+                CharacterLabel.TextColor3 = Color;
+            end;
+        end;
+    end;
+end));
 
 function Library:RegisterRepoFont(Name, FileName, VisualScale)
     assert(type(Name) == 'string' and Name ~= '', 'RegisterRepoFont: invalid font name');
