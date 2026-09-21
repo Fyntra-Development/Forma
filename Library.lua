@@ -943,7 +943,13 @@ function Library:GetFontVisualScale(Name)
 end;
 
 function Library:RefreshTextSizes()
-    Library:RefreshTextSizes();
+    for Instance, BaseSize in next, Library.BaseTextSizes do
+        if Instance and Instance.Parent then
+            pcall(function()
+                Instance.TextSize = Library:GetScaledTextSize(BaseSize);
+            end);
+        end;
+    end;
 end;
 
 function Library:ApplyFont(Instance)
@@ -1122,13 +1128,7 @@ function Library:SetTextSize(Size)
     Library.TextSize = Size;
     Library.TextScale = Size / 14;
 
-    for Instance, BaseSize in next, Library.BaseTextSizes do
-        if Instance and Instance.Parent then
-            pcall(function()
-                Instance.TextSize = Library:GetScaledTextSize(BaseSize);
-            end);
-        end;
-    end;
+    Library:RefreshTextSizes();
 
     task.defer(function()
         for _, Controller in next, Library.TypingControllers do
