@@ -2,7 +2,7 @@ local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
 local contentProvider = game:GetService('ContentProvider')
 local ThemeManager = {} do
-	ThemeManager.Version = '1.7.0+build.1'
+	ThemeManager.Version = '1.7.1+build.1'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -35,8 +35,8 @@ local ThemeManager = {} do
 		};
 		['Alya'] = {
 			File = 'alya.png';
-			Size = UDim2.fromOffset(310, 310);
-			VisibleAnchor = Vector2.new(0.11, 0.66);
+			Size = UDim2.fromOffset(300, 300);
+			VisibleAnchor = Vector2.new(0.08, 0.82);
 		};
 	}
 	ThemeManager.OverlayEnabled = false
