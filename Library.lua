@@ -9851,6 +9851,9 @@ function Library:CreateOptionWheel(Config)
                 Callback = function()
                     if Library.KeybindFrame then
                         Library.KeybindFrame.Visible = not Library.KeybindFrame.Visible;
+                        if Library.KeybindFrame.Visible and Wheel.Open and Wheel.RefreshKeybindAvoidance then
+                            Wheel:RefreshKeybindAvoidance();
+                        end
                     end
                 end;
             });
@@ -10125,8 +10128,8 @@ function Library:CreateOptionWheel(Config)
         if not Frame or not Frame.Parent then return; end
 
         if Opening then
+            if Wheel.KeybindShifted then return; end
             Wheel.KeybindReturnPosition = nil;
-            Wheel.KeybindShifted = false;
             if not Frame.Visible then return; end
 
             local HolderWidth = math.max(WheelHolder.AbsoluteSize.X, 1);
@@ -10154,6 +10157,10 @@ function Library:CreateOptionWheel(Config)
             Wheel.KeybindReturnPosition = nil;
             Library:Animate(Frame, { Position = ReturnPosition; }, 0.24, nil, 'HUD');
         end
+    end
+
+    function Wheel:RefreshKeybindAvoidance()
+        ShiftKeybindPanel(true);
     end
 
     function Wheel:OpenWheel()
