@@ -1,7 +1,7 @@
 local __FormaBootstrapEnv = getgenv and getgenv() or _G
 if not __FormaBootstrapEnv.__FormaLoaderBooting and type(loadstring) == 'function' then
     local __Success, __Updater = pcall(function()
-        local __LoaderCacheVersion = '1.3.9-r2'
+        local __LoaderCacheVersion = '1.5.2+build.1'
         local __LoaderCachePath = 'FormaCache/Loader-' .. __LoaderCacheVersion .. '.lua'
         local __Source
 
@@ -226,7 +226,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.5.1+build.1';
+    Version = '1.5.2+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
