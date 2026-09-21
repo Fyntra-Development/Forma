@@ -1,6 +1,7 @@
 local httpService = game:GetService('HttpService')
 
 local SaveManager = {} do
+	SaveManager.Version = '1.1.0'
 	SaveManager.Folder = 'LinoriaLibSettings'
 	SaveManager.Ignore = {}
 	SaveManager.Parser = {
@@ -192,6 +193,12 @@ local SaveManager = {} do
 
 	function SaveManager:SetLibrary(library)
 		self.Library = library
+		if library.RegisterUpdatable then
+			library:RegisterUpdatable('SaveManager', self.Version, 'addons/SaveManager.lua')
+		end
+		task.defer(function()
+			if library.CheckForUpdates then library:CheckForUpdates('SaveManager') end
+		end)
 	end
 
 	function SaveManager:LoadAutoloadConfig()
@@ -209,6 +216,7 @@ local SaveManager = {} do
 
 	function SaveManager:BuildConfigSection(tab)
 		assert(self.Library, 'Must set SaveManager.Library')
+		if self.Library.CheckForUpdates then self.Library:CheckForUpdates('SaveManager') end
 
 		local section = tab:AddRightGroupbox('Configuration')
 
