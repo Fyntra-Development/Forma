@@ -478,7 +478,14 @@ end;
 
 local function TrackTitleTween(State, Tween)
     if not State or not Tween then return Tween; end;
+
     table.insert(State.Tweens, Tween);
+    Tween.Completed:Connect(function()
+        local Index = table.find(State.Tweens, Tween);
+        if Index then
+            table.remove(State.Tweens, Index);
+        end;
+    end);
     Tween:Play();
     return Tween;
 end;
@@ -508,7 +515,9 @@ function Library:ResetTitleAnimation(Label)
     if State then
         State.Alive = false;
 
-        for _, Tween in ipairs(State.Tweens or {}) do
+        local Tweens = State.Tweens or {};
+        State.Tweens = {};
+        for _, Tween in ipairs(Tweens) do
             pcall(function() Tween:Cancel(); end);
         end;
 
