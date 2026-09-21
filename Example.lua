@@ -42,6 +42,7 @@ local Window = Library:CreateWindow({
 local Tabs = {
     Main = Window:AddTab('Main'),
     ['Forma'] = Window:AddTab('Forma'),
+    ['Utilities'] = Window:AddTab('Utilities'),
     ['Target HUD'] = Window:AddTab('Target HUD'),
     ['UI Settings'] = Window:AddTab('UI Settings'),
 }
@@ -604,6 +605,116 @@ FormaRight:AddButton({
         Options.ColorPicker:SetSpeed(math.min((Options.ColorPicker.Speed or 1) + 0.5, 4))
     end,
 })
+
+-- ============================================================================
+-- Utility components
+-- ============================================================================
+
+local ConsoleView = Tabs.Utilities:AddConsole({
+    Title = 'Console',
+    Height = 245,
+    SearchPlaceholder = 'Search output...',
+    MaxEntries = 250,
+})
+
+ConsoleView:Log('Console ready')
+ConsoleView:Info('Library initialized')
+ConsoleView:Warn('This is a warning example')
+ConsoleView:Error('Errors use the current Forma risk color')
+
+local PlayerTable = Tabs.Utilities:AddTable({
+    Title = 'Players',
+    Height = 250,
+    SearchPlaceholder = 'Search players...',
+    Columns = {
+        { Name = 'Player', Key = 'Player', Width = 0.46 },
+        { Name = 'Team', Key = 'Team', Width = 0.30 },
+        { Name = 'Priority', Key = 'Priority', Width = 0.24 },
+    },
+    OnSelected = function(Data)
+        if Data then
+            ConsoleView:Info('Selected player: ' .. tostring(Data.Player))
+        end
+    end,
+})
+
+local function RefreshPlayerTable()
+    local Rows = {}
+    for _, Player in ipairs(Players:GetPlayers()) do
+        table.insert(Rows, {
+            Player = Player.Name,
+            Team = Player.Team and Player.Team.Name or 'None',
+            Priority = 'Neutral',
+            UserId = Player.UserId,
+        })
+    end
+    PlayerTable:SetRows(Rows)
+end
+
+RefreshPlayerTable()
+Library:GiveSignal(Players.PlayerAdded:Connect(RefreshPlayerTable))
+Library:GiveSignal(Players.PlayerRemoving:Connect(RefreshPlayerTable))
+
+local GlobalChat
+GlobalChat = Tabs.Utilities:AddChat({
+    Title = 'Global Chat',
+    Height = 275,
+    Placeholder = 'Type a message...',
+    MaxMessages = 100,
+    OnSend = function(Text)
+        local LocalPlayer = Players.LocalPlayer
+        GlobalChat:AddMessage({
+            Name = LocalPlayer.DisplayName,
+            Username = '@' .. LocalPlayer.Name,
+            UserId = LocalPlayer.UserId,
+            Text = Text,
+            Side = 'Right',
+        })
+    end,
+})
+
+GlobalChat:AddMessage({
+    Name = Players.LocalPlayer.DisplayName,
+    Username = '@' .. Players.LocalPlayer.Name,
+    UserId = Players.LocalPlayer.UserId,
+    Text = 'Forma chat view ready.',
+    Side = 'Left',
+})
+
+local SkinGrid = Tabs.Utilities:AddCardGrid({
+    Title = 'Skin / asset grid',
+    Height = 275,
+    CardSize = Vector2.new(98, 108),
+    Searchable = true,
+    Selectable = true,
+    OnSelected = function(Data)
+        if Data then
+            ConsoleView:Log('Selected card: ' .. tostring(Data.Title))
+        end
+    end,
+})
+
+SkinGrid:AddCard({
+    Title = 'Add',
+    Icon = 'plus',
+    IconSize = 28,
+    Selectable = false,
+    Action = function()
+        Library:Notify({
+            Title = 'Card grid',
+            Text = 'Use AddCard() to insert a new skin, preset, theme, or asset.',
+            Duration = 4,
+        })
+    end,
+})
+
+for Index = 1, 3 do
+    SkinGrid:AddCard({
+        Title = 'Skin ' .. Index,
+        Image = 'rbxthumb://type=AvatarHeadShot&id=' .. tostring(Players.LocalPlayer.UserId) .. '&w=150&h=150',
+        SearchText = 'demo preset skin',
+    })
+end
 
 -- ============================================================================
 -- Target HUD
