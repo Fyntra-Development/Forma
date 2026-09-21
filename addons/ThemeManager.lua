@@ -2,7 +2,7 @@ local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
 local contentProvider = game:GetService('ContentProvider')
 local ThemeManager = {} do
-	ThemeManager.Version = '1.4.0+build.1'
+	ThemeManager.Version = '1.5.0+build.1'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -35,8 +35,8 @@ local ThemeManager = {} do
 		};
 		['Alya'] = {
 			File = 'alya.png';
-			Size = UDim2.fromOffset(300, 300);
-			VisibleAnchor = Vector2.new(0.08, 0.842);
+			Size = UDim2.fromOffset(310, 310);
+			VisibleAnchor = Vector2.new(0.11, 0.66);
 		};
 	}
 	ThemeManager.OverlayEnabled = false
@@ -186,6 +186,7 @@ local ThemeManager = {} do
 			OverlayEnabled = Toggles and Toggles.ThemeManager_OverlayEnabled and Toggles.ThemeManager_OverlayEnabled.Value or self.OverlayEnabled;
 			OverlayImage = Options and Options.ThemeManager_OverlayImage and Options.ThemeManager_OverlayImage.Value or self.OverlaySelection;
 			Cursor = Options and Options.ThemeManager_Cursor and Options.ThemeManager_Cursor.Value or self.Library.CursorStyle;
+			TitleAnimation = Options and Options.ThemeManager_TitleAnimation and Options.ThemeManager_TitleAnimation.Value or self.Library.TitleAnimation;
 		}
 
 		local success, encoded = pcall(httpService.JSONEncode, httpService, data)
@@ -627,6 +628,9 @@ local ThemeManager = {} do
 		local SavedPreferences = self:LoadPreferences()
 		local PreferredFont = type(SavedPreferences.Font) == 'string' and SavedPreferences.Font or self.Library.FontName
 		local PreferredCursor = type(SavedPreferences.Cursor) == 'string' and SavedPreferences.Cursor or self.Library.CursorStyle
+		local PreferredTitleAnimation = type(SavedPreferences.TitleAnimation) == 'string'
+			and SavedPreferences.TitleAnimation
+			or self.Library.TitleAnimation
 		if tonumber(SavedPreferences.TextSize) then
 			self.Library:SetTextSize(SavedPreferences.TextSize)
 		end
@@ -638,6 +642,9 @@ local ThemeManager = {} do
 		end
 		if self.Library.SetCursorStyle then
 			self.Library:SetCursorStyle(PreferredCursor)
+		end
+		if self.Library.SetTitleAnimation then
+			self.Library:SetTitleAnimation(PreferredTitleAnimation)
 		end
 		self:WarmOverlayAssets()
 
@@ -665,6 +672,24 @@ local ThemeManager = {} do
 		Options.ThemeManager_Cursor:OnChanged(function()
 			if self.Library.SetCursorStyle then
 				self.Library:SetCursorStyle(Options.ThemeManager_Cursor.Value)
+			end
+			self:QueueSavePreferences()
+		end)
+
+		local TitleAnimations = self.Library.GetTitleAnimations
+			and self.Library:GetTitleAnimations()
+			or { 'None', 'Shimmer', 'Pulse', 'Wobble' }
+		if not table.find(TitleAnimations, PreferredTitleAnimation) then
+			PreferredTitleAnimation = self.Library.TitleAnimation or 'Shimmer'
+		end
+		groupbox:AddDropdown('ThemeManager_TitleAnimation', {
+			Text = 'Title animation';
+			Values = TitleAnimations;
+			Default = table.find(TitleAnimations, PreferredTitleAnimation) or 2;
+		})
+		Options.ThemeManager_TitleAnimation:OnChanged(function()
+			if self.Library.SetTitleAnimation then
+				self.Library:SetTitleAnimation(Options.ThemeManager_TitleAnimation.Value)
 			end
 			self:QueueSavePreferences()
 		end)
