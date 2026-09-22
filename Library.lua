@@ -1,20 +1,43 @@
 local __FormaBootstrapEnv = getgenv and getgenv() or _G
 if not __FormaBootstrapEnv.__FormaLoaderBooting and type(loadstring) == 'function' then
     local __Success, __Updater = pcall(function()
-        local __LoaderCacheVersion = '1.5.2+build.1'
+        local __LoaderCacheVersion = '1.5.3+build.1'
         local __LoaderCachePath = 'FormaCache/Loader-' .. __LoaderCacheVersion .. '.lua'
         local __Source
 
+        local function __ValidateLoaderSource(Source)
+            if type(Source) ~= 'string' or Source == '' then
+                return false
+            end
+
+            local Version = Source:match("Updater%.Version%s*=%s*['\"]([^'\"]+)['\"]")
+            if Version ~= __LoaderCacheVersion then
+                return false
+            end
+
+            local Chunk = loadstring(Source)
+            return Chunk ~= nil
+        end
+
         if isfile and readfile and isfile(__LoaderCachePath) then
             local __ReadSuccess, __Cached = pcall(readfile, __LoaderCachePath)
-            if __ReadSuccess and type(__Cached) == 'string' and __Cached ~= '' then
+            if __ReadSuccess and __ValidateLoaderSource(__Cached) then
                 __Source = __Cached
             end
         end
 
         if not __Source then
-            local __Url = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/Loader.lua?forma_boot=' .. tostring(math.floor(os.clock() * 100000))
-            __Source = game:HttpGet(__Url)
+            local __Url = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/Loader.lua?forma_boot='
+                .. tostring(DateTime.now().UnixTimestampMillis)
+                .. '-'
+                .. tostring(math.floor(os.clock() * 100000))
+            local __Fetched = game:HttpGet(__Url)
+
+            if not __ValidateLoaderSource(__Fetched) then
+                error('downloaded Loader.lua did not match expected version ' .. __LoaderCacheVersion)
+            end
+
+            __Source = __Fetched
 
             if writefile then
                 pcall(function()
@@ -281,7 +304,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.16.4+build.1';
+    Version = '1.16.5+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
