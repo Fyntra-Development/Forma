@@ -1,7 +1,7 @@
 local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
-	MenuManager.Version = '1.3.0'
+	MenuManager.Version = '1.3.1'
 	MenuManager.Library = nil
 	MenuManager.EasingStyle = 'Sine'
 	MenuManager.EasingDirection = 'Out'
@@ -42,9 +42,9 @@ local MenuManager = {} do
 		Badge = { Style = 'Quart'; Direction = 'Out'; Scale = 0.88; Min = 0.10; Max = 0.22; };
 		Health = { Style = 'Sine'; Direction = 'Out'; Scale = 0.96; Min = 0.11; Max = 0.30; };
 		DragRelease = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.78; Min = 0.07; Max = 0.14; };
-		Tab = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.04; Min = 0.21; Max = 0.34; };
-		TabExit = { Style = 'Sine'; Direction = 'InOut'; Scale = 0.98; Min = 0.16; Max = 0.25; };
-		TabIndicator = { Style = 'Cubic'; Direction = 'Out'; Scale = 0.98; Min = 0.13; Max = 0.27; };
+		Tab = { Style = 'Sine'; Direction = 'InOut'; Scale = 1.08; Min = 0.24; Max = 0.38; };
+		TabExit = { Style = 'Sine'; Direction = 'InOut'; Scale = 1.02; Min = 0.18; Max = 0.28; };
+		TabIndicator = { Style = 'Sine'; Direction = 'InOut'; Scale = 1.04; Min = 0.18; Max = 0.32; };
 		Picker = { Style = 'Quart'; Direction = 'Out'; Scale = 1.00; Min = 0.17; Max = 0.30; };
 		Dropdown = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.00; Min = 0.16; Max = 0.28; };
 		DropdownSearch = { Style = 'Cubic'; Direction = 'Out'; Scale = 1.00; Min = 0.15; Max = 0.25; };
