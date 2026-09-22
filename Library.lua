@@ -1219,13 +1219,15 @@ function Library:CreateTabTransitionController(Config)
             ExistingTab.Active = ExistingTab == Tab;
         end
 
-        for _, State in ipairs({ Outgoing, Incoming }) do
-            if State then
-                if State.Frame then Library:CancelMotion(State.Frame); end
-                if State.Button then Library:CancelMotion(State.Button, 'BackgroundColor3'); end
-                if State.Block then Library:CancelMotion(State.Block, 'BackgroundTransparency'); end
-            end
+        local function CancelStateMotion(State)
+            if not State then return; end
+            if State.Frame then Library:CancelMotion(State.Frame); end
+            if State.Button then Library:CancelMotion(State.Button, 'BackgroundColor3'); end
+            if State.Block then Library:CancelMotion(State.Block, 'BackgroundTransparency'); end
         end
+
+        CancelStateMotion(Outgoing);
+        CancelStateMotion(Incoming);
 
         if Outgoing then
             -- Refresh descendant baselines once at transition start. Render
@@ -15165,7 +15167,7 @@ function Library:CreateWindow(...)
         );
 
         function Tab:ShowTab()
-            if Tab.Active and Window.ActiveTab == Tab and not MainTabTransition.Transition then
+            if Tab.Active and Window.ActiveTab == Tab then
                 if TabButton then MainTabIndicator:MoveTo(TabButton, false); end
                 return;
             end;
@@ -15540,9 +15542,7 @@ function Library:CreateWindow(...)
                 );
 
                 function Tab:Show()
-                    if Tab.Active
-                        and Tabbox.ActiveTab == Tab
-                        and not Tabbox.TransitionController.Transition then
+                    if Tab.Active and Tabbox.ActiveTab == Tab then
                         TabboxIndicator:MoveTo(Button, false);
                         return;
                     end;
