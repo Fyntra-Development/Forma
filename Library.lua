@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.13.1+build.1';
+    Version = '1.13.2+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -9662,8 +9662,8 @@ do
                 Row.Hovering = false;
 
                 local BASE_LABEL_X = 6;
-                local HOVER_LABEL_X = 9;
-                local SELECTED_LABEL_X = 13;
+                local HOVER_LABEL_X = 8;
+                local SELECTED_LABEL_X = 10;
 
                 local function IsRowSelected()
                     return Info.Multi and Dropdown.Value[Value] or Dropdown.Value == Value;
@@ -9696,27 +9696,27 @@ do
                         ButtonLabel.Position = TargetPosition;
                         ButtonLabel.TextColor3 = TargetColor;
                     else
-                        -- Give the horizontal motion its own easing instead of sharing
-                        -- the dropdown's generic tween profile. Selected rows settle a
-                        -- little slower; hover nudges stay quick but still ease cleanly.
+                        -- Use true ease-in/ease-out curves for the tiny horizontal
+                        -- travel so the row accelerates gently, glides, then settles
+                        -- instead of jumping into motion and only easing at the end.
                         local PositionTweenInfo;
                         if Selected then
                             PositionTweenInfo = TweenInfo.new(
-                                0.24,
-                                Enum.EasingStyle.Quint,
-                                Enum.EasingDirection.Out
+                                0.26,
+                                Enum.EasingStyle.Quart,
+                                Enum.EasingDirection.InOut
                             );
                         elseif Row.Hovering then
                             PositionTweenInfo = TweenInfo.new(
-                                0.18,
-                                Enum.EasingStyle.Cubic,
-                                Enum.EasingDirection.Out
+                                0.20,
+                                Enum.EasingStyle.Sine,
+                                Enum.EasingDirection.InOut
                             );
                         else
                             PositionTweenInfo = TweenInfo.new(
-                                0.21,
-                                Enum.EasingStyle.Sine,
-                                Enum.EasingDirection.Out
+                                0.22,
+                                Enum.EasingStyle.Quart,
+                                Enum.EasingDirection.InOut
                             );
                         end;
 
@@ -9732,9 +9732,9 @@ do
                             ButtonLabel,
                             { TextColor3 = TargetColor; },
                             TweenInfo.new(
-                                0.16,
+                                0.18,
                                 Enum.EasingStyle.Sine,
-                                Enum.EasingDirection.Out
+                                Enum.EasingDirection.InOut
                             ),
                             nil,
                             'Color'
