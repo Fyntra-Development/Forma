@@ -1022,8 +1022,6 @@ function Library:CreateTabTransition(Frame, Config)
 
         if Visible then
             if not Frame.Visible then
-                Frame.Visible = true;
-
                 -- A fully hidden tab gets a clean entry origin. If the same tab
                 -- is reversing during its exit, retain its current position and
                 -- velocity instead of snapping back to a canned start point.
@@ -1033,11 +1031,27 @@ function Library:CreateTabTransition(Frame, Config)
                     self.Offset = Direction * self.EnterOffset;
                     self.OffsetVelocity = 0;
                 end
+
+                ApplyPosition();
+
+                -- Apply the hidden opacity before the frame can be rendered.
+                -- Waiting for the next RenderStepped creates a one-frame flash
+                -- that visually wipes out the start of the fade.
+                Library:SetUnifiedFadeProgress(Frame, self.Alpha);
+                self.NeedsFadeRefresh = false;
+                Frame.Visible = true;
+            else
+                -- Refresh baselines synchronously at the start of every reversal
+                -- so dynamically-added controls participate in the same fade.
+                Library:SetUnifiedFadeProgress(Frame, self.Alpha);
+                self.NeedsFadeRefresh = false;
             end
 
             self.TargetAlpha = 1;
             self.TargetOffset = 0;
         else
+            Library:SetUnifiedFadeProgress(Frame, self.Alpha);
+            self.NeedsFadeRefresh = false;
             self.TargetAlpha = 0;
             self.TargetOffset = Direction * self.ExitOffset;
         end
