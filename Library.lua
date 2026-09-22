@@ -281,7 +281,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.16.1+build.1';
+    Version = '1.16.2+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -2018,7 +2018,11 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         Library:Animate(Indicator, {
             Position = TargetPosition;
             Size = TargetSize;
-        }, Duration, nil, 'TabIndicator');
+        }, TweenInfo.new(
+            Duration,
+            Enum.EasingStyle.Quart,
+            Enum.EasingDirection.InOut
+        ), nil, 'TabIndicator');
     end;
 
     function Controller:Refresh(Button)
@@ -14564,10 +14568,11 @@ function Library:CreateWindow(...)
         Tab.ContentAnimationId = 0;
         Tab.Button = TabButton;
 
-        local TabFrame = Library:Create('Frame', {
+        local TabFrame = Library:Create('CanvasGroup', {
             Name = 'TabFrame',
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
+            GroupTransparency = 1;
             Position = UDim2.new(0, 0, 0, 7);
             Size = UDim2.new(1, 0, 1, 0);
             Visible = false;
@@ -14668,9 +14673,9 @@ function Library:CreateWindow(...)
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
 
             local ButtonEase = TweenInfo.new(
-                0.20,
-                Enum.EasingStyle.Sine,
-                Enum.EasingDirection.InOut
+                0.22,
+                Enum.EasingStyle.Quint,
+                Enum.EasingDirection.Out
             );
 
             if TabButton and Blocker then
@@ -14692,10 +14697,11 @@ function Library:CreateWindow(...)
 
             if not TabFrame.Visible then
                 Library:CancelMotion(TabFrame);
-                TabFrame.Position = UDim2.new(0, Direction * 10, 0, 2);
-                Library:SetUnifiedFadeProgress(TabFrame, 0);
+                TabFrame.Position = UDim2.new(0, Direction * 8, 0, 1);
+                TabFrame.GroupTransparency = 1;
             else
                 Library:CancelMotion(TabFrame, 'Position');
+                Library:CancelMotion(TabFrame, 'GroupTransparency');
             end;
 
             TabFrame.Visible = true;
@@ -14704,19 +14710,19 @@ function Library:CreateWindow(...)
                 TabFrame,
                 { Position = UDim2.new(0, 0, 0, 0); },
                 TweenInfo.new(
-                    0.32,
-                    Enum.EasingStyle.Sine,
-                    Enum.EasingDirection.InOut
+                    0.34,
+                    Enum.EasingStyle.Quint,
+                    Enum.EasingDirection.Out
                 ),
                 nil,
                 'Tab'
             );
 
-            Library:TweenUnifiedFade(
+            Library:Animate(
                 TabFrame,
-                1,
+                { GroupTransparency = 0; },
                 TweenInfo.new(
-                    0.27,
+                    0.30,
                     Enum.EasingStyle.Sine,
                     Enum.EasingDirection.InOut
                 ),
@@ -14745,8 +14751,8 @@ function Library:CreateWindow(...)
 
             local ButtonEase = TweenInfo.new(
                 0.18,
-                Enum.EasingStyle.Sine,
-                Enum.EasingDirection.InOut
+                Enum.EasingStyle.Cubic,
+                Enum.EasingDirection.Out
             );
 
             if TabButton and Blocker then
@@ -14765,7 +14771,7 @@ function Library:CreateWindow(...)
 
             if Instant then
                 Library:CancelMotion(TabFrame);
-                Library:SetUnifiedFadeProgress(TabFrame, 0);
+                TabFrame.GroupTransparency = 1;
                 TabFrame.Visible = false;
                 TabFrame.Position = UDim2.new(0, 0, 0, 0);
                 return;
@@ -14773,21 +14779,21 @@ function Library:CreateWindow(...)
 
             Library:Animate(
                 TabFrame,
-                { Position = UDim2.new(0, Direction * 8, 0, 0); },
+                { Position = UDim2.new(0, Direction * 7, 0, 0); },
                 TweenInfo.new(
-                    0.22,
-                    Enum.EasingStyle.Sine,
-                    Enum.EasingDirection.InOut
+                    0.23,
+                    Enum.EasingStyle.Cubic,
+                    Enum.EasingDirection.In
                 ),
                 nil,
                 'TabExit'
             );
 
-            local ExitTween = Library:TweenUnifiedFade(
+            Library:Animate(
                 TabFrame,
-                0,
+                { GroupTransparency = 1; },
                 TweenInfo.new(
-                    0.20,
+                    0.24,
                     Enum.EasingStyle.Sine,
                     Enum.EasingDirection.InOut
                 ),
@@ -14800,11 +14806,6 @@ function Library:CreateWindow(...)
                 end,
                 'Fade'
             );
-
-            if not ExitTween and not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
-                TabFrame.Visible = false;
-                TabFrame.Position = UDim2.new(0, 0, 0, 0);
-            end;
         end;
 
         function Tab:SetLayoutOrder(Position)
@@ -15095,9 +15096,10 @@ function Library:CreateWindow(...)
                 Tab.Active = false;
                 Tab.ContentAnimationId = 0;
 
-                local Container = Library:Create('Frame', {
+                local Container = Library:Create('CanvasGroup', {
                     BackgroundTransparency = 1;
                     BorderSizePixel = 0;
+                    GroupTransparency = 1;
                     Position = UDim2.new(0, 4, 0, 25);
                     Size = UDim2.new(1, -4, 1, -20);
                     ZIndex = 1;
@@ -15141,10 +15143,11 @@ function Library:CreateWindow(...)
 
                     if not Container.Visible then
                         Library:CancelMotion(Container);
-                        Container.Position = UDim2.new(0, 4 + (Direction * 7), 0, 20);
-                        Library:SetUnifiedFadeProgress(Container, 0);
+                        Container.Position = UDim2.new(0, 4 + (Direction * 6), 0, 20);
+                        Container.GroupTransparency = 1;
                     else
                         Library:CancelMotion(Container, 'Position');
+                        Library:CancelMotion(Container, 'GroupTransparency');
                     end
 
                     Container.Visible = true;
@@ -15152,9 +15155,9 @@ function Library:CreateWindow(...)
                     TabboxIndicator:MoveTo(Button, not TabboxIndicator.Frame.Visible);
 
                     local ButtonEase = TweenInfo.new(
-                        0.18,
-                        Enum.EasingStyle.Sine,
-                        Enum.EasingDirection.InOut
+                        0.20,
+                        Enum.EasingStyle.Quint,
+                        Enum.EasingDirection.Out
                     );
 
                     Library:Animate(Button, {
@@ -15169,19 +15172,19 @@ function Library:CreateWindow(...)
                         Container,
                         { Position = UDim2.new(0, 4, 0, 20); },
                         TweenInfo.new(
-                            0.28,
-                            Enum.EasingStyle.Sine,
-                            Enum.EasingDirection.InOut
+                            0.30,
+                            Enum.EasingStyle.Quint,
+                            Enum.EasingDirection.Out
                         ),
                         nil,
                         'Tab'
                     );
 
-                    Library:TweenUnifiedFade(
+                    Library:Animate(
                         Container,
-                        1,
+                        { GroupTransparency = 0; },
                         TweenInfo.new(
-                            0.24,
+                            0.27,
                             Enum.EasingStyle.Sine,
                             Enum.EasingDirection.InOut
                         ),
@@ -15206,8 +15209,8 @@ function Library:CreateWindow(...)
 
                     local ButtonEase = TweenInfo.new(
                         0.16,
-                        Enum.EasingStyle.Sine,
-                        Enum.EasingDirection.InOut
+                        Enum.EasingStyle.Cubic,
+                        Enum.EasingDirection.Out
                     );
 
                     Library:Animate(Button, {
@@ -15220,7 +15223,7 @@ function Library:CreateWindow(...)
 
                     if Instant then
                         Library:CancelMotion(Container);
-                        Library:SetUnifiedFadeProgress(Container, 0);
+                        Container.GroupTransparency = 1;
                         Container.Visible = false;
                         Container.Position = UDim2.new(0, 4, 0, 20);
                         Block.Visible = false;
@@ -15229,21 +15232,21 @@ function Library:CreateWindow(...)
 
                     Library:Animate(
                         Container,
-                        { Position = UDim2.new(0, 4 + (Direction * 6), 0, 20); },
+                        { Position = UDim2.new(0, 4 + (Direction * 5), 0, 20); },
                         TweenInfo.new(
                             0.20,
-                            Enum.EasingStyle.Sine,
-                            Enum.EasingDirection.InOut
+                            Enum.EasingStyle.Cubic,
+                            Enum.EasingDirection.In
                         ),
                         nil,
                         'TabExit'
                     );
 
-                    local ExitTween = Library:TweenUnifiedFade(
+                    Library:Animate(
                         Container,
-                        0,
+                        { GroupTransparency = 1; },
                         TweenInfo.new(
-                            0.18,
+                            0.21,
                             Enum.EasingStyle.Sine,
                             Enum.EasingDirection.InOut
                         ),
@@ -15257,12 +15260,6 @@ function Library:CreateWindow(...)
                         end,
                         'Fade'
                     );
-
-                    if not ExitTween and not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
-                        Container.Visible = false;
-                        Container.Position = UDim2.new(0, 4, 0, 20);
-                        Block.Visible = false;
-                    end;
                 end;
 
                 function Tab:Resize()
