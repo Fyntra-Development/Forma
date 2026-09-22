@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.12.5+build.1';
+    Version = '1.12.6+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -3043,7 +3043,7 @@ function Library:UpdateColorsUsingRegistry()
                 end
             end;
         end;
-    end;;
+    end;
 end;
 
 function Library:GiveSignal(Signal)
