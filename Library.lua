@@ -10677,6 +10677,7 @@ function Library:CreateUtilityWindow(Config)
         Parent = Inner;
     });
     Library:AddToRegistry(AccentBar, { BackgroundColor3 = 'AccentColor'; }, true);
+    Library:AddMovingAccentGradient(AccentBar, 2.4);
 
     local Header = Library:Create('Frame', {
         Active = true;
