@@ -270,8 +270,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.13.2+build.1';
-    Release = 'HF';
+    Version = '1.14.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -9760,9 +9760,6 @@ do
 
                     local Selected = Info.Multi and Dropdown.Value[Value] or Dropdown.Value == Value;
                     local Try = not Selected;
-                    if Dropdown:GetActiveValues() == 1 and not Try and not Info.AllowNull then
-                        return;
-                    end
 
                     if Info.Multi then
                         if Try then Dropdown.Value[Value] = true else Dropdown.Value[Value] = nil end
@@ -9813,7 +9810,6 @@ do
                 end
                 Dropdown.Value = NewSelection;
             else
-                if NewValue == nil and not Info.AllowNull then return; end
                 if NewValue ~= nil and not table.find(Dropdown.Values, NewValue) then return; end
                 Dropdown.Value = NewValue;
             end
