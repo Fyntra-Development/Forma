@@ -281,8 +281,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.16.0+build.1';
-    Release = 'GA';
+    Version = '1.16.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -569,11 +569,17 @@ function Library:GetMenuTweenInfo(Duration, Context)
     local Style = Enum.EasingStyle.Sine;
     local Direction = Enum.EasingDirection.Out;
 
-    if Context == 'Picker' or Context == 'Tab' or Context == 'TabIndicator' or Context == 'Dropdown' then
+    if Context == 'Tab' or Context == 'TabIndicator' then
+        Style = Enum.EasingStyle.Sine;
+        Direction = Enum.EasingDirection.InOut;
+    elseif Context == 'TabExit' then
+        Style = Enum.EasingStyle.Sine;
+        Direction = Enum.EasingDirection.InOut;
+    elseif Context == 'Picker' or Context == 'Dropdown' then
         Style = Enum.EasingStyle.Quart;
-    elseif Context == 'PopupExit' or Context == 'TabExit' then
+    elseif Context == 'PopupExit' then
         Style = Enum.EasingStyle.Cubic;
-        Direction = Context == 'PopupExit' and Enum.EasingDirection.In or Enum.EasingDirection.Out;
+        Direction = Enum.EasingDirection.In;
     elseif Context == 'DragRelease' or Context == 'Resize' then
         Style = Enum.EasingStyle.Cubic;
     end;
@@ -2008,7 +2014,7 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         Indicator.Visible = true;
         local Travel = math.abs(NewLeft - Indicator.Position.X.Offset)
             + (math.abs(TargetSize.X.Offset - Indicator.Size.X.Offset) * 0.35);
-        local Duration = 0.20 + math.clamp(Travel / 1200, 0, 0.08);
+        local Duration = 0.24 + math.clamp(Travel / 1400, 0, 0.08);
         Library:Animate(Indicator, {
             Position = TargetPosition;
             Size = TargetSize;
@@ -14458,10 +14464,13 @@ function Library:CreateWindow(...)
     end;
 
     function Window:AddTab(Name, Icon, Config)
+        Window.TabTransitionSerial = (Window.TabTransitionSerial or 0) + 1;
+
         local Tab = {
             Groupboxes = {};
             Tabboxes = {};
             VisualGroups = {};
+            TransitionOrdinal = Window.TabTransitionSerial;
         };
 
         local IsSettingsTab = (Name == 'UI Settings' or Name == 'Settings' or (type(Config) == 'table' and Config.IsSettings));
@@ -14640,10 +14649,17 @@ function Library:CreateWindow(...)
             end;
 
             local PreviousTab = Window.ActiveTab;
+            local Direction = 1;
+
+            if PreviousTab and PreviousTab ~= Tab then
+                local PreviousOrder = tonumber(PreviousTab.TransitionOrdinal) or 0;
+                local NewOrder = tonumber(Tab.TransitionOrdinal) or PreviousOrder;
+                Direction = NewOrder >= PreviousOrder and 1 or -1;
+            end
 
             for _, OtherTab in next, Window.Tabs do
                 if OtherTab ~= Tab and OtherTab.Active then
-                    OtherTab:HideTab(OtherTab ~= PreviousTab);
+                    OtherTab:HideTab(OtherTab ~= PreviousTab, -Direction);
                 end;
             end;
 
@@ -14651,9 +14667,19 @@ function Library:CreateWindow(...)
             Window.ActiveTab = Tab;
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
 
+            local ButtonEase = TweenInfo.new(
+                0.20,
+                Enum.EasingStyle.Sine,
+                Enum.EasingDirection.InOut
+            );
+
             if TabButton and Blocker then
-                Library:TweenProperty(Blocker, 'BackgroundTransparency', 0, 0.16);
-                Library:TweenProperty(TabButton, 'BackgroundColor3', Library.MainColor, 0.16);
+                Library:Animate(Blocker, {
+                    BackgroundTransparency = 0;
+                }, ButtonEase, nil, 'Tab');
+                Library:Animate(TabButton, {
+                    BackgroundColor3 = Library.MainColor;
+                }, ButtonEase, nil, 'Tab');
                 Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'MainColor';
                 MainTabIndicator:MoveTo(TabButton, not MainTabIndicator.Frame.Visible);
             else
@@ -14666,34 +14692,70 @@ function Library:CreateWindow(...)
 
             if not TabFrame.Visible then
                 Library:CancelMotion(TabFrame);
-                TabFrame.Position = UDim2.new(0, 0, 0, 8);
+                TabFrame.Position = UDim2.new(0, Direction * 10, 0, 2);
                 Library:SetUnifiedFadeProgress(TabFrame, 0);
+            else
+                Library:CancelMotion(TabFrame, 'Position');
             end;
+
             TabFrame.Visible = true;
-            Library:Animate(TabFrame, {
-                Position = UDim2.new(0, 0, 0, 0);
-            }, 0.28, nil, 'Tab');
-            Library:TweenUnifiedFade(TabFrame, 1, 0.28, function(State)
-                if Tab.Active and State ~= Enum.PlaybackState.Cancelled then
-                    for _, RevealState in ipairs(Tab.ScrollRevealStates) do
-                        if RevealState then RevealState:QueueRefresh(); end
+
+            Library:Animate(
+                TabFrame,
+                { Position = UDim2.new(0, 0, 0, 0); },
+                TweenInfo.new(
+                    0.32,
+                    Enum.EasingStyle.Sine,
+                    Enum.EasingDirection.InOut
+                ),
+                nil,
+                'Tab'
+            );
+
+            Library:TweenUnifiedFade(
+                TabFrame,
+                1,
+                TweenInfo.new(
+                    0.27,
+                    Enum.EasingStyle.Sine,
+                    Enum.EasingDirection.InOut
+                ),
+                function(State)
+                    if Tab.Active and State ~= Enum.PlaybackState.Cancelled then
+                        for _, RevealState in ipairs(Tab.ScrollRevealStates) do
+                            if RevealState then RevealState:QueueRefresh(); end
+                        end
                     end
-                end;
-            end, 'Fade');
+                end,
+                'Fade'
+            );
         end;
 
-        function Tab:HideTab(Instant)
+        function Tab:HideTab(Instant, Direction)
             if not Tab.Active and not TabFrame.Visible then
                 return;
             end;
+
+            Direction = math.clamp(tonumber(Direction) or -1, -1, 1);
+            if Direction == 0 then Direction = -1; end
 
             Tab.Active = false;
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
             local CurrentAnimation = Tab.ContentAnimationId;
 
+            local ButtonEase = TweenInfo.new(
+                0.18,
+                Enum.EasingStyle.Sine,
+                Enum.EasingDirection.InOut
+            );
+
             if TabButton and Blocker then
-                Library:TweenProperty(Blocker, 'BackgroundTransparency', 1, 0.16);
-                Library:TweenProperty(TabButton, 'BackgroundColor3', Library.BackgroundColor, 0.16);
+                Library:Animate(Blocker, {
+                    BackgroundTransparency = 1;
+                }, ButtonEase, nil, 'TabExit');
+                Library:Animate(TabButton, {
+                    BackgroundColor3 = Library.BackgroundColor;
+                }, ButtonEase, nil, 'TabExit');
                 Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
             end;
 
@@ -14709,16 +14771,35 @@ function Library:CreateWindow(...)
                 return;
             end;
 
-            Library:Animate(TabFrame, {
-                Position = UDim2.new(0, 0, 0, -6);
-            }, 0.18, nil, 'TabExit');
-            local ExitTween = Library:TweenUnifiedFade(TabFrame, 0, 0.18, function(State)
-                if State == Enum.PlaybackState.Cancelled then return; end
-                if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
-                    TabFrame.Visible = false;
-                    TabFrame.Position = UDim2.new(0, 0, 0, 0);
-                end;
-            end, 'Fade');
+            Library:Animate(
+                TabFrame,
+                { Position = UDim2.new(0, Direction * 8, 0, 0); },
+                TweenInfo.new(
+                    0.22,
+                    Enum.EasingStyle.Sine,
+                    Enum.EasingDirection.InOut
+                ),
+                nil,
+                'TabExit'
+            );
+
+            local ExitTween = Library:TweenUnifiedFade(
+                TabFrame,
+                0,
+                TweenInfo.new(
+                    0.20,
+                    Enum.EasingStyle.Sine,
+                    Enum.EasingDirection.InOut
+                ),
+                function(State)
+                    if State == Enum.PlaybackState.Cancelled then return; end
+                    if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
+                        TabFrame.Visible = false;
+                        TabFrame.Position = UDim2.new(0, 0, 0, 0);
+                    end
+                end,
+                'Fade'
+            );
 
             if not ExitTween and not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                 TabFrame.Visible = false;
@@ -15043,45 +15124,98 @@ function Library:CreateWindow(...)
                             break;
                         end;
                     end;
+
+                    local Direction = 1;
+                    if PreviousTab and PreviousTab.Button and Button then
+                        Direction = Button.AbsolutePosition.X >= PreviousTab.Button.AbsolutePosition.X and 1 or -1;
+                    end
+
                     for _, OtherTab in next, Tabbox.Tabs do
                         if OtherTab ~= Tab and OtherTab.Active then
-                            OtherTab:Hide(OtherTab ~= PreviousTab);
+                            OtherTab:Hide(OtherTab ~= PreviousTab, -Direction);
                         end;
                     end;
 
                     Tab.Active = true;
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
+
                     if not Container.Visible then
                         Library:CancelMotion(Container);
-                        Container.Position = UDim2.new(0, 4, 0, 23);
+                        Container.Position = UDim2.new(0, 4 + (Direction * 7), 0, 20);
                         Library:SetUnifiedFadeProgress(Container, 0);
-                    end;
+                    else
+                        Library:CancelMotion(Container, 'Position');
+                    end
+
                     Container.Visible = true;
                     Block.Visible = true;
                     TabboxIndicator:MoveTo(Button, not TabboxIndicator.Frame.Visible);
 
-                    Library:TweenProperty(Button, 'BackgroundColor3', Library.BackgroundColor, 0.16);
-                    Library:TweenProperty(Block, 'BackgroundTransparency', 0, 0.14);
+                    local ButtonEase = TweenInfo.new(
+                        0.18,
+                        Enum.EasingStyle.Sine,
+                        Enum.EasingDirection.InOut
+                    );
+
+                    Library:Animate(Button, {
+                        BackgroundColor3 = Library.BackgroundColor;
+                    }, ButtonEase, nil, 'Tab');
+                    Library:Animate(Block, {
+                        BackgroundTransparency = 0;
+                    }, ButtonEase, nil, 'Tab');
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
-                    Library:Animate(Container, {
-                        Position = UDim2.new(0, 4, 0, 20);
-                    }, 0.24, nil, 'Tab');
-                    Library:TweenUnifiedFade(Container, 1, 0.24, nil, 'Fade');
+
+                    Library:Animate(
+                        Container,
+                        { Position = UDim2.new(0, 4, 0, 20); },
+                        TweenInfo.new(
+                            0.28,
+                            Enum.EasingStyle.Sine,
+                            Enum.EasingDirection.InOut
+                        ),
+                        nil,
+                        'Tab'
+                    );
+
+                    Library:TweenUnifiedFade(
+                        Container,
+                        1,
+                        TweenInfo.new(
+                            0.24,
+                            Enum.EasingStyle.Sine,
+                            Enum.EasingDirection.InOut
+                        ),
+                        nil,
+                        'Fade'
+                    );
 
                     Tab:Resize();
                 end;
 
-                function Tab:Hide(Instant)
+                function Tab:Hide(Instant, Direction)
                     if not Tab.Active and not Container.Visible then
                         return;
                     end;
+
+                    Direction = math.clamp(tonumber(Direction) or -1, -1, 1);
+                    if Direction == 0 then Direction = -1; end
 
                     Tab.Active = false;
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
                     local CurrentAnimation = Tab.ContentAnimationId;
 
-                    Library:TweenProperty(Button, 'BackgroundColor3', Library.MainColor, 0.14);
-                    Library:TweenProperty(Block, 'BackgroundTransparency', 1, 0.12);
+                    local ButtonEase = TweenInfo.new(
+                        0.16,
+                        Enum.EasingStyle.Sine,
+                        Enum.EasingDirection.InOut
+                    );
+
+                    Library:Animate(Button, {
+                        BackgroundColor3 = Library.MainColor;
+                    }, ButtonEase, nil, 'TabExit');
+                    Library:Animate(Block, {
+                        BackgroundTransparency = 1;
+                    }, ButtonEase, nil, 'TabExit');
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
 
                     if Instant then
@@ -15093,17 +15227,36 @@ function Library:CreateWindow(...)
                         return;
                     end;
 
-                    Library:Animate(Container, {
-                        Position = UDim2.new(0, 4, 0, 18);
-                    }, 0.14, nil, 'TabExit');
-                    local ExitTween = Library:TweenUnifiedFade(Container, 0, 0.14, function(State)
-                        if State == Enum.PlaybackState.Cancelled then return; end
-                        if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
-                            Container.Visible = false;
-                            Container.Position = UDim2.new(0, 4, 0, 20);
-                            Block.Visible = false;
-                        end;
-                    end, 'Fade');
+                    Library:Animate(
+                        Container,
+                        { Position = UDim2.new(0, 4 + (Direction * 6), 0, 20); },
+                        TweenInfo.new(
+                            0.20,
+                            Enum.EasingStyle.Sine,
+                            Enum.EasingDirection.InOut
+                        ),
+                        nil,
+                        'TabExit'
+                    );
+
+                    local ExitTween = Library:TweenUnifiedFade(
+                        Container,
+                        0,
+                        TweenInfo.new(
+                            0.18,
+                            Enum.EasingStyle.Sine,
+                            Enum.EasingDirection.InOut
+                        ),
+                        function(State)
+                            if State == Enum.PlaybackState.Cancelled then return; end
+                            if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
+                                Container.Visible = false;
+                                Container.Position = UDim2.new(0, 4, 0, 20);
+                                Block.Visible = false;
+                            end
+                        end,
+                        'Fade'
+                    );
 
                     if not ExitTween and not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
                         Container.Visible = false;
