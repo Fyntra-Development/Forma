@@ -270,8 +270,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.15.0+build.1';
-    Release = 'GA';
+    Version = '1.15.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -2400,32 +2400,80 @@ function Library:MakeResizable(Instance, Config)
             Parent = Instance;
         });
 
+        local VisualAnchor;
+        local VisualPosition;
+        local VisualSize;
+        local GlowRotation = 0;
+        local GlowTransparency;
+
+        if Definition.Corner then
+            -- Keep the resize cube pinned exactly to the actual window corner.
+            -- The hitbox extends inward, while the visual itself sits on the edge.
+            VisualAnchor = Definition.Anchor;
+            VisualPosition = Definition.Position;
+            VisualSize = UDim2.fromOffset(6, 6);
+        elseif Definition.Horizontal < 0 then
+            -- Left edge: glow exists only outside the window and fades outward.
+            VisualAnchor = Vector2.new(1, 0.5);
+            VisualPosition = UDim2.fromScale(0, 0.5);
+            VisualSize = UDim2.new(0, 10, 1, -10);
+            GlowRotation = 0;
+            GlowTransparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0.00, 1.00);
+                NumberSequenceKeypoint.new(0.38, 0.78);
+                NumberSequenceKeypoint.new(1.00, 0.16);
+            });
+        elseif Definition.Horizontal > 0 then
+            -- Right edge: strongest at the window, transparent farther outward.
+            VisualAnchor = Vector2.new(0, 0.5);
+            VisualPosition = UDim2.fromScale(1, 0.5);
+            VisualSize = UDim2.new(0, 10, 1, -10);
+            GlowRotation = 0;
+            GlowTransparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0.00, 0.16);
+                NumberSequenceKeypoint.new(0.62, 0.78);
+                NumberSequenceKeypoint.new(1.00, 1.00);
+            });
+        elseif Definition.Vertical < 0 then
+            -- Top edge: glow rises outward from the top border.
+            VisualAnchor = Vector2.new(0.5, 1);
+            VisualPosition = UDim2.fromScale(0.5, 0);
+            VisualSize = UDim2.new(1, -10, 0, 10);
+            GlowRotation = 90;
+            GlowTransparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0.00, 1.00);
+                NumberSequenceKeypoint.new(0.38, 0.78);
+                NumberSequenceKeypoint.new(1.00, 0.16);
+            });
+        else
+            -- Bottom edge: glow falls outward from the bottom border.
+            VisualAnchor = Vector2.new(0.5, 0);
+            VisualPosition = UDim2.fromScale(0.5, 1);
+            VisualSize = UDim2.new(1, -10, 0, 10);
+            GlowRotation = 90;
+            GlowTransparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0.00, 0.16);
+                NumberSequenceKeypoint.new(0.62, 0.78);
+                NumberSequenceKeypoint.new(1.00, 1.00);
+            });
+        end
+
         local Visual = Library:Create('Frame', {
-            AnchorPoint = Vector2.new(0.5, 0.5);
+            AnchorPoint = VisualAnchor;
             BackgroundColor3 = Library.AccentColor;
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Position = UDim2.fromScale(0.5, 0.5);
-            Size = Definition.Corner
-                and UDim2.fromOffset(6, 6)
-                or (Definition.Horizontal ~= 0
-                    and UDim2.new(0, 2, 1, -8)
-                    or UDim2.new(1, -8, 0, 2));
+            Position = VisualPosition;
+            Size = VisualSize;
             ZIndex = 251;
             Parent = Hitbox;
         });
         Library:AddToRegistry(Visual, { BackgroundColor3 = 'AccentColor'; });
 
-        if not Definition.Corner then
+        if GlowTransparency then
             Library:Create('UIGradient', {
-                Rotation = Definition.FalloffRotation or 0;
-                Transparency = NumberSequence.new({
-                    NumberSequenceKeypoint.new(0.00, 1.00);
-                    NumberSequenceKeypoint.new(0.16, 0.62);
-                    NumberSequenceKeypoint.new(0.50, 0.08);
-                    NumberSequenceKeypoint.new(0.84, 0.62);
-                    NumberSequenceKeypoint.new(1.00, 1.00);
-                });
+                Rotation = GlowRotation;
+                Transparency = GlowTransparency;
                 Parent = Visual;
             });
         end
@@ -2436,7 +2484,7 @@ function Library:MakeResizable(Instance, Config)
             Horizontal = Definition.Horizontal;
             Vertical = Definition.Vertical;
             Hovering = false;
-            VisibleTransparency = Definition.Corner and 0.06 or 0.18;
+            VisibleTransparency = Definition.Corner and 0.06 or 0.34;
         };
         State.Handles[Definition.Name] = Handle;
         Library.ResizeHitboxes[Hitbox] = Instance;
