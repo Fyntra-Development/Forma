@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.12.4+build.1';
+    Version = '1.12.5+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -303,8 +303,8 @@ local Library = {
     CursorDisplayOrder = 1000000;
     CursorStyle = 'Arrow';
     CursorStyles = { 'Arrow', 'Dot', 'System' };
-    TitleAnimation = 'Wave';
-    TitleAnimations = { 'None', 'Wave' };
+    TitleAnimation = 'None';
+    TitleAnimations = { 'None' };
 };
 
 local function NormalizeGameName(Value)
@@ -436,422 +436,33 @@ function Library:SetCursorStyle(Style)
 end;
 
 function Library:GetTitleAnimations()
-    return table.clone(Library.TitleAnimations or { 'None', 'Wave' });
-end;
-
-local function CopyTitleFont(Source, Target)
-    pcall(function()
-        Target.Font = Source.Font;
-    end);
-    pcall(function()
-        Target.FontFace = Source.FontFace;
-    end);
-end;
-
-local function SplitTitleCharacters(Text)
-    local Characters = {};
-    local Success = pcall(function()
-        for _, Codepoint in utf8.codes(Text) do
-            table.insert(Characters, utf8.char(Codepoint));
-        end;
-    end);
-
-    if not Success then
-        table.clear(Characters);
-        for Index = 1, #Text do
-            table.insert(Characters, Text:sub(Index, Index));
-        end;
-    end;
-
-    return Characters;
-end;
-
-local function OffsetTitleY(Position, Offset)
-    return UDim2.new(
-        Position.X.Scale,
-        Position.X.Offset,
-        Position.Y.Scale,
-        Position.Y.Offset + Offset
-    );
-end;
-
-local function MeasureTitleWidth(Label, Text)
-    Text = tostring(Text or '');
-    if Text == '' then return 0; end;
-
-    local FontFace;
-    pcall(function()
-        FontFace = Label.FontFace;
-    end);
-
-    if typeof(FontFace) == 'Font' then
-        local Success, Bounds = pcall(function()
-            local Params = Instance.new('GetTextBoundsParams');
-            Params.Text = Text;
-            Params.Font = FontFace;
-            Params.Size = Label.TextSize;
-            Params.Width = 4096;
-
-            local Result = TextService:GetTextBoundsAsync(Params);
-            Params:Destroy();
-            return Result;
-        end);
-
-        if Success and Bounds then
-            return Bounds.X;
-        end;
-    end;
-
-    local FontValue = Enum.Font.Code;
-    pcall(function()
-        FontValue = Label.Font;
-    end);
-
-    local Success, Bounds = pcall(function()
-        return TextService:GetTextSize(Text, Label.TextSize, FontValue, Vector2.new(4096, 4096));
-    end);
-
-    return Success and Bounds and Bounds.X or 0;
-end;
-
-local function SetFadeBaselineProperty(Instance, Property, Value)
-    if not Instance then return; end;
-
-    local Baseline = Library.FadeBaselines and Library.FadeBaselines[Instance];
-    if Baseline then
-        Baseline[Property] = Value;
-    end;
-
-    for _, Controller in next, Library.UnifiedFadeControllers or {} do
-        local Entry = Controller.EntryMap and Controller.EntryMap[Instance];
-        if Entry and Entry.Baseline then
-            Entry.Baseline[Property] = Value;
-        end;
-    end;
-end;
-
-local function SetTitleSourceTextVisibility(Label, TextTransparency, StrokeTransparency)
-    TextTransparency = math.clamp(tonumber(TextTransparency) or 0, 0, 1);
-    StrokeTransparency = math.clamp(tonumber(StrokeTransparency) or 1, 0, 1);
-
-    pcall(function()
-        Label.TextTransparency = TextTransparency;
-        Label.TextStrokeTransparency = StrokeTransparency;
-    end);
-
-    SetFadeBaselineProperty(Label, 'TextTransparency', TextTransparency);
-    SetFadeBaselineProperty(Label, 'TextStrokeTransparency', StrokeTransparency);
-end;
-
-local function SetTitleSourceOutlineTransparency(State, Transparency)
-    if not State then return; end;
-    Transparency = math.clamp(tonumber(Transparency) or 1, 0, 1);
-
-    for Stroke, Original in next, State.SourceOutlines or {} do
-        if Stroke and Stroke.Parent then
-            pcall(function()
-                Stroke.Transparency = Transparency;
-            end);
-            SetFadeBaselineProperty(Stroke, 'Transparency', Transparency);
-        end;
-    end;
-end;
-
-local function RestoreTitleSourceOutlines(State)
-    if not State then return; end;
-
-    for Stroke, Original in next, State.SourceOutlines or {} do
-        if Stroke and Stroke.Parent then
-            local Transparency = math.clamp(tonumber(Original) or 0, 0, 1);
-            pcall(function()
-                Stroke.Transparency = Transparency;
-            end);
-            SetFadeBaselineProperty(Stroke, 'Transparency', Transparency);
-        end;
-    end;
+    return { 'None' };
 end;
 
 function Library:ResetTitleAnimation(Label)
-    if not Label then return; end;
-
-    local State = Library.TitleAnimationStates and Library.TitleAnimationStates[Label];
-    if State then
-        State.Alive = false;
-
-        if State.Root and State.Root.Parent then
-            pcall(function()
-                State.Root:Destroy();
-            end);
-        end;
-
-        SetTitleSourceTextVisibility(
-            Label,
-            State.SourceTransparency or 0,
-            State.SourceStrokeTransparency or 1
-        );
-        RestoreTitleSourceOutlines(State);
-    else
-        SetTitleSourceTextVisibility(Label, 0, 1);
-    end;
-
-    if Library.TitleAnimationStates then
-        Library.TitleAnimationStates[Label] = nil;
-    end;
-end;
-
-function Library:ApplyTitleAnimation(Label)
-    if not Label or not Label.Parent then return; end;
-
-    Library:ResetTitleAnimation(Label);
-
-    if (Library.TitleAnimation or 'None') ~= 'Wave' then
-        return;
-    end;
-
-    local Text = tostring(Label.Text or '');
-    if Text == '' then
-        return;
-    end;
-
-    local Root = Instance.new('Frame');
-    Root.Name = 'FormaWaveTitleRoot';
-    Root.Active = false;
-    Root.BackgroundTransparency = 1;
-    Root.BorderSizePixel = 0;
-    Root.ClipsDescendants = false;
-    Root.Position = UDim2.fromOffset(0, 0);
-    Root.Size = UDim2.fromScale(1, 1);
-    Root.ZIndex = Label.ZIndex + 1;
-    Root.Parent = Label;
-
-    local SourceStrokeTransparency = 1;
-    pcall(function()
-        SourceStrokeTransparency = Label.TextStrokeTransparency;
-    end);
-
-    local SourceOutlines = {};
-    for _, Child in ipairs(Label:GetChildren()) do
-        if Child:IsA('UIStroke') then
-            SourceOutlines[Child] = Child.Transparency;
-        end;
-    end;
-
-    local State = {
-        Alive = true;
-        Source = Label;
-        Root = Root;
-        Characters = {};
-        SourceTransparency = Label.TextTransparency;
-        SourceStrokeTransparency = SourceStrokeTransparency;
-        SourceOutlines = SourceOutlines;
-        StartedAt = os.clock();
-    };
-
-    Library.TitleAnimationStates[Label] = State;
-
-    -- Hide every part of the original title, including the UIStroke created by
-    -- ApplyTextStroke. Leaving that UIStroke visible is what caused the static
-    -- "outline/duplicate title" to sit behind the animated characters.
-    SetTitleSourceTextVisibility(Label, 1, 1);
-    SetTitleSourceOutlineTransparency(State, 1);
-
-    local Characters = SplitTitleCharacters(Text);
-    local Prefix = '';
-    local Height = math.max(Label.AbsoluteSize.Y, Label.TextSize + 4, 16);
-    local VerticalPadding = 7;
-
-    for Index, Character in ipairs(Characters) do
-        local Before = Prefix;
-        Prefix = Prefix .. Character;
-
-        local BeforeWidth = MeasureTitleWidth(Label, Before);
-        local ThroughWidth = MeasureTitleWidth(Label, Prefix);
-        local CharacterWidth = math.max(ThroughWidth - BeforeWidth, 1);
-
-        local CharacterLabel = Instance.new('TextLabel');
-        CharacterLabel.Name = 'WaveCharacter_' .. tostring(Index);
-        CharacterLabel.Active = false;
-        CharacterLabel.AutomaticSize = Enum.AutomaticSize.None;
-        CharacterLabel.BackgroundTransparency = 1;
-        CharacterLabel.BorderSizePixel = 0;
-        CharacterLabel.ClipsDescendants = false;
-        CharacterLabel.Position = UDim2.fromOffset(BeforeWidth, -VerticalPadding);
-        CharacterLabel.Size = UDim2.fromOffset(math.max(CharacterWidth + 4, 4), Height + (VerticalPadding * 2));
-        CharacterLabel.RichText = false;
-        CharacterLabel.Text = Character;
-        CharacterLabel.TextColor3 = Label.TextColor3;
-        CharacterLabel.TextSize = Label.TextSize;
-        CharacterLabel.TextTransparency = Character == ' ' and 1 or 0;
-
-        -- Animated title characters are intentionally clean text with no built-in
-        -- TextStroke and no UIStroke child.
-        CharacterLabel.TextStrokeTransparency = 1;
-
-        CharacterLabel.TextWrapped = false;
-        CharacterLabel.TextTruncate = Enum.TextTruncate.None;
-        CharacterLabel.TextXAlignment = Enum.TextXAlignment.Left;
-        CharacterLabel.TextYAlignment = Label.TextYAlignment;
-        CharacterLabel.LineHeight = Label.LineHeight;
-        CharacterLabel.ZIndex = Label.ZIndex + 1;
-        CopyTitleFont(Label, CharacterLabel);
-        CharacterLabel.Parent = Root;
-
-        State.Characters[Index] = {
-            Label = CharacterLabel;
-            BasePosition = CharacterLabel.Position;
-            IsSpace = Character == ' ';
-            CenterX = BeforeWidth + (CharacterWidth * 0.5);
-        };
-    end;
-
-    State.TotalWidth = math.max(MeasureTitleWidth(Label, Text), 1);
-    State.GradientDuration = 2.4;
-end;
-
-function Library:TriggerTitleAnimation(Label)
-    if not Label or not Label.Parent then return; end;
-
-    if (Library.TitleAnimation or 'None') == 'Wave' then
-        local State = Library.TitleAnimationStates[Label];
-        if not State or not State.Root or not State.Root.Parent then
-            Library:ApplyTitleAnimation(Label);
-        end;
-    end;
-end;
-
-function Library:RegisterTitleAnimationLabel(Label)
-    if not Label then return Label; end;
-
-    Library.TitleAnimationLabels[Label] = true;
-
-    if not Library.TitleAnimationConnections[Label] then
-        local Connections = {};
-        Library.TitleAnimationConnections[Label] = Connections;
-
-        table.insert(Connections, Label:GetPropertyChangedSignal('Text'):Connect(function()
-            task.defer(function()
-                if Label.Parent then
-                    Library:ApplyTitleAnimation(Label);
-                end;
-            end);
-        end));
-
-        table.insert(Connections, Label:GetPropertyChangedSignal('TextSize'):Connect(function()
-            task.defer(function()
-                if Label.Parent then
-                    Library:ApplyTitleAnimation(Label);
-                end;
-            end);
-        end));
-
-        table.insert(Connections, Label:GetPropertyChangedSignal('TextColor3'):Connect(function()
-            local State = Library.TitleAnimationStates[Label];
-            if State then
-                for _, Character in ipairs(State.Characters) do
-                    if Character.Label and Character.Label.Parent then
-                        Character.Label.TextColor3 = Label.TextColor3;
-                    end;
-                end;
-            end;
-        end));
-
-        table.insert(Connections, Label.AncestryChanged:Connect(function(_, Parent)
-            if Parent == nil then
-                Library:ResetTitleAnimation(Label);
-                Library.TitleAnimationLabels[Label] = nil;
-
-                local Stored = Library.TitleAnimationConnections[Label];
-                if Stored then
-                    for _, Connection in ipairs(Stored) do
-                        pcall(function()
-                            Connection:Disconnect();
-                        end);
-                    end;
-                end;
-                Library.TitleAnimationConnections[Label] = nil;
-            end;
-        end));
-    end;
-
-    Library:ApplyTitleAnimation(Label);
     return Label;
 end;
 
-function Library:SetTitleAnimation(Name)
-    local Requested = string.lower(tostring(Name or 'None'));
-    local Resolved = Requested == 'wave' and 'Wave' or 'None';
+function Library:ApplyTitleAnimation(Label)
+    return Label;
+end;
 
-    Library.TitleAnimation = Resolved;
+function Library:TriggerTitleAnimation(Label)
+    return Label;
+end;
 
-    for Label in next, Library.TitleAnimationLabels do
-        if Label and Label.Parent then
-            Library:ApplyTitleAnimation(Label);
-        end;
-    end;
+function Library:RegisterTitleAnimationLabel(Label)
+    return Label;
+end;
 
-    return Resolved;
+function Library:SetTitleAnimation()
+    Library.TitleAnimation = 'None';
+    return 'None';
 end;
 
 function Library:RefreshTitleAnimations()
-    for Label in next, Library.TitleAnimationLabels do
-        if Label and Label.Parent then
-            Library:ApplyTitleAnimation(Label);
-        end;
-    end;
+    return nil;
 end;
-
--- One synchronized wave clock for every title. The character motion and title
--- gradient both use shared clocks, so the title remains fluid while its colors
--- stay phase-locked to FormaMovingAccentGradient bars.
-table.insert(Library.Signals, RenderStepped:Connect(function()
-    if (Library.TitleAnimation or 'None') ~= 'Wave' then
-        return;
-    end;
-
-    local Now = os.clock();
-    local Amplitude = 4.0;
-    local AngularSpeed = 2.45;
-    local PhaseStep = 0.50;
-
-    for Label, State in next, Library.TitleAnimationStates do
-        if not Label
-            or not Label.Parent
-            or not State
-            or not State.Alive
-            or not State.Root
-            or not State.Root.Parent then
-            if Label then
-                Library:ResetTitleAnimation(Label);
-            end;
-            continue;
-        end;
-
-        local Time = Now - (State.StartedAt or Now);
-        local TotalWidth = math.max(State.TotalWidth or 1, 1);
-        local GradientDuration = State.GradientDuration or 2.4;
-
-        for Index, Character in ipairs(State.Characters) do
-            local CharacterLabel = Character.Label;
-            if CharacterLabel and CharacterLabel.Parent then
-                if Character.IsSpace then
-                    CharacterLabel.Position = Character.BasePosition;
-                else
-                    local Phase = (Time * AngularSpeed) - ((Index - 1) * PhaseStep);
-                    local Y = math.sin(Phase) * Amplitude;
-                    CharacterLabel.Position = OffsetTitleY(Character.BasePosition, Y);
-
-                    local NormalizedX = math.clamp((Character.CenterX or 0) / TotalWidth, 0, 1);
-                    CharacterLabel.TextColor3 = Library:SampleMovingAccentGradient(
-                        NormalizedX,
-                        GradientDuration,
-                        Label.TextColor3,
-                        Now
-                    );
-                end;
-            end;
-        end;
-    end;
-end));
 
 function Library:RegisterRepoFont(Name, FileName, VisualScale)
     assert(type(Name) == 'string' and Name ~= '', 'RegisterRepoFont: invalid font name');
@@ -880,9 +491,6 @@ Library.DraggableStates = setmetatable({}, { __mode = 'k' });
 Library.ResizeHitboxes = setmetatable({}, { __mode = 'k' });
 Library.ScrollRevealStates = setmetatable({}, { __mode = 'k' });
 Library.TypingControllers = setmetatable({}, { __mode = 'k' });
-Library.TitleAnimationLabels = setmetatable({}, { __mode = 'k' });
-Library.TitleAnimationStates = setmetatable({}, { __mode = 'k' });
-Library.TitleAnimationConnections = setmetatable({}, { __mode = 'k' });
 
 local MotionTransparencyProperties = {
     BackgroundTransparency = true;
@@ -1498,9 +1106,6 @@ function Library:UpdateFont()
         end
         if Library.UpdateWatermarkText and Library.WatermarkText then
             Library.UpdateWatermarkText(Library.WatermarkText.Text);
-        end
-        if Library.RefreshTitleAnimations then
-            Library:RefreshTitleAnimations();
         end
     end);
 end;
@@ -3438,11 +3043,7 @@ function Library:UpdateColorsUsingRegistry()
                 end
             end;
         end;
-    end;
-
-    if Library.RefreshTitleAnimations then
-        Library:RefreshTitleAnimations();
-    end;
+    end;;
 end;
 
 function Library:GiveSignal(Signal)
@@ -10701,7 +10302,6 @@ function Library:CreateUtilityWindow(Config)
         Parent = Header;
     });
     Library.RegistryMap[TitleLabel].Properties.TextColor3 = TitleAccent and 'AccentColor' or 'FontColor';
-    Library:RegisterTitleAnimationLabel(TitleLabel);
 
     local CloseButton;
     if ShowCloseButton then
@@ -11232,7 +10832,6 @@ do
         Parent = InnerFrame;
     });
     Library.RegistryMap[WatermarkTitle].Properties.TextColor3 = 'AccentColor';
-    Library:RegisterTitleAnimationLabel(WatermarkTitle);
 
     local WatermarkStats = Library:CreateLabel({
         Position = UDim2.fromOffset(8, 1);
@@ -14346,7 +13945,6 @@ function Library:CreateWindow(...)
         Parent = Inner;
     });
     Library.RegistryMap[WindowLabel].Properties.TextColor3 = 'AccentColor';
-    Library:RegisterTitleAnimationLabel(WindowLabel);
 
     local WindowSubtitle = Library:CreateLabel({
         Position = UDim2.new(0, 7, 0, 0);
