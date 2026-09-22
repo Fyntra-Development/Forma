@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.12.1+build.1';
+    Version = '1.12.2+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -475,6 +475,107 @@ local function OffsetTitleY(Position, Offset)
     );
 end;
 
+local function MeasureTitleWidth(Label, Text)
+    Text = tostring(Text or '');
+    if Text == '' then return 0; end;
+
+    local FontFace;
+    pcall(function()
+        FontFace = Label.FontFace;
+    end);
+
+    if typeof(FontFace) == 'Font' then
+        local Success, Bounds = pcall(function()
+            local Params = Instance.new('GetTextBoundsParams');
+            Params.Text = Text;
+            Params.Font = FontFace;
+            Params.Size = Label.TextSize;
+            Params.Width = 4096;
+
+            local Result = TextService:GetTextBoundsAsync(Params);
+            Params:Destroy();
+            return Result;
+        end);
+
+        if Success and Bounds then
+            return Bounds.X;
+        end;
+    end;
+
+    local FontValue = Enum.Font.Code;
+    pcall(function()
+        FontValue = Label.Font;
+    end);
+
+    local Success, Bounds = pcall(function()
+        return TextService:GetTextSize(Text, Label.TextSize, FontValue, Vector2.new(4096, 4096));
+    end);
+
+    return Success and Bounds and Bounds.X or 0;
+end;
+
+local function SetTitleSourceTransparency(Label, Transparency)
+    Transparency = math.clamp(tonumber(Transparency) or 0, 0, 1);
+
+    pcall(function()
+        Label.TextTransparency = Transparency;
+    end);
+
+    local Baseline = Library.FadeBaselines and Library.FadeBaselines[Label];
+    if Baseline then
+        Baseline.TextTransparency = Transparency;
+    end;
+
+    for _, Controller in next, Library.UnifiedFadeControllers or {} do
+        local Entry = Controller.EntryMap and Controller.EntryMap[Label];
+        if Entry and Entry.Baseline then
+            Entry.Baseline.TextTransparency = Transparency;
+        end;
+    end;
+end;
+
+local function StartTitleWave(State)
+    if not State or not State.Alive then return; end;
+
+    local Amplitude = 3.25;
+    local HalfPeriod = 0.92;
+    local CharacterDelay = 0.060;
+
+    for Index, Character in ipairs(State.Characters) do
+        local CharacterLabel = Character.Label;
+
+        if CharacterLabel and CharacterLabel.Parent and not Character.IsSpace then
+            local BasePosition = Character.BasePosition;
+            CharacterLabel.Position = OffsetTitleY(BasePosition, Amplitude);
+
+            task.delay((Index - 1) * CharacterDelay, function()
+                if not State.Alive
+                    or not CharacterLabel.Parent
+                    or not State.Root
+                    or not State.Root.Parent then
+                    return;
+                end;
+
+                local Tween = TweenService:Create(
+                    CharacterLabel,
+                    TweenInfo.new(
+                        HalfPeriod,
+                        Enum.EasingStyle.Sine,
+                        Enum.EasingDirection.InOut,
+                        -1,
+                        true,
+                        0
+                    ),
+                    { Position = OffsetTitleY(BasePosition, -Amplitude) }
+                );
+
+                table.insert(State.Tweens, Tween);
+                Tween:Play();
+            end);
+        end;
+    end;
+end;
+
 function Library:ResetTitleAnimation(Label)
     if not Label then return; end;
 
@@ -482,17 +583,22 @@ function Library:ResetTitleAnimation(Label)
     if State then
         State.Alive = false;
 
+        for _, Tween in ipairs(State.Tweens or {}) do
+            pcall(function()
+                Tween:Cancel();
+            end);
+        end;
+        table.clear(State.Tweens or {});
+
         if State.Root and State.Root.Parent then
-            pcall(function() State.Root:Destroy(); end);
+            pcall(function()
+                State.Root:Destroy();
+            end);
         end;
 
-        pcall(function()
-            Label.TextTransparency = State.SourceTransparency or 0;
-        end);
+        SetTitleSourceTransparency(Label, State.SourceTransparency or 0);
     else
-        pcall(function()
-            Label.TextTransparency = 0;
-        end);
+        SetTitleSourceTransparency(Label, 0);
     end;
 
     if Library.TitleAnimationStates then
@@ -530,23 +636,24 @@ function Library:ApplyTitleAnimation(Label)
         Source = Label;
         Root = Root;
         Characters = {};
+        Tweens = {};
         SourceTransparency = Label.TextTransparency;
-        StartedAt = os.clock();
     };
 
     Library.TitleAnimationStates[Label] = State;
-    Label.TextTransparency = 1;
+    SetTitleSourceTransparency(Label, 1);
 
     local Characters = SplitTitleCharacters(Text);
     local Prefix = '';
     local Height = math.max(Label.AbsoluteSize.Y, Label.TextSize + 4, 16);
+    local VerticalPadding = 6;
 
     for Index, Character in ipairs(Characters) do
         local Before = Prefix;
         Prefix = Prefix .. Character;
 
-        local BeforeWidth = Library:GetTextBounds(Before, Library.Font, Label.TextSize);
-        local ThroughWidth = Library:GetTextBounds(Prefix, Library.Font, Label.TextSize);
+        local BeforeWidth = MeasureTitleWidth(Label, Before);
+        local ThroughWidth = MeasureTitleWidth(Label, Prefix);
         local CharacterWidth = math.max(ThroughWidth - BeforeWidth, 1);
 
         local CharacterLabel = Instance.new('TextLabel');
@@ -556,8 +663,8 @@ function Library:ApplyTitleAnimation(Label)
         CharacterLabel.BackgroundTransparency = 1;
         CharacterLabel.BorderSizePixel = 0;
         CharacterLabel.ClipsDescendants = false;
-        CharacterLabel.Position = UDim2.fromOffset(BeforeWidth, 0);
-        CharacterLabel.Size = UDim2.fromOffset(CharacterWidth, Height);
+        CharacterLabel.Position = UDim2.fromOffset(BeforeWidth, -VerticalPadding);
+        CharacterLabel.Size = UDim2.fromOffset(math.max(CharacterWidth + 4, 4), Height + (VerticalPadding * 2));
         CharacterLabel.RichText = false;
         CharacterLabel.Text = Character;
         CharacterLabel.TextColor3 = Label.TextColor3;
@@ -580,6 +687,8 @@ function Library:ApplyTitleAnimation(Label)
             IsSpace = Character == ' ';
         };
     end;
+
+    StartTitleWave(State);
 end;
 
 function Library:TriggerTitleAnimation(Label)
@@ -637,7 +746,9 @@ function Library:RegisterTitleAnimationLabel(Label)
                 local Stored = Library.TitleAnimationConnections[Label];
                 if Stored then
                     for _, Connection in ipairs(Stored) do
-                        pcall(function() Connection:Disconnect(); end);
+                        pcall(function()
+                            Connection:Disconnect();
+                        end);
                     end;
                 end;
                 Library.TitleAnimationConnections[Label] = nil;
@@ -671,44 +782,6 @@ function Library:RefreshTitleAnimations()
         end;
     end;
 end;
-
-table.insert(Library.Signals, RenderStepped:Connect(function()
-    if (Library.TitleAnimation or 'None') ~= 'Wave' then
-        return;
-    end;
-
-    local Time = os.clock();
-
-    for Label, State in next, Library.TitleAnimationStates do
-        if not Label
-            or not Label.Parent
-            or not State
-            or not State.Alive
-            or not State.Root
-            or not State.Root.Parent then
-            if Label then
-                Library:ResetTitleAnimation(Label);
-            end
-            continue;
-        end;
-
-        local LocalTime = Time - (State.StartedAt or Time);
-
-        for Index, Character in ipairs(State.Characters) do
-            local CharacterLabel = Character.Label;
-
-            if CharacterLabel and CharacterLabel.Parent then
-                if Character.IsSpace then
-                    CharacterLabel.Position = Character.BasePosition;
-                else
-                    local Phase = (LocalTime * 3.15) - ((Index - 1) * 0.62);
-                    local Offset = math.sin(Phase) * 1.75;
-                    CharacterLabel.Position = OffsetTitleY(Character.BasePosition, Offset);
-                end;
-            end;
-        end;
-    end;
-end));
 
 function Library:RegisterRepoFont(Name, FileName, VisualScale)
     assert(type(Name) == 'string' and Name ~= '', 'RegisterRepoFont: invalid font name');
