@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.14.0+build.1';
+    Version = '1.15.0+build.1';
     Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -2243,7 +2243,7 @@ function Library:MakeResizable(Instance, Config)
         if not Handle or not Handle.Visual then return; end
         Library:Animate(
             Handle.Visual,
-            { BackgroundTransparency = Visible and 0.06 or 1 },
+            { BackgroundTransparency = Visible and (Handle.VisibleTransparency or 0.06) or 1 },
             Visible and 0.15 or 0.20,
             nil,
             'Fade'
@@ -2265,13 +2265,13 @@ function Library:MakeResizable(Instance, Config)
 
         if Handle.Horizontal < 0 then
             Left = math.clamp(Pointer.X, Right - Maximum.X, Right - MinSize.X);
-        else
+        elseif Handle.Horizontal > 0 then
             Right = math.clamp(Pointer.X, Left + MinSize.X, Left + Maximum.X);
         end
 
         if Handle.Vertical < 0 then
             Top = math.clamp(Pointer.Y, Bottom - Maximum.Y, Bottom - MinSize.Y);
-        else
+        elseif Handle.Vertical > 0 then
             Bottom = math.clamp(Pointer.Y, Top + MinSize.Y, Top + Maximum.Y);
         end
 
@@ -2312,46 +2312,133 @@ function Library:MakeResizable(Instance, Config)
         end;
     end
 
-    local Corners = {
-        { Name = 'TopLeft'; Anchor = Vector2.new(0, 0); Position = UDim2.fromScale(0, 0); Horizontal = -1; Vertical = -1; };
-        { Name = 'TopRight'; Anchor = Vector2.new(1, 0); Position = UDim2.fromScale(1, 0); Horizontal = 1; Vertical = -1; };
-        { Name = 'BottomLeft'; Anchor = Vector2.new(0, 1); Position = UDim2.fromScale(0, 1); Horizontal = -1; Vertical = 1; };
-        { Name = 'BottomRight'; Anchor = Vector2.new(1, 1); Position = UDim2.fromScale(1, 1); Horizontal = 1; Vertical = 1; };
+    local Handles = {
+        {
+            Name = 'TopLeft';
+            Anchor = Vector2.new(0, 0);
+            Position = UDim2.fromScale(0, 0);
+            Size = UDim2.fromOffset(14, 14);
+            Horizontal = -1;
+            Vertical = -1;
+            Corner = true;
+        };
+        {
+            Name = 'TopRight';
+            Anchor = Vector2.new(1, 0);
+            Position = UDim2.fromScale(1, 0);
+            Size = UDim2.fromOffset(14, 14);
+            Horizontal = 1;
+            Vertical = -1;
+            Corner = true;
+        };
+        {
+            Name = 'BottomLeft';
+            Anchor = Vector2.new(0, 1);
+            Position = UDim2.fromScale(0, 1);
+            Size = UDim2.fromOffset(14, 14);
+            Horizontal = -1;
+            Vertical = 1;
+            Corner = true;
+        };
+        {
+            Name = 'BottomRight';
+            Anchor = Vector2.new(1, 1);
+            Position = UDim2.fromScale(1, 1);
+            Size = UDim2.fromOffset(14, 14);
+            Horizontal = 1;
+            Vertical = 1;
+            Corner = true;
+        };
+        {
+            Name = 'Left';
+            Anchor = Vector2.new(0, 0.5);
+            Position = UDim2.fromScale(0, 0.5);
+            Size = UDim2.new(0, 12, 1, -24);
+            Horizontal = -1;
+            Vertical = 0;
+            FalloffRotation = 90;
+        };
+        {
+            Name = 'Right';
+            Anchor = Vector2.new(1, 0.5);
+            Position = UDim2.fromScale(1, 0.5);
+            Size = UDim2.new(0, 12, 1, -24);
+            Horizontal = 1;
+            Vertical = 0;
+            FalloffRotation = 90;
+        };
+        {
+            Name = 'Top';
+            Anchor = Vector2.new(0.5, 0);
+            Position = UDim2.fromScale(0.5, 0);
+            Size = UDim2.new(1, -24, 0, 12);
+            Horizontal = 0;
+            Vertical = -1;
+            FalloffRotation = 0;
+        };
+        {
+            Name = 'Bottom';
+            Anchor = Vector2.new(0.5, 1);
+            Position = UDim2.fromScale(0.5, 1);
+            Size = UDim2.new(1, -24, 0, 12);
+            Horizontal = 0;
+            Vertical = 1;
+            FalloffRotation = 0;
+        };
     };
 
-    for _, Corner in ipairs(Corners) do
+    for _, Definition in ipairs(Handles) do
         local Hitbox = Library:Create('Frame', {
-            Name = 'FormaResize' .. Corner.Name;
+            Name = 'FormaResize' .. Definition.Name;
             Active = true;
-            AnchorPoint = Corner.Anchor;
+            AnchorPoint = Definition.Anchor;
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Position = Corner.Position;
-            Size = UDim2.fromOffset(14, 14);
+            Position = Definition.Position;
+            Size = Definition.Size;
             ZIndex = 250;
             Parent = Instance;
         });
 
         local Visual = Library:Create('Frame', {
-            AnchorPoint = Corner.Anchor;
+            AnchorPoint = Vector2.new(0.5, 0.5);
             BackgroundColor3 = Library.AccentColor;
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            Position = Corner.Position;
-            Size = UDim2.fromOffset(6, 6);
+            Position = UDim2.fromScale(0.5, 0.5);
+            Size = Definition.Corner
+                and UDim2.fromOffset(6, 6)
+                or (Definition.Horizontal ~= 0
+                    and UDim2.new(0, 2, 1, -8)
+                    or UDim2.new(1, -8, 0, 2));
             ZIndex = 251;
             Parent = Hitbox;
         });
         Library:AddToRegistry(Visual, { BackgroundColor3 = 'AccentColor'; });
 
+        if not Definition.Corner then
+            Library:Create('UIGradient', {
+                Rotation = Definition.FalloffRotation or 0;
+                Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0.00, 1.00);
+                    NumberSequenceKeypoint.new(0.16, 0.62);
+                    NumberSequenceKeypoint.new(0.50, 0.08);
+                    NumberSequenceKeypoint.new(0.84, 0.62);
+                    NumberSequenceKeypoint.new(1.00, 1.00);
+                });
+                Parent = Visual;
+            });
+        end
+
         local Handle = {
             Hitbox = Hitbox;
             Visual = Visual;
-            Horizontal = Corner.Horizontal;
-            Vertical = Corner.Vertical;
+            Horizontal = Definition.Horizontal;
+            Vertical = Definition.Vertical;
             Hovering = false;
+            VisibleTransparency = Definition.Corner and 0.06 or 0.18;
         };
-        State.Handles[Corner.Name] = Handle;
+        State.Handles[Definition.Name] = Handle;
         Library.ResizeHitboxes[Hitbox] = Instance;
 
         Hitbox.MouseEnter:Connect(function()
@@ -2378,8 +2465,12 @@ function Library:MakeResizable(Instance, Config)
             State.StartSize = Instance.AbsoluteSize;
             local Pointer = GetPointer(Input);
             local Edge = Vector2.new(
-                State.StartPosition.X + (Handle.Horizontal > 0 and State.StartSize.X or 0),
-                State.StartPosition.Y + (Handle.Vertical > 0 and State.StartSize.Y or 0)
+                Handle.Horizontal < 0 and State.StartPosition.X
+                    or Handle.Horizontal > 0 and (State.StartPosition.X + State.StartSize.X)
+                    or Pointer.X,
+                Handle.Vertical < 0 and State.StartPosition.Y
+                    or Handle.Vertical > 0 and (State.StartPosition.Y + State.StartSize.Y)
+                    or Pointer.Y
             );
             State.PointerOffset = Pointer - Edge;
             State.VisualPosition = Vector2.new(
@@ -10287,8 +10378,14 @@ end;
 function Library:CreateUtilityWindow(Config)
     Config = type(Config) == 'table' and Config or {};
 
-    local Width = math.max(tonumber(Config.Width) or 390, 240);
-    local Height = math.max(tonumber(Config.Height) or 320, 150);
+    local MinUtilitySize = typeof(Config.MinSize) == 'Vector2'
+        and Config.MinSize
+        or Vector2.new(240, 150);
+    local MaxUtilitySize = typeof(Config.MaxSize) == 'Vector2'
+        and Config.MaxSize
+        or Vector2.new(math.huge, math.huge);
+    local Width = math.max(tonumber(Config.Width) or 390, MinUtilitySize.X);
+    local Height = math.max(tonumber(Config.Height) or 320, MinUtilitySize.Y);
     local Title = tostring(Config.Title or 'Utility');
     local SafeName = Title:gsub('[^%w_%-]', ''):sub(1, 36);
     if SafeName == '' then SafeName = 'Utility'; end
@@ -10533,8 +10630,16 @@ function Library:CreateUtilityWindow(Config)
             NewHeight = NewWidth.Y;
             NewWidth = NewWidth.X;
         end
-        NewWidth = math.max(tonumber(NewWidth) or Outer.AbsoluteSize.X, 240);
-        NewHeight = math.max(tonumber(NewHeight) or Outer.AbsoluteSize.Y, 150);
+        NewWidth = math.clamp(
+            tonumber(NewWidth) or Outer.AbsoluteSize.X,
+            MinUtilitySize.X,
+            MaxUtilitySize.X
+        );
+        NewHeight = math.clamp(
+            tonumber(NewHeight) or Outer.AbsoluteSize.Y,
+            MinUtilitySize.Y,
+            MaxUtilitySize.Y
+        );
         Library:Animate(Outer, { Size = UDim2.fromOffset(NewWidth, NewHeight); }, 0.14, nil, 'Resize');
         if Window.Component and Window.Component.Root then
             Window.Component.Root.Size = UDim2.new(1, -2, 0, math.max(NewHeight - 36, 80));
@@ -10583,7 +10688,25 @@ function Library:CreateUtilityWindow(Config)
     Window.ContentHeight = math.max(Height - 36, 80);
 
     table.insert(Library.UtilityWindows, Window);
-    Library:MakeDraggable(Outer, 24);
+    Window.DragState = Library:MakeDraggable(Outer, 24);
+
+    if Config.Resizable ~= false then
+        Window.ResizeState = Library:MakeResizable(Outer, {
+            MinSize = MinUtilitySize;
+            MaxSize = MaxUtilitySize;
+            Response = tonumber(Config.ResizeResponse) or 88;
+        });
+    end
+
+    Outer:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()
+        local CurrentHeight = math.max(Outer.AbsoluteSize.Y - 36, 80);
+        Window.ContentHeight = CurrentHeight;
+
+        if Window.Component and Window.Component.Root and Window.Component.Root.Parent then
+            Window.Component.Root.Size = UDim2.new(1, -2, 0, CurrentHeight);
+        end
+    end);
+
     return Window;
 end;
 
@@ -10597,6 +10720,10 @@ end;
         Visible = Config.Visible;
         CloseButton = Config.CloseButton;
         TitleAccent = Config.TitleAccent;
+        Resizable = Config.Resizable;
+        MinSize = Config.MinSize;
+        MaxSize = Config.MaxSize;
+        ResizeResponse = Config.ResizeResponse;
     });
 
     local ComponentInfo = table.clone(Config);
@@ -10606,6 +10733,10 @@ end;
     ComponentInfo.Visible = nil;
     ComponentInfo.CloseButton = nil;
     ComponentInfo.TitleAccent = nil;
+    ComponentInfo.Resizable = nil;
+    ComponentInfo.MinSize = nil;
+    ComponentInfo.MaxSize = nil;
+    ComponentInfo.ResizeResponse = nil;
     ComponentInfo.Size = nil;
     ComponentInfo.Height = Window.ContentHeight;
 
