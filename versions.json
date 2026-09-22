@@ -2,9 +2,9 @@
   "schema": 2,
   "Components": {
     "Library": {
-      "version": "1.12.0+build.1",
+      "version": "1.12.1+build.1",
       "path": "Library.lua",
-      "release": "GA",
+      "release": "HF",
       "build": 1
     },
     "Loader": {
@@ -26,9 +26,9 @@
       "build": 1
     },
     "ThemeManager": {
-      "version": "1.8.0+build.1",
+      "version": "1.8.1+build.1",
       "path": "addons/ThemeManager.lua",
-      "release": "GA",
+      "release": "HF",
       "build": 1
     }
   },
