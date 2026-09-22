@@ -281,7 +281,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.16.2+build.1';
+    Version = '1.16.3+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -696,6 +696,35 @@ function Library:Animate(Instance, Properties, Duration, Completed, Context)
     return Tween;
 end;
 
+function Library:SmoothDampScalar(Current, Target, Velocity, SmoothTime, DeltaTime)
+    Current = tonumber(Current) or 0;
+    Target = tonumber(Target) or 0;
+    Velocity = tonumber(Velocity) or 0;
+    SmoothTime = math.max(tonumber(SmoothTime) or 0.12, 0.0001);
+    DeltaTime = math.clamp(tonumber(DeltaTime) or (1 / 60), 0, 0.05);
+
+    if DeltaTime <= 0 then
+        return Current, Velocity;
+    end
+
+    local Omega = 2 / SmoothTime;
+    local X = Omega * DeltaTime;
+    local Exp = 1 / (1 + X + (0.48 * X * X) + (0.235 * X * X * X));
+    local Change = Current - Target;
+    local Temp = (Velocity + (Omega * Change)) * DeltaTime;
+    local NewVelocity = (Velocity - (Omega * Temp)) * Exp;
+    local Output = Target + ((Change + Temp) * Exp);
+
+    -- Numerical protection: a critically damped response should not cross the
+    -- target. Clamp the rare large-delta overshoot so reversals stay clean.
+    if ((Target - Current) > 0) == (Output > Target) then
+        Output = Target;
+        NewVelocity = 0;
+    end
+
+    return Output, NewVelocity;
+end;
+
 function Library:TweenMenuProperty(Instance, Property, Value, Duration, Completed)
     return Library:Animate(Instance, { [Property] = Value }, Duration, Completed, 'Property');
 end;
@@ -915,6 +944,201 @@ function Library:TweenUnifiedFade(Root, Target, Duration, Completed, Context)
     end
 
     return Tween;
+end
+
+Library.TabTransitionStates = Library.TabTransitionStates or setmetatable({}, { __mode = 'k' });
+
+function Library:CreateTabTransition(Frame, Config)
+    if not Frame then return nil; end
+    Config = Config or {};
+
+    local Existing = Library.TabTransitionStates[Frame];
+    if Existing then return Existing; end
+
+    local BasePosition = typeof(Config.BasePosition) == 'UDim2' and Config.BasePosition or Frame.Position;
+    local State = {
+        Frame = Frame;
+        BasePosition = BasePosition;
+        Alpha = Frame.Visible and 1 or 0;
+        AlphaVelocity = 0;
+        Offset = 0;
+        OffsetVelocity = 0;
+        TargetAlpha = Frame.Visible and 1 or 0;
+        TargetOffset = 0;
+        EnterOffset = math.max(tonumber(Config.EnterOffset) or 8, 0);
+        ExitOffset = math.max(tonumber(Config.ExitOffset) or 7, 0);
+        FadeInSmoothTime = math.max(tonumber(Config.FadeInSmoothTime) or 0.16, 0.04);
+        FadeOutSmoothTime = math.max(tonumber(Config.FadeOutSmoothTime) or 0.14, 0.04);
+        PositionSmoothTime = math.max(tonumber(Config.PositionSmoothTime) or 0.13, 0.04);
+        Running = false;
+        NeedsFadeRefresh = true;
+        PendingShown = nil;
+        OnHidden = Config.OnHidden;
+    };
+
+    Library.TabTransitionStates[Frame] = State;
+
+    local function ApplyPosition()
+        local Base = State.BasePosition;
+        Frame.Position = UDim2.new(
+            Base.X.Scale,
+            Base.X.Offset + State.Offset,
+            Base.Y.Scale,
+            Base.Y.Offset
+        );
+    end
+
+    function State:SetVisible(Visible, Direction, Instant, OnShown)
+        if not Frame.Parent then return; end
+
+        Visible = Visible ~= false;
+        Direction = tonumber(Direction) or 1;
+        Direction = Direction < 0 and -1 or 1;
+
+        -- No old TweenService motion is allowed to fight the physical state.
+        Library:CancelMotion(Frame, 'Position');
+
+        self.PendingShown = Visible and OnShown or nil;
+        self.NeedsFadeRefresh = true;
+
+        if Instant then
+            self.Alpha = Visible and 1 or 0;
+            self.AlphaVelocity = 0;
+            self.Offset = 0;
+            self.OffsetVelocity = 0;
+            self.TargetAlpha = self.Alpha;
+            self.TargetOffset = 0;
+            self.Running = false;
+
+            Frame.Visible = Visible;
+            ApplyPosition();
+            Library:SetUnifiedFadeProgress(Frame, self.Alpha);
+
+            if Visible and OnShown then pcall(OnShown); end
+            if not Visible and self.OnHidden then pcall(self.OnHidden); end
+            self.PendingShown = nil;
+            return;
+        end
+
+        if Visible then
+            if not Frame.Visible then
+                Frame.Visible = true;
+
+                -- A fully hidden tab gets a clean entry origin. If the same tab
+                -- is reversing during its exit, retain its current position and
+                -- velocity instead of snapping back to a canned start point.
+                if self.Alpha <= 0.002 then
+                    self.Alpha = 0;
+                    self.AlphaVelocity = 0;
+                    self.Offset = Direction * self.EnterOffset;
+                    self.OffsetVelocity = 0;
+                end
+            end
+
+            self.TargetAlpha = 1;
+            self.TargetOffset = 0;
+        else
+            self.TargetAlpha = 0;
+            self.TargetOffset = Direction * self.ExitOffset;
+        end
+
+        self.Running = true;
+    end
+
+    Library:GiveSignal(Frame.DescendantAdded:Connect(function()
+        if State.Running then
+            State.NeedsFadeRefresh = true;
+        end
+    end));
+
+    return State;
+end
+
+if not Library.TabTransitionConnection then
+    Library.TabTransitionConnection = RenderStepped:Connect(function(Delta)
+        local Dt = math.min(tonumber(Delta) or (1 / 60), 0.05);
+
+        for Frame, State in next, Library.TabTransitionStates do
+            if not Frame or not Frame.Parent then
+                Library.TabTransitionStates[Frame] = nil;
+                continue;
+            end
+
+            if not State.Running then
+                continue;
+            end
+
+            local FadeSmoothTime = State.TargetAlpha > State.Alpha
+                and State.FadeInSmoothTime
+                or State.FadeOutSmoothTime;
+
+            State.Alpha, State.AlphaVelocity = Library:SmoothDampScalar(
+                State.Alpha,
+                State.TargetAlpha,
+                State.AlphaVelocity,
+                FadeSmoothTime,
+                Dt
+            );
+
+            State.Offset, State.OffsetVelocity = Library:SmoothDampScalar(
+                State.Offset,
+                State.TargetOffset,
+                State.OffsetVelocity,
+                State.PositionSmoothTime,
+                Dt
+            );
+
+            State.Alpha = math.clamp(State.Alpha, 0, 1);
+            local Base = State.BasePosition;
+            Frame.Position = UDim2.new(
+                Base.X.Scale,
+                Base.X.Offset + State.Offset,
+                Base.Y.Scale,
+                Base.Y.Offset
+            );
+
+            if State.NeedsFadeRefresh then
+                Library:SetUnifiedFadeProgress(Frame, State.Alpha);
+                State.NeedsFadeRefresh = false;
+            else
+                Library:SetCachedUnifiedFadeProgress(Frame, State.Alpha);
+            end
+
+            local AlphaSettled = math.abs(State.Alpha - State.TargetAlpha) < 0.002
+                and math.abs(State.AlphaVelocity) < 0.02;
+            local PositionSettled = math.abs(State.Offset - State.TargetOffset) < 0.05
+                and math.abs(State.OffsetVelocity) < 0.20;
+
+            if AlphaSettled and PositionSettled then
+                State.Alpha = State.TargetAlpha;
+                State.AlphaVelocity = 0;
+                State.Offset = State.TargetOffset;
+                State.OffsetVelocity = 0;
+
+                Frame.Position = UDim2.new(
+                    Base.X.Scale,
+                    Base.X.Offset + State.Offset,
+                    Base.Y.Scale,
+                    Base.Y.Offset
+                );
+                Library:SetCachedUnifiedFadeProgress(Frame, State.Alpha);
+                State.Running = false;
+
+                if State.TargetAlpha <= 0 then
+                    Frame.Visible = false;
+                    State.Offset = 0;
+                    Frame.Position = State.BasePosition;
+                    if State.OnHidden then pcall(State.OnHidden); end
+                elseif State.PendingShown then
+                    local Callback = State.PendingShown;
+                    State.PendingShown = nil;
+                    pcall(Callback);
+                end
+            end
+        end
+    end);
+
+    Library:GiveSignal(Library.TabTransitionConnection);
 end
 
 function Library:BindScrollReveal(ScrollingFrame, Config)
@@ -1905,8 +2129,19 @@ end;
 function Library:CreateSlidingTabIndicator(Layer, Height)
     local Controller = {
         ActiveButton = nil;
-        TargetPosition = nil;
-        TargetSize = nil;
+        TargetX = 0;
+        TargetY = 0;
+        TargetWidth = 0;
+        TargetHeight = Height or 21;
+        X = 0;
+        Y = 0;
+        Width = 0;
+        Height = Height or 21;
+        XVelocity = 0;
+        YVelocity = 0;
+        WidthVelocity = 0;
+        HeightVelocity = 0;
+        Initialized = false;
         FollowConnection = nil;
     };
 
@@ -1933,11 +2168,11 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
     Library:Create('UIGradient', {
         Rotation = 90;
         Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0),
-            NumberSequenceKeypoint.new(0.30, 0.01),
-            NumberSequenceKeypoint.new(0.55, 0.22),
-            NumberSequenceKeypoint.new(0.78, 0.76),
-            NumberSequenceKeypoint.new(1, 1),
+            NumberSequenceKeypoint.new(0, 0);
+            NumberSequenceKeypoint.new(0.30, 0.01);
+            NumberSequenceKeypoint.new(0.55, 0.22);
+            NumberSequenceKeypoint.new(0.78, 0.76);
+            NumberSequenceKeypoint.new(1, 1);
         });
         Parent = Stroke;
     });
@@ -1946,96 +2181,110 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
 
     local function ResolveTarget(Button)
         if not Button or not Button.Parent or Button.AbsoluteSize.X <= 0 then
-            return nil, nil;
-        end;
+            return nil;
+        end
 
-        return UDim2.fromOffset(
+        return
             Button.AbsolutePosition.X - Layer.AbsolutePosition.X,
-            Button.AbsolutePosition.Y - Layer.AbsolutePosition.Y
-        ), UDim2.fromOffset(Button.AbsoluteSize.X, Height or 21);
-    end;
+            Button.AbsolutePosition.Y - Layer.AbsolutePosition.Y,
+            Button.AbsoluteSize.X,
+            Height or 21;
+    end
 
-    local function GeometryChanged(Current, Target)
-        return not Current
-            or math.abs(Current.X.Offset - Target.X.Offset) > 0.01
-            or math.abs(Current.Y.Offset - Target.Y.Offset) > 0.01;
-    end;
+    local function SnapToTarget(X, Y, Width, TargetHeight)
+        Controller.X = X;
+        Controller.Y = Y;
+        Controller.Width = Width;
+        Controller.Height = TargetHeight;
+        Controller.XVelocity = 0;
+        Controller.YVelocity = 0;
+        Controller.WidthVelocity = 0;
+        Controller.HeightVelocity = 0;
+        Controller.Initialized = true;
+        Indicator.Position = UDim2.fromOffset(X, Y);
+        Indicator.Size = UDim2.fromOffset(Width, TargetHeight);
+    end
 
-    Controller.FollowConnection = RenderStepped:Connect(function()
+    Controller.FollowConnection = RenderStepped:Connect(function(Delta)
         if not Layer.Parent then
             Controller.FollowConnection:Disconnect();
             Controller.FollowConnection = nil;
             return;
-        end;
+        end
 
-        local Button = Controller.ActiveButton;
-        local TargetPosition, TargetSize = ResolveTarget(Button);
-        if not TargetPosition then return; end;
+        local X, Y, Width, TargetHeight = ResolveTarget(Controller.ActiveButton);
+        if not X then return; end
 
-        if GeometryChanged(Controller.TargetPosition, TargetPosition)
-            or GeometryChanged(Controller.TargetSize, TargetSize) then
-            Controller.TargetPosition = TargetPosition;
-            Controller.TargetSize = TargetSize;
-            if not Library.PropertyTweens[Indicator] then
-                Indicator.Position = TargetPosition;
-                Indicator.Size = TargetSize;
-            else
-                Library:Animate(Indicator, {
-                    Position = TargetPosition;
-                    Size = TargetSize;
-                }, 0.12, nil, 'TabIndicator');
-            end;
-        end;
+        Controller.TargetX = X;
+        Controller.TargetY = Y;
+        Controller.TargetWidth = Width;
+        Controller.TargetHeight = TargetHeight;
+
+        if not Indicator.Visible then return; end
+        if not Controller.Initialized then
+            SnapToTarget(X, Y, Width, TargetHeight);
+            return;
+        end
+
+        local Dt = math.min(tonumber(Delta) or (1 / 60), 0.05);
+        local SmoothTime = 0.12;
+
+        Controller.X, Controller.XVelocity = Library:SmoothDampScalar(
+            Controller.X, Controller.TargetX, Controller.XVelocity, SmoothTime, Dt
+        );
+        Controller.Y, Controller.YVelocity = Library:SmoothDampScalar(
+            Controller.Y, Controller.TargetY, Controller.YVelocity, SmoothTime, Dt
+        );
+        Controller.Width, Controller.WidthVelocity = Library:SmoothDampScalar(
+            Controller.Width, Controller.TargetWidth, Controller.WidthVelocity, SmoothTime, Dt
+        );
+        Controller.Height, Controller.HeightVelocity = Library:SmoothDampScalar(
+            Controller.Height, Controller.TargetHeight, Controller.HeightVelocity, SmoothTime, Dt
+        );
+
+        Indicator.Position = UDim2.fromOffset(Controller.X, Controller.Y);
+        Indicator.Size = UDim2.fromOffset(Controller.Width, Controller.Height);
     end);
     Library:GiveSignal(Controller.FollowConnection);
 
     function Controller:MoveTo(Button, Instant)
-        local TargetPosition, TargetSize = ResolveTarget(Button);
-        if not TargetPosition then return; end;
+        local X, Y, Width, TargetHeight = ResolveTarget(Button);
+        if not X then return; end
 
-        local NewLeft = TargetPosition.X.Offset;
         local WasVisible = Indicator.Visible;
         self.ActiveButton = Button;
-        self.TargetPosition = TargetPosition;
-        self.TargetSize = TargetSize;
+        self.TargetX = X;
+        self.TargetY = Y;
+        self.TargetWidth = Width;
+        self.TargetHeight = TargetHeight;
 
-        if Instant or not Indicator.Visible or Indicator.AbsoluteSize.X <= 0 then
-            Library:CancelMotion(Indicator);
-            Indicator.Position = TargetPosition;
-            Indicator.Size = TargetSize;
-            Indicator.Visible = true;
-            if not WasVisible then
-                Stroke.Transparency = 1;
-                Library:Animate(Stroke, { Transparency = 0; }, 0.18, nil, 'Fade');
-            end;
-            return;
-        end;
+        if Instant or not WasVisible or not self.Initialized then
+            SnapToTarget(X, Y, Width, TargetHeight);
+        end
 
         Indicator.Visible = true;
-        local Travel = math.abs(NewLeft - Indicator.Position.X.Offset)
-            + (math.abs(TargetSize.X.Offset - Indicator.Size.X.Offset) * 0.35);
-        local Duration = 0.24 + math.clamp(Travel / 1400, 0, 0.08);
-        Library:Animate(Indicator, {
-            Position = TargetPosition;
-            Size = TargetSize;
-        }, TweenInfo.new(
-            Duration,
-            Enum.EasingStyle.Quart,
-            Enum.EasingDirection.InOut
-        ), nil, 'TabIndicator');
-    end;
+
+        if not WasVisible then
+            Stroke.Transparency = 1;
+            Library:Animate(
+                Stroke,
+                { Transparency = 0; },
+                TweenInfo.new(0.20, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                nil,
+                'Fade'
+            );
+        end
+    end
 
     function Controller:Refresh(Button)
         self:MoveTo(Button, true);
-    end;
+    end
 
     function Controller:Hide()
         self.ActiveButton = nil;
-        self.TargetPosition = nil;
-        self.TargetSize = nil;
-        Library:CancelMotion(Indicator);
+        self.Initialized = false;
         Indicator.Visible = false;
-    end;
+    end
 
     Controller.Frame = Indicator;
     return Controller;
@@ -14568,12 +14817,11 @@ function Library:CreateWindow(...)
         Tab.ContentAnimationId = 0;
         Tab.Button = TabButton;
 
-        local TabFrame = Library:Create('CanvasGroup', {
+        local TabFrame = Library:Create('Frame', {
             Name = 'TabFrame',
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
-            GroupTransparency = 1;
-            Position = UDim2.new(0, 0, 0, 7);
+            Position = UDim2.new(0, 0, 0, 0);
             Size = UDim2.new(1, 0, 1, 0);
             Visible = false;
             ZIndex = 2;
@@ -14647,6 +14895,15 @@ function Library:CreateWindow(...)
             Library:BindScrollReveal(RightSide, { VisibilityRoot = TabFrame; });
         };
 
+        Tab.Transition = Library:CreateTabTransition(TabFrame, {
+            BasePosition = UDim2.new(0, 0, 0, 0);
+            EnterOffset = 9;
+            ExitOffset = 7;
+            FadeInSmoothTime = 0.17;
+            FadeOutSmoothTime = 0.15;
+            PositionSmoothTime = 0.14;
+        });
+
         function Tab:ShowTab()
             if Tab.Active then
                 if TabButton then MainTabIndicator:MoveTo(TabButton, false); end
@@ -14673,7 +14930,7 @@ function Library:CreateWindow(...)
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
 
             local ButtonEase = TweenInfo.new(
-                0.22,
+                0.20,
                 Enum.EasingStyle.Quint,
                 Enum.EasingDirection.Out
             );
@@ -14695,46 +14952,12 @@ function Library:CreateWindow(...)
                 Window:UpdateHeaderSettingsState();
             end;
 
-            if not TabFrame.Visible then
-                Library:CancelMotion(TabFrame);
-                TabFrame.Position = UDim2.new(0, Direction * 8, 0, 1);
-                TabFrame.GroupTransparency = 1;
-            else
-                Library:CancelMotion(TabFrame, 'Position');
-                Library:CancelMotion(TabFrame, 'GroupTransparency');
-            end;
-
-            TabFrame.Visible = true;
-
-            Library:Animate(
-                TabFrame,
-                { Position = UDim2.new(0, 0, 0, 0); },
-                TweenInfo.new(
-                    0.34,
-                    Enum.EasingStyle.Quint,
-                    Enum.EasingDirection.Out
-                ),
-                nil,
-                'Tab'
-            );
-
-            Library:Animate(
-                TabFrame,
-                { GroupTransparency = 0; },
-                TweenInfo.new(
-                    0.30,
-                    Enum.EasingStyle.Sine,
-                    Enum.EasingDirection.InOut
-                ),
-                function(State)
-                    if Tab.Active and State ~= Enum.PlaybackState.Cancelled then
-                        for _, RevealState in ipairs(Tab.ScrollRevealStates) do
-                            if RevealState then RevealState:QueueRefresh(); end
-                        end
-                    end
-                end,
-                'Fade'
-            );
+            Tab.Transition:SetVisible(true, Direction, false, function()
+                if not Tab.Active then return; end
+                for _, RevealState in ipairs(Tab.ScrollRevealStates) do
+                    if RevealState then RevealState:QueueRefresh(); end
+                end
+            end);
         end;
 
         function Tab:HideTab(Instant, Direction)
@@ -14747,10 +14970,9 @@ function Library:CreateWindow(...)
 
             Tab.Active = false;
             Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
-            local CurrentAnimation = Tab.ContentAnimationId;
 
             local ButtonEase = TweenInfo.new(
-                0.18,
+                0.17,
                 Enum.EasingStyle.Cubic,
                 Enum.EasingDirection.Out
             );
@@ -14769,43 +14991,7 @@ function Library:CreateWindow(...)
                 Window:UpdateHeaderSettingsState();
             end;
 
-            if Instant then
-                Library:CancelMotion(TabFrame);
-                TabFrame.GroupTransparency = 1;
-                TabFrame.Visible = false;
-                TabFrame.Position = UDim2.new(0, 0, 0, 0);
-                return;
-            end;
-
-            Library:Animate(
-                TabFrame,
-                { Position = UDim2.new(0, Direction * 7, 0, 0); },
-                TweenInfo.new(
-                    0.23,
-                    Enum.EasingStyle.Cubic,
-                    Enum.EasingDirection.In
-                ),
-                nil,
-                'TabExit'
-            );
-
-            Library:Animate(
-                TabFrame,
-                { GroupTransparency = 1; },
-                TweenInfo.new(
-                    0.24,
-                    Enum.EasingStyle.Sine,
-                    Enum.EasingDirection.InOut
-                ),
-                function(State)
-                    if State == Enum.PlaybackState.Cancelled then return; end
-                    if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
-                        TabFrame.Visible = false;
-                        TabFrame.Position = UDim2.new(0, 0, 0, 0);
-                    end
-                end,
-                'Fade'
-            );
+            Tab.Transition:SetVisible(false, Direction, Instant == true);
         end;
 
         function Tab:SetLayoutOrder(Position)
@@ -15096,11 +15282,10 @@ function Library:CreateWindow(...)
                 Tab.Active = false;
                 Tab.ContentAnimationId = 0;
 
-                local Container = Library:Create('CanvasGroup', {
+                local Container = Library:Create('Frame', {
                     BackgroundTransparency = 1;
                     BorderSizePixel = 0;
-                    GroupTransparency = 1;
-                    Position = UDim2.new(0, 4, 0, 25);
+                    Position = UDim2.new(0, 4, 0, 20);
                     Size = UDim2.new(1, -4, 1, -20);
                     ZIndex = 1;
                     Visible = false;
@@ -15111,6 +15296,18 @@ function Library:CreateWindow(...)
                     FillDirection = Enum.FillDirection.Vertical;
                     SortOrder = Enum.SortOrder.LayoutOrder;
                     Parent = Container;
+                });
+
+                Tab.Transition = Library:CreateTabTransition(Container, {
+                    BasePosition = UDim2.new(0, 4, 0, 20);
+                    EnterOffset = 7;
+                    ExitOffset = 5;
+                    FadeInSmoothTime = 0.15;
+                    FadeOutSmoothTime = 0.13;
+                    PositionSmoothTime = 0.12;
+                    OnHidden = function()
+                        Block.Visible = false;
+                    end;
                 });
 
                 function Tab:Show()
@@ -15140,22 +15337,11 @@ function Library:CreateWindow(...)
 
                     Tab.Active = true;
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
-
-                    if not Container.Visible then
-                        Library:CancelMotion(Container);
-                        Container.Position = UDim2.new(0, 4 + (Direction * 6), 0, 20);
-                        Container.GroupTransparency = 1;
-                    else
-                        Library:CancelMotion(Container, 'Position');
-                        Library:CancelMotion(Container, 'GroupTransparency');
-                    end
-
-                    Container.Visible = true;
                     Block.Visible = true;
                     TabboxIndicator:MoveTo(Button, not TabboxIndicator.Frame.Visible);
 
                     local ButtonEase = TweenInfo.new(
-                        0.20,
+                        0.18,
                         Enum.EasingStyle.Quint,
                         Enum.EasingDirection.Out
                     );
@@ -15168,30 +15354,7 @@ function Library:CreateWindow(...)
                     }, ButtonEase, nil, 'Tab');
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'BackgroundColor';
 
-                    Library:Animate(
-                        Container,
-                        { Position = UDim2.new(0, 4, 0, 20); },
-                        TweenInfo.new(
-                            0.30,
-                            Enum.EasingStyle.Quint,
-                            Enum.EasingDirection.Out
-                        ),
-                        nil,
-                        'Tab'
-                    );
-
-                    Library:Animate(
-                        Container,
-                        { GroupTransparency = 0; },
-                        TweenInfo.new(
-                            0.27,
-                            Enum.EasingStyle.Sine,
-                            Enum.EasingDirection.InOut
-                        ),
-                        nil,
-                        'Fade'
-                    );
-
+                    Tab.Transition:SetVisible(true, Direction, false);
                     Tab:Resize();
                 end;
 
@@ -15205,10 +15368,9 @@ function Library:CreateWindow(...)
 
                     Tab.Active = false;
                     Tab.ContentAnimationId = Tab.ContentAnimationId + 1;
-                    local CurrentAnimation = Tab.ContentAnimationId;
 
                     local ButtonEase = TweenInfo.new(
-                        0.16,
+                        0.15,
                         Enum.EasingStyle.Cubic,
                         Enum.EasingDirection.Out
                     );
@@ -15221,45 +15383,7 @@ function Library:CreateWindow(...)
                     }, ButtonEase, nil, 'TabExit');
                     Library.RegistryMap[Button].Properties.BackgroundColor3 = 'MainColor';
 
-                    if Instant then
-                        Library:CancelMotion(Container);
-                        Container.GroupTransparency = 1;
-                        Container.Visible = false;
-                        Container.Position = UDim2.new(0, 4, 0, 20);
-                        Block.Visible = false;
-                        return;
-                    end;
-
-                    Library:Animate(
-                        Container,
-                        { Position = UDim2.new(0, 4 + (Direction * 5), 0, 20); },
-                        TweenInfo.new(
-                            0.20,
-                            Enum.EasingStyle.Cubic,
-                            Enum.EasingDirection.In
-                        ),
-                        nil,
-                        'TabExit'
-                    );
-
-                    Library:Animate(
-                        Container,
-                        { GroupTransparency = 1; },
-                        TweenInfo.new(
-                            0.21,
-                            Enum.EasingStyle.Sine,
-                            Enum.EasingDirection.InOut
-                        ),
-                        function(State)
-                            if State == Enum.PlaybackState.Cancelled then return; end
-                            if not Tab.Active and CurrentAnimation == Tab.ContentAnimationId then
-                                Container.Visible = false;
-                                Container.Position = UDim2.new(0, 4, 0, 20);
-                                Block.Visible = false;
-                            end
-                        end,
-                        'Fade'
-                    );
+                    Tab.Transition:SetVisible(false, Direction, Instant == true);
                 end;
 
                 function Tab:Resize()
