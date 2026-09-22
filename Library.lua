@@ -270,7 +270,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.12.3+build.1';
+    Version = '1.12.4+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -700,8 +700,12 @@ function Library:ApplyTitleAnimation(Label)
             Label = CharacterLabel;
             BasePosition = CharacterLabel.Position;
             IsSpace = Character == ' ';
+            CenterX = BeforeWidth + (CharacterWidth * 0.5);
         };
     end;
+
+    State.TotalWidth = math.max(MeasureTitleWidth(Label, Text), 1);
+    State.GradientDuration = 2.4;
 end;
 
 function Library:TriggerTitleAnimation(Label)
@@ -796,9 +800,9 @@ function Library:RefreshTitleAnimations()
     end;
 end;
 
--- One synchronized wave clock for every title. All characters are sampled from
--- the same continuous sine curve on the render frame, so there are no staggered
--- tween start times drifting out of phase or creating micro-stutters.
+-- One synchronized wave clock for every title. The character motion and title
+-- gradient both use shared clocks, so the title remains fluid while its colors
+-- stay phase-locked to FormaMovingAccentGradient bars.
 table.insert(Library.Signals, RenderStepped:Connect(function()
     if (Library.TitleAnimation or 'None') ~= 'Wave' then
         return;
@@ -823,6 +827,8 @@ table.insert(Library.Signals, RenderStepped:Connect(function()
         end;
 
         local Time = Now - (State.StartedAt or Now);
+        local TotalWidth = math.max(State.TotalWidth or 1, 1);
+        local GradientDuration = State.GradientDuration or 2.4;
 
         for Index, Character in ipairs(State.Characters) do
             local CharacterLabel = Character.Label;
@@ -833,6 +839,14 @@ table.insert(Library.Signals, RenderStepped:Connect(function()
                     local Phase = (Time * AngularSpeed) - ((Index - 1) * PhaseStep);
                     local Y = math.sin(Phase) * Amplitude;
                     CharacterLabel.Position = OffsetTitleY(Character.BasePosition, Y);
+
+                    local NormalizedX = math.clamp((Character.CenterX or 0) / TotalWidth, 0, 1);
+                    CharacterLabel.TextColor3 = Library:SampleMovingAccentGradient(
+                        NormalizedX,
+                        GradientDuration,
+                        Label.TextColor3,
+                        Now
+                    );
                 end;
             end;
         end;
@@ -2004,6 +2018,51 @@ function Library:GetMovingAccentGradientColor(BaseColor)
     });
 end;
 
+Library.MovingAccentGradientEpoch = Library.MovingAccentGradientEpoch or os.clock();
+Library.MovingAccentGradients = Library.MovingAccentGradients or setmetatable({}, { __mode = 'k' });
+
+function Library:GetMovingAccentGradientPhase(Duration, Now)
+    Duration = math.max(tonumber(Duration) or 2.4, 0.05);
+    Now = tonumber(Now) or os.clock();
+    return ((Now - Library.MovingAccentGradientEpoch) % Duration) / Duration;
+end;
+
+function Library:GetMovingAccentGradientOffset(Duration, Now)
+    local Phase = Library:GetMovingAccentGradientPhase(Duration, Now);
+    return Vector2.new(-1 + (Phase * 2), 0);
+end;
+
+local function SampleColorSequence(Sequence, Position)
+    Position = math.clamp(tonumber(Position) or 0, 0, 1);
+    local Keypoints = Sequence.Keypoints;
+
+    if Position <= Keypoints[1].Time then
+        return Keypoints[1].Value;
+    end;
+
+    for Index = 2, #Keypoints do
+        local Right = Keypoints[Index];
+        local Left = Keypoints[Index - 1];
+
+        if Position <= Right.Time then
+            local Span = math.max(Right.Time - Left.Time, 0.0001);
+            local Alpha = (Position - Left.Time) / Span;
+            return Left.Value:Lerp(Right.Value, Alpha);
+        end;
+    end;
+
+    return Keypoints[#Keypoints].Value;
+end;
+
+function Library:SampleMovingAccentGradient(Position, Duration, BaseColor, Now)
+    local Offset = Library:GetMovingAccentGradientOffset(Duration, Now).X;
+    local Sequence = Library:GetMovingAccentGradientColor(BaseColor);
+    -- UIGradient.Offset shifts the color ramp across the target. Sampling with the
+    -- same normalized offset keeps title colors locked to every moving accent bar.
+    local SamplePosition = math.clamp((tonumber(Position) or 0.5) - (Offset * 0.5), 0, 1);
+    return SampleColorSequence(Sequence, SamplePosition);
+end;
+
 function Library:GetBlendShadeTransparency(Strength)
     Strength = math.clamp(tonumber(Strength) or 0.48, 0, 0.82);
     return NumberSequence.new({
@@ -2022,13 +2081,19 @@ end;
 function Library:AddMovingAccentGradient(Parent, Duration)
     if not Parent then return nil; end;
 
+    Duration = math.max(tonumber(Duration) or 2.4, 0.05);
+
     local Existing = Parent:FindFirstChild('FormaMovingAccentGradient');
-    if Existing and Existing:IsA('UIGradient') then return Existing; end;
+    if Existing and Existing:IsA('UIGradient') then
+        Library.MovingAccentGradients[Existing] = Duration;
+        Existing.Offset = Library:GetMovingAccentGradientOffset(Duration);
+        return Existing;
+    end;
 
     local Gradient = Library:Create('UIGradient', {
         Name = 'FormaMovingAccentGradient';
         Color = Library:GetMovingAccentGradientColor();
-        Offset = Vector2.new(-1, 0);
+        Offset = Library:GetMovingAccentGradientOffset(Duration);
         Rotation = 0;
         Parent = Parent;
     });
@@ -2038,13 +2103,21 @@ function Library:AddMovingAccentGradient(Parent, Duration)
         end;
     });
 
-    TweenService:Create(
-        Gradient,
-        TweenInfo.new(tonumber(Duration) or 2.4, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false),
-        { Offset = Vector2.new(1, 0); }
-    ):Play();
+    Library.MovingAccentGradients[Gradient] = Duration;
     return Gradient;
 end;
+
+table.insert(Library.Signals, RenderStepped:Connect(function()
+    local Now = os.clock();
+
+    for Gradient, Duration in next, Library.MovingAccentGradients do
+        if Gradient and Gradient.Parent then
+            Gradient.Offset = Library:GetMovingAccentGradientOffset(Duration, Now);
+        else
+            Library.MovingAccentGradients[Gradient] = nil;
+        end;
+    end;
+end));
 
 
 function Library:AddAccentGlow(Instance, Scale)
