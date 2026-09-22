@@ -270,8 +270,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.12.6+build.1';
-    Release = 'HF';
+    Version = '1.13.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -9659,17 +9659,59 @@ do
                 Row.Button = Button;
                 Row.Label = ButtonLabel;
                 Row.Value = Value;
+                Row.Hovering = false;
+
+                local BASE_LABEL_X = 6;
+                local HOVER_LABEL_X = 9;
+                local SELECTED_LABEL_X = 13;
+
+                local function IsRowSelected()
+                    return Info.Multi and Dropdown.Value[Value] or Dropdown.Value == Value;
+                end;
 
                 local function ResolveRowTextColor()
-                    local Selected = Info.Multi and Dropdown.Value[Value] or Dropdown.Value == Value;
-                    return Selected and Library.AccentColor or Library.DisabledTextColor;
+                    return IsRowSelected() and Library.AccentColor or Library.DisabledTextColor;
+                end;
+
+                local function ResolveRowLabelPosition()
+                    if IsRowSelected() then
+                        return UDim2.new(0, SELECTED_LABEL_X, 0, 0);
+                    end;
+                    if Row.Hovering then
+                        return UDim2.new(0, HOVER_LABEL_X, 0, 0);
+                    end;
+                    return UDim2.new(0, BASE_LABEL_X, 0, 0);
                 end;
 
                 Library.RegistryMap[ButtonLabel].Properties.TextColor3 = ResolveRowTextColor;
 
-                function Row:UpdateButton()
-                    Library:TweenProperty(ButtonLabel, 'TextColor3', ResolveRowTextColor(), 0.10);
+                function Row:UpdateButton(Instant)
+                    local TargetPosition = ResolveRowLabelPosition();
+                    local TargetColor = ResolveRowTextColor();
+
+                    if Instant then
+                        Library:CancelMotion(ButtonLabel, 'Position');
+                        Library:CancelMotion(ButtonLabel, 'TextColor3');
+                        ButtonLabel.Position = TargetPosition;
+                        ButtonLabel.TextColor3 = TargetColor;
+                    else
+                        Library:Animate(ButtonLabel, {
+                            Position = TargetPosition;
+                            TextColor3 = TargetColor;
+                        }, 0.16, nil, 'Dropdown');
+                    end;
                 end;
+
+                Button.MouseEnter:Connect(function()
+                    if not Button.Active then return; end;
+                    Row.Hovering = true;
+                    Row:UpdateButton(false);
+                end);
+
+                Button.MouseLeave:Connect(function()
+                    Row.Hovering = false;
+                    Row:UpdateButton(false);
+                end);
 
                 Button.InputBegan:Connect(function(Input)
                     if Input.UserInputType ~= Enum.UserInputType.MouseButton1 or not Button.Active then
@@ -9697,7 +9739,7 @@ do
                 end);
 
                 Library:PrimeFadeTree(Button);
-                Row:UpdateButton();
+                Row:UpdateButton(true);
                 Buttons[Button] = Row;
                 table.insert(ButtonOrder, Row);
             end
