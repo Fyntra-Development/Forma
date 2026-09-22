@@ -281,7 +281,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.16.3+build.1';
+    Version = '1.16.4+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -317,6 +317,11 @@ local Library = {
     TitleAnimation = 'None';
     TitleAnimations = { 'None' };
 };
+
+function Library:GiveSignal(Signal)
+    table.insert(Library.Signals, Signal);
+    return Signal;
+end;
 
 local function NormalizeGameName(Value)
     if Value == nil then return nil; end;
@@ -3468,10 +3473,6 @@ function Library:UpdateColorsUsingRegistry()
         end;
     end;
 end;
-
-function Library:GiveSignal(Signal)
-    table.insert(Library.Signals, Signal)
-end
 
 function Library:Unload()
     if Library.Unloaded then
