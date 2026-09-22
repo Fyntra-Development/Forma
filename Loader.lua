@@ -3,7 +3,7 @@ local UserInputService = game:GetService('UserInputService')
 local CoreGui = game:GetService('CoreGui')
 
 local Updater = {}
-Updater.Version = '1.5.2+build.1'
+Updater.Version = '1.5.3+build.1'
 Updater.Release = 'HF'
 Updater.Build = 1
 Updater.RepoBaseUrl = 'https://raw.githubusercontent.com/Fyntra-Development/Forma/main/'
@@ -315,6 +315,37 @@ function Updater:InstallManifest(Manifest, Progress)
     return true
 end
 
+local function ValidateCachedManifestAgainst(Manifest)
+    local Components = Manifest and (Manifest.Components or Manifest.components)
+    if type(Components) ~= 'table' then
+        return false
+    end
+
+    for Name, Info in next, Components do
+        if type(Info) == 'table' and type(Info.path or Info.Path) == 'string' then
+            local Path = LocalPath(Info.path or Info.Path)
+            if not isfile(Path) then
+                return false
+            end
+
+            local ReadSuccess, Source = pcall(readfile, Path)
+            if not ReadSuccess or type(Source) ~= 'string' or Source == '' then
+                return false
+            end
+
+            -- Validate against the manifest we actually intend to run, not the
+            -- previously-installed manifest. This prevents an internally valid
+            -- but stale cache from pinning Forma to an older release forever.
+            local Valid = ValidateComponentSource(tostring(Name), Info, Source)
+            if not Valid then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
 function Updater:EnsureInstalled()
     if not self.Persistent then
         local Manifest, Error = self:FetchManifest()
@@ -325,45 +356,35 @@ function Updater:EnsureInstalled()
     end
 
     EnsureFolder(self.CacheRoot)
-    local Installed = self:ReadInstalledManifest()
 
-    if Installed then
-        local Components = Installed.Components or Installed.components
-        local CacheValid = type(Components) == 'table'
+    -- GitHub is the source of truth at startup. The previous implementation
+    -- validated the cache only against installed.json, so an old Library.lua
+    -- plus an old installed.json looked "valid" indefinitely and loaded before
+    -- the in-library updater ever had a chance to discover the new release.
+    local RemoteManifest, RemoteError = self:FetchManifest()
+    if RemoteManifest then
+        if ValidateCachedManifestAgainst(RemoteManifest) then
+            self.InstalledManifest = RemoteManifest
 
-        if CacheValid then
-            for Name, Info in next, Components do
-                if type(Info) == 'table' and type(Info.path or Info.Path) == 'string' then
-                    local Path = LocalPath(Info.path or Info.Path)
-                    if not isfile(Path) then
-                        CacheValid = false
-                        break
-                    end
-
-                    local ReadSuccess, Source = pcall(readfile, Path)
-                    if not ReadSuccess then
-                        CacheValid = false
-                        break
-                    end
-
-                    local Valid = ValidateComponentSource(tostring(Name), Info, Source)
-                    if not Valid then
-                        CacheValid = false
-                        break
-                    end
-                end
-            end
-        end
-
-        if CacheValid then
-            self.InstalledManifest = Installed
+            -- Keep installed.json synchronized even when no component download
+            -- was necessary (for metadata/schema-only manifest changes).
+            self:WriteInstalledManifest(RemoteManifest)
             return true
         end
+
+        return self:InstallManifest(RemoteManifest)
     end
 
-    local Manifest, Error = self:FetchManifest()
-    if not Manifest then return false, Error end
-    return self:InstallManifest(Manifest)
+    -- Offline/network-failure fallback: a locally consistent release may still
+    -- run, but only when it validates against its own recorded manifest.
+    local Installed = self:ReadInstalledManifest()
+    if Installed and ValidateCachedManifestAgainst(Installed) then
+        self.InstalledManifest = Installed
+        self.LastManifestError = RemoteError
+        return true
+    end
+
+    return false, RemoteError or 'no valid installed Forma release'
 end
 
 function Updater:GetComponentInfo(Name)
