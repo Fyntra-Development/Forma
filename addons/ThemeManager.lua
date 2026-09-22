@@ -2,7 +2,7 @@ local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
 local contentProvider = game:GetService('ContentProvider')
 local ThemeManager = {} do
-	ThemeManager.Version = '1.8.1+build.1'
+	ThemeManager.Version = '1.8.2+build.1'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -186,7 +186,6 @@ local ThemeManager = {} do
 			OverlayEnabled = Toggles and Toggles.ThemeManager_OverlayEnabled and Toggles.ThemeManager_OverlayEnabled.Value or self.OverlayEnabled;
 			OverlayImage = Options and Options.ThemeManager_OverlayImage and Options.ThemeManager_OverlayImage.Value or self.OverlaySelection;
 			Cursor = Options and Options.ThemeManager_Cursor and Options.ThemeManager_Cursor.Value or self.Library.CursorStyle;
-			TitleAnimation = Options and Options.ThemeManager_TitleAnimation and Options.ThemeManager_TitleAnimation.Value or self.Library.TitleAnimation;
 		}
 
 		local success, encoded = pcall(httpService.JSONEncode, httpService, data)
@@ -628,28 +627,6 @@ local ThemeManager = {} do
 		local SavedPreferences = self:LoadPreferences()
 		local PreferredFont = type(SavedPreferences.Font) == 'string' and SavedPreferences.Font or self.Library.FontName
 		local PreferredCursor = type(SavedPreferences.Cursor) == 'string' and SavedPreferences.Cursor or self.Library.CursorStyle
-		local PreferredTitleAnimation = type(SavedPreferences.TitleAnimation) == 'string'
-			and SavedPreferences.TitleAnimation
-			or self.Library.TitleAnimation
-
-		local LegacyTitleAnimationMap = {
-			Shimmer = 'Wave';
-			Pulse = 'Wave';
-			Wobble = 'Wave';
-			Wave = 'Wave';
-			Bounce = 'Wave';
-			['Glow Sweep'] = 'Wave';
-			Cascade = 'Wave';
-			Pop = 'Wave';
-			Decode = 'Wave';
-			Slide = 'Wave';
-			Aurora = 'Wave';
-			Glint = 'Wave';
-			['Neon Pulse'] = 'Wave';
-			Echo = 'Wave';
-			Heartbeat = 'Wave';
-		}
-		PreferredTitleAnimation = LegacyTitleAnimationMap[PreferredTitleAnimation] or PreferredTitleAnimation
 		if tonumber(SavedPreferences.TextSize) then
 			self.Library:SetTextSize(SavedPreferences.TextSize)
 		end
@@ -661,9 +638,6 @@ local ThemeManager = {} do
 		end
 		if self.Library.SetCursorStyle then
 			self.Library:SetCursorStyle(PreferredCursor)
-		end
-		if self.Library.SetTitleAnimation then
-			self.Library:SetTitleAnimation(PreferredTitleAnimation)
 		end
 		self:WarmOverlayAssets()
 
@@ -691,24 +665,6 @@ local ThemeManager = {} do
 		Options.ThemeManager_Cursor:OnChanged(function()
 			if self.Library.SetCursorStyle then
 				self.Library:SetCursorStyle(Options.ThemeManager_Cursor.Value)
-			end
-			self:QueueSavePreferences()
-		end)
-
-		local TitleAnimations = self.Library.GetTitleAnimations
-			and self.Library:GetTitleAnimations()
-			or { 'None', 'Wave' }
-		if not table.find(TitleAnimations, PreferredTitleAnimation) then
-			PreferredTitleAnimation = self.Library.TitleAnimation or 'Wave'
-		end
-		groupbox:AddDropdown('ThemeManager_TitleAnimation', {
-			Text = 'Title animation';
-			Values = TitleAnimations;
-			Default = table.find(TitleAnimations, PreferredTitleAnimation) or 2;
-		})
-		Options.ThemeManager_TitleAnimation:OnChanged(function()
-			if self.Library.SetTitleAnimation then
-				self.Library:SetTitleAnimation(Options.ThemeManager_TitleAnimation.Value)
 			end
 			self:QueueSavePreferences()
 		end)
