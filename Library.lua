@@ -84,6 +84,16 @@ local Fonts = {
         VisualScale = 1.000,
         LocalAliases = { "SF-Pro.ttf", "SF Pro.ttf", "SFPro.ttf" },
     },
+    Ubuntu = {
+        Ttf = "Ubuntu.ttf",
+        RepoPath = "fonts/Ubuntu.ttf",
+        Url = RepoFontBaseUrl .. "fonts/Ubuntu.ttf",
+        FaceName = "Regular",
+        Weight = Enum.FontWeight.Regular,
+        WeightValue = 400,
+        VisualScale = 1.000,
+        LocalAliases = { "Ubuntu.ttf", "Ubuntu-R.ttf", "Ubuntu-Regular.ttf" },
+    },
     ["Space Grotesk"] = {
         Ttf = "SpaceGrotesk-Regular.ttf",
         RepoPath = "fonts/SpaceGrotesk-Regular.ttf",
@@ -192,6 +202,7 @@ local Fonts = {
 local FontOrder = {
     "Rubik Light",
     "SF Pro",
+    "Ubuntu",
     "Space Grotesk",
     "Oxanium",
     "Sora",
@@ -270,8 +281,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.15.1+build.1';
-    Release = 'HF';
+    Version = '1.16.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -7572,42 +7583,44 @@ do
 
     function Funcs:AddDivider()
         local Groupbox = self;
-        local Container = self.Container
+        local Container = self.Container;
 
         local Divider = {
-            Type = 'Divider',
-        }
+            Type = 'Divider';
+        };
 
-        Groupbox:AddBlank(2);
-        local DividerOuter = Library:Create('Frame', {
-            BackgroundColor3 = Library.OutlineColor;
-            BorderColor3 = Library.OutlineColor;
-            Size = UDim2.new(1, -4, 0, 5);
+        Groupbox:AddBlank(5);
+
+        local DividerLine = Library:Create('Frame', {
+            BackgroundColor3 = Library.AccentColor;
+            BorderSizePixel = 0;
+            Size = UDim2.new(1, -4, 0, 1);
             ZIndex = 5;
             Parent = Container;
         });
-
-        local DividerInner = Library:Create('Frame', {
-            BackgroundColor3 = Library.MainColor;
-            BorderColor3 = Library.OutlineColor;
-            BorderMode = Enum.BorderMode.Inset;
-            Size = UDim2.new(1, 0, 1, 0);
-            ZIndex = 6;
-            Parent = DividerOuter;
+        Library:AddToRegistry(DividerLine, {
+            BackgroundColor3 = 'AccentColor';
         });
 
-        Library:AddToRegistry(DividerOuter, {
-            BorderColor3 = 'OutlineColor';
-            BackgroundColor3 = 'OutlineColor';
+        Library:Create('UIGradient', {
+            Rotation = 0;
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0.00, 1.00);
+                NumberSequenceKeypoint.new(0.18, 0.72);
+                NumberSequenceKeypoint.new(0.38, 0.22);
+                NumberSequenceKeypoint.new(0.50, 0.00);
+                NumberSequenceKeypoint.new(0.62, 0.22);
+                NumberSequenceKeypoint.new(0.82, 0.72);
+                NumberSequenceKeypoint.new(1.00, 1.00);
+            });
+            Parent = DividerLine;
         });
 
-        Library:AddToRegistry(DividerInner, {
-            BackgroundColor3 = 'MainColor';
-            BorderColor3 = 'OutlineColor';
-        });
+        Divider.Frame = DividerLine;
 
-        Groupbox:AddBlank(9);
+        Groupbox:AddBlank(8);
         Groupbox:Resize();
+        return Divider;
     end
 
     function Funcs:AddInput(Idx, Info)
@@ -9390,6 +9403,11 @@ do
         assert(Info.Values, 'AddDropdown: Missing dropdown value list.');
         assert(Info.AllowNull or Info.Default, 'AddDropdown: Missing default value. Pass `AllowNull` as true if this was intentional.')
 
+        local RequireSelection = Info.RequireSelection == true or Info.AllowDeselect == false;
+        if RequireSelection then
+            assert(Info.Default ~= nil, 'AddDropdown: RequireSelection needs a default value.');
+        end;
+
         if not Info.Text then
             Info.Compact = true;
         end;
@@ -9402,6 +9420,7 @@ do
             Type = 'Dropdown';
             SpecialType = Info.SpecialType;
             Searchable = Searchable;
+            RequireSelection = RequireSelection;
             Callback = Info.Callback or function(Value) end;
         };
 
@@ -9753,6 +9772,38 @@ do
             return Dropdown.Value and 1 or 0;
         end;
 
+        function Dropdown:GetActiveValueCount()
+            if Info.Multi then
+                local Count = 0;
+                for _, Bool in next, Dropdown.Value do
+                    if Bool then Count = Count + 1; end
+                end
+                return Count;
+            end
+            return Dropdown.Value ~= nil and 1 or 0;
+        end;
+
+        function Dropdown:EnsureRequiredSelection()
+            if not RequireSelection then return; end
+
+            if Info.Multi then
+                local ValidCount = 0;
+                for Value, Bool in next, Dropdown.Value do
+                    if Bool and table.find(Dropdown.Values, Value) then
+                        ValidCount = ValidCount + 1;
+                    else
+                        Dropdown.Value[Value] = nil;
+                    end
+                end
+
+                if ValidCount == 0 and Dropdown.Values[1] ~= nil then
+                    Dropdown.Value[Dropdown.Values[1]] = true;
+                end
+            elseif Dropdown.Value == nil or not table.find(Dropdown.Values, Dropdown.Value) then
+                Dropdown.Value = Dropdown.Values[1];
+            end
+        end;
+
         local Buttons = {};
         local ButtonOrder = {};
         local ApplyDropdownSearch;
@@ -9900,6 +9951,10 @@ do
                     local Selected = Info.Multi and Dropdown.Value[Value] or Dropdown.Value == Value;
                     local Try = not Selected;
 
+                    if RequireSelection and not Try and Dropdown:GetActiveValueCount() <= 1 then
+                        return;
+                    end
+
                     if Info.Multi then
                         if Try then Dropdown.Value[Value] = true else Dropdown.Value[Value] = nil end
                     else
@@ -9947,10 +10002,14 @@ do
                         end
                     end
                 end
+                if RequireSelection and next(NewSelection) == nil then return; end
                 Dropdown.Value = NewSelection;
+                Dropdown:EnsureRequiredSelection();
             else
                 if NewValue ~= nil and not table.find(Dropdown.Values, NewValue) then return; end
+                if RequireSelection and NewValue == nil then return; end
                 Dropdown.Value = NewValue;
+                Dropdown:EnsureRequiredSelection();
             end
 
             for _, Row in ipairs(ButtonOrder) do Row:UpdateButton(); end
@@ -9962,6 +10021,7 @@ do
 
         function Dropdown:SetValues(NewValues)
             if NewValues then Dropdown.Values = NewValues; end
+            Dropdown:EnsureRequiredSelection();
             Dropdown:BuildDropdownList();
             Library:UpdateDependencyBoxes();
         end;
@@ -10192,9 +10252,11 @@ do
                     break;
                 end
             end
-            for _, Row in ipairs(ButtonOrder) do Row:UpdateButton(); end
-            Dropdown:Display();
         end
+
+        Dropdown:EnsureRequiredSelection();
+        for _, Row in ipairs(ButtonOrder) do Row:UpdateButton(); end
+        Dropdown:Display();
 
         RecalculateListPosition();
         ApplyDropdownSearch(true);
