@@ -270,8 +270,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.13.0+build.1';
-    Release = 'GA';
+    Version = '1.13.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -9688,6 +9688,7 @@ do
                 function Row:UpdateButton(Instant)
                     local TargetPosition = ResolveRowLabelPosition();
                     local TargetColor = ResolveRowTextColor();
+                    local Selected = IsRowSelected();
 
                     if Instant then
                         Library:CancelMotion(ButtonLabel, 'Position');
@@ -9695,10 +9696,49 @@ do
                         ButtonLabel.Position = TargetPosition;
                         ButtonLabel.TextColor3 = TargetColor;
                     else
-                        Library:Animate(ButtonLabel, {
-                            Position = TargetPosition;
-                            TextColor3 = TargetColor;
-                        }, 0.16, nil, 'Dropdown');
+                        -- Give the horizontal motion its own easing instead of sharing
+                        -- the dropdown's generic tween profile. Selected rows settle a
+                        -- little slower; hover nudges stay quick but still ease cleanly.
+                        local PositionTweenInfo;
+                        if Selected then
+                            PositionTweenInfo = TweenInfo.new(
+                                0.24,
+                                Enum.EasingStyle.Quint,
+                                Enum.EasingDirection.Out
+                            );
+                        elseif Row.Hovering then
+                            PositionTweenInfo = TweenInfo.new(
+                                0.18,
+                                Enum.EasingStyle.Cubic,
+                                Enum.EasingDirection.Out
+                            );
+                        else
+                            PositionTweenInfo = TweenInfo.new(
+                                0.21,
+                                Enum.EasingStyle.Sine,
+                                Enum.EasingDirection.Out
+                            );
+                        end;
+
+                        Library:Animate(
+                            ButtonLabel,
+                            { Position = TargetPosition; },
+                            PositionTweenInfo,
+                            nil,
+                            'Dropdown'
+                        );
+
+                        Library:Animate(
+                            ButtonLabel,
+                            { TextColor3 = TargetColor; },
+                            TweenInfo.new(
+                                0.16,
+                                Enum.EasingStyle.Sine,
+                                Enum.EasingDirection.Out
+                            ),
+                            nil,
+                            'Color'
+                        );
                     end;
                 end;
 
