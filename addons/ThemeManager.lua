@@ -2,7 +2,7 @@ local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
 local contentProvider = game:GetService('ContentProvider')
 local ThemeManager = {} do
-	ThemeManager.Version = '1.8.2+build.1'
+	ThemeManager.Version = '1.9.0+build.1'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -649,7 +649,7 @@ local ThemeManager = {} do
 		if not table.find(FontNames, PreferredFont) then PreferredFont = self.Library.FontName end
 		self.Library:SetFont(PreferredFont)
 		local DefaultFontIndex = table.find(FontNames, PreferredFont) or 1
-		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex, Searchable = true })
+		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = FontNames, Default = DefaultFontIndex, Searchable = true, RequireSelection = true })
 		Options.ThemeManager_Font:OnChanged(function()
 			self.Library:SetFont(Options.ThemeManager_Font.Value)
 			self:QueueSavePreferences()
@@ -661,6 +661,7 @@ local ThemeManager = {} do
 			Text = 'Cursor';
 			Values = CursorStyles;
 			Default = table.find(CursorStyles, PreferredCursor) or 1;
+			RequireSelection = true;
 		})
 		Options.ThemeManager_Cursor:OnChanged(function()
 			if self.Library.SetCursorStyle then
@@ -687,6 +688,7 @@ local ThemeManager = {} do
 			Text = 'Overlay image';
 			Values = self.OverlayOrder;
 			Default = table.find(self.OverlayOrder, self.OverlaySelection) or 2;
+			RequireSelection = true;
 		})
 
 		Options.ThemeManager_OverlayImage:OnChanged(function()
@@ -707,7 +709,7 @@ local ThemeManager = {} do
 		table.sort(ThemesArray, function(a, b) return self.BuiltInThemes[a][1] < self.BuiltInThemes[b][1] end)
 
 		groupbox:AddDivider()
-		groupbox:AddDropdown('ThemeManager_ThemeList', { Text = 'Theme list', Values = ThemesArray, Default = 1, Searchable = true })
+		groupbox:AddDropdown('ThemeManager_ThemeList', { Text = 'Theme list', Values = ThemesArray, Default = 1, Searchable = true, RequireSelection = true })
 
 		groupbox:AddButton('Set as default', function()
 			self:SaveDefault(Options.ThemeManager_ThemeList.Value)
