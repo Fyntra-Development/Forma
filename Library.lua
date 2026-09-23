@@ -304,8 +304,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.17.0+build.1';
-    Release = 'GA';
+    Version = '1.17.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -785,6 +785,57 @@ local function ApplyCompositeFade(Instance, Baseline)
     end;
 end
 
+function Library:UpdateFadeBaselineProperty(Instance, Property, Value, ApplyNow)
+    if not Instance or type(Property) ~= 'string' or type(Value) ~= 'number' then
+        return;
+    end
+
+    local Cache = Library.FadeBaselines[Instance];
+    if not Cache then
+        Cache = {};
+        Library.FadeBaselines[Instance] = Cache;
+    end
+    Cache[Property] = Value;
+
+    -- Refresh any already-initialized parent fade controller that currently
+    -- owns this instance. This also handles a property changing from fully
+    -- transparent (previously excluded) to visible while a fade is active.
+    for _, Controller in next, Library.UnifiedFadeControllers do
+        local Root = Controller.Root;
+        local Belongs = Root
+            and (Instance == Root or Instance:IsDescendantOf(Root));
+
+        if Belongs and Controller.EntriesInitialized then
+            local Entry = Controller.EntryMap[Instance];
+
+            if Value < 0.9999 then
+                if not Entry then
+                    Entry = {
+                        Instance = Instance;
+                        Baseline = {};
+                    };
+                    Controller.EntryMap[Instance] = Entry;
+                    table.insert(Controller.Entries, Entry);
+                end
+                Entry.Baseline[Property] = Value;
+
+                local Contributions = Library.FadeContributions[Instance];
+                if not Contributions then
+                    Contributions = setmetatable({}, { __mode = 'k' });
+                    Library.FadeContributions[Instance] = Contributions;
+                end
+                Contributions[Controller] = Controller.Progress;
+            elseif Entry then
+                Entry.Baseline[Property] = nil;
+            end
+        end
+    end
+
+    if ApplyNow then
+        ApplyCompositeFade(Instance, Cache);
+    end
+end
+
 local function ApplyUnifiedFadeProgress(Controller, Progress)
     Progress = math.clamp(tonumber(Progress) or 0, 0, 1);
     Controller.Progress = Progress;
@@ -818,6 +869,7 @@ local function GetUnifiedFadeController(Root)
     Driver.Parent = Root;
 
     Controller = {
+        Root = Root;
         Driver = Driver;
         Progress = InitialProgress;
         Entries = {};
@@ -3824,6 +3876,7 @@ do
         end;
 
         ColorPicker:SetHSVFromRGB(ColorPicker.Value);
+        local LastPreviewTransparency = nil;
 
         local DisplayFrame = Library:Create('Frame', {
             BackgroundColor3 = ColorPicker.Value;
@@ -4963,12 +5016,36 @@ do
 
         local function UpdateOutputVisuals(Color)
             DisplayFrame.BackgroundColor3 = Color;
-            DisplayFrame.BackgroundTransparency = ColorPicker.Transparency;
             DisplayShade.BackgroundColor3 = Library:GetNeutralBlendShade();
-            DisplayShade.BackgroundTransparency = ColorPicker.Transparency;
+
+            local PreviewTransparency = math.clamp(
+                tonumber(ColorPicker.Transparency) or 0,
+                0,
+                1
+            );
+
+            -- Animated color modes call this every rendered frame. Only touch
+            -- transparency when its logical value actually changed; otherwise
+            -- the tab transition owns the rendered opacity during a crossfade.
+            if LastPreviewTransparency ~= PreviewTransparency then
+                LastPreviewTransparency = PreviewTransparency;
+                Library:UpdateFadeBaselineProperty(
+                    DisplayFrame,
+                    'BackgroundTransparency',
+                    PreviewTransparency,
+                    true
+                );
+                Library:UpdateFadeBaselineProperty(
+                    DisplayShade,
+                    'BackgroundTransparency',
+                    PreviewTransparency,
+                    true
+                );
+            end
+
             if TransparencyBoxInner then
                 TransparencyBoxInner.BackgroundColor3 = Color;
-                TransparencyCursor.Position = UDim2.new(1 - ColorPicker.Transparency, 0, 0, 0);
+                TransparencyCursor.Position = UDim2.new(1 - PreviewTransparency, 0, 0, 0);
             end;
         end;
 
@@ -8455,9 +8532,16 @@ do
                 or (Toggle.Value and 'FontColor' or 'DisabledTextColor');
 
             ToggleShade.Visible = Toggle.Value;
+            local FillTransparency = Toggle.Value and 0 or 1;
+            Library:UpdateFadeBaselineProperty(
+                ToggleFill,
+                'BackgroundTransparency',
+                FillTransparency,
+                false
+            );
             Library:TweenProperty(ToggleInner, 'BackgroundColor3', Library.MainColor, 0.11);
             Library:TweenProperty(ToggleInner, 'BorderColor3', Library[BorderKey], 0.11);
-            Library:TweenProperty(ToggleFill, 'BackgroundTransparency', Toggle.Value and 0 or 1, 0.11);
+            Library:TweenProperty(ToggleFill, 'BackgroundTransparency', FillTransparency, 0.11);
             Library:TweenProperty(ToggleLabel, 'TextColor3', Library[TextColorKey], 0.11);
 
             Library.RegistryMap[ToggleInner].Properties.BackgroundColor3 = 'MainColor';
