@@ -306,7 +306,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.18.1+build.1';
+    Version = '1.18.2+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -5585,7 +5585,7 @@ do
             local TargetPosition = GetPickerTargetPosition();
             local StartPosition = UDim2.fromOffset(
                 TargetPosition.X.Offset,
-                TargetPosition.Y.Offset - 8
+                TargetPosition.Y.Offset - 6
             );
 
             if not PickerFrameOuter.Visible then
@@ -5598,9 +5598,9 @@ do
             Library.OpenedFrames[PickerFrameOuter] = true;
 
             local OpenInfo = TweenInfo.new(
-                0.24,
-                Enum.EasingStyle.Quint,
-                Enum.EasingDirection.Out
+                0.34,
+                Enum.EasingStyle.Sine,
+                Enum.EasingDirection.InOut
             );
 
             PlayPickerTween(PickerFrameOuter, OpenInfo, {
@@ -5609,7 +5609,7 @@ do
             Library:TweenUnifiedFade(
                 PickerFrameOuter,
                 1,
-                TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                TweenInfo.new(0.30, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
                 nil,
                 'Fade'
             );
@@ -5632,7 +5632,7 @@ do
             local TargetPosition = GetPickerTargetPosition();
             local ExitPosition = UDim2.fromOffset(
                 TargetPosition.X.Offset,
-                TargetPosition.Y.Offset - 7
+                TargetPosition.Y.Offset - 6
             );
 
             local Finished = false;
@@ -5649,9 +5649,9 @@ do
             end
 
             local ExitInfo = TweenInfo.new(
-                0.18,
-                Enum.EasingStyle.Quart,
-                Enum.EasingDirection.In
+                0.30,
+                Enum.EasingStyle.Sine,
+                Enum.EasingDirection.InOut
             );
 
             local PositionTween = PlayPickerTween(PickerFrameOuter, ExitInfo, {
@@ -5661,7 +5661,7 @@ do
             Library:TweenUnifiedFade(
                 PickerFrameOuter,
                 0,
-                TweenInfo.new(0.17, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+                TweenInfo.new(0.26, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
                 FinishHide,
                 'Fade'
             );
