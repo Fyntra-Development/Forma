@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.19.2+build.1';
+    Version = '1.19.3+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -15245,37 +15245,59 @@ function Library:Dialog(Info)
         Parent = ScreenGui;
     });
 
-    -- Soft center-weighted backdrop. The old 9-slice version exposed its piece
-    -- boundaries on large screens. These concentric, low-opacity layers blend
-    -- into one continuous vignette and naturally become lighter with distance.
-    local BackdropLayers = {
-        { Size = UDim2.fromOffset(Width + 150, Height + 120); Transparency = 0.92; Radius = 44; };
-        { Size = UDim2.new(0.38, 0, 0.34, 0); Transparency = 0.935; Radius = 58; };
-        { Size = UDim2.new(0.46, 0, 0.42, 0); Transparency = 0.942; Radius = 70; };
-        { Size = UDim2.new(0.54, 0, 0.50, 0); Transparency = 0.948; Radius = 84; };
-        { Size = UDim2.new(0.62, 0, 0.58, 0); Transparency = 0.954; Radius = 98; };
-        { Size = UDim2.new(0.70, 0, 0.66, 0); Transparency = 0.960; Radius = 112; };
-        { Size = UDim2.new(0.78, 0, 0.74, 0); Transparency = 0.966; Radius = 126; };
-        { Size = UDim2.new(0.86, 0, 0.82, 0); Transparency = 0.972; Radius = 140; };
-        { Size = UDim2.new(0.94, 0, 0.90, 0); Transparency = 0.978; Radius = 154; };
-        { Size = UDim2.new(1.02, 0, 0.98, 0); Transparency = 0.984; Radius = 168; };
-        { Size = UDim2.new(1.10, 0, 1.06, 0); Transparency = 0.989; Radius = 182; };
-        { Size = UDim2.new(1.18, 0, 1.14, 0); Transparency = 0.993; Radius = 196; };
-    };
+    -- Build the backdrop as many extremely low-opacity overlapping shells.
+    -- Each edge only changes the accumulated darkness by a fraction of a percent,
+    -- which removes the visible "piece" boundaries from the previous vignette.
+    local BackdropLayerCount = 60;
+    local BackdropInnerWidth = Width + 138;
+    local BackdropInnerHeight = Height + 108;
 
-    for Index, LayerInfo in ipairs(BackdropLayers) do
+    for Index = BackdropLayerCount, 1, -1 do
+        local T = (Index - 1) / math.max(BackdropLayerCount - 1, 1);
+        local SizeT = T ^ 0.82;
+
+        -- Fade contribution gets weaker toward the outside. Because the shells
+        -- overlap, their accumulated opacity forms a very smooth center-weighted
+        -- falloff instead of a stack of individually readable rectangles.
+        local LayerAlpha = 0.0135 + ((0.0036 - 0.0135) * T);
+        local LayerTransparency = 1 - LayerAlpha;
+
         local Layer = Library:Create('Frame', {
             Name = 'BackdropFade' .. tostring(Index);
             AnchorPoint = Vector2.new(0.5, 0.5);
             BackgroundColor3 = Color3.new(0, 0, 0);
-            BackgroundTransparency = LayerInfo.Transparency;
+            BackgroundTransparency = LayerTransparency;
             BorderSizePixel = 0;
             Position = UDim2.fromScale(0.5, 0.5);
-            Size = LayerInfo.Size;
+            Rotation = ((Index % 3) - 1) * 0.22;
+            Size = UDim2.new(
+                1.14 * SizeT,
+                math.floor(BackdropInnerWidth * (1 - SizeT)),
+                1.08 * SizeT,
+                math.floor(BackdropInnerHeight * (1 - SizeT))
+            );
             ZIndex = 900000;
             Parent = Root;
         });
-        Library:AddCorner(Layer, LayerInfo.Radius);
+
+        local Corner = Library:Create('UICorner', {
+            CornerRadius = UDim.new(0.5, 0);
+            Parent = Layer;
+        });
+
+        -- Alternate a barely-visible axis fade so neighboring shell edges do
+        -- not line up into a detectable contour on wide or tall viewports.
+        Library:Create('UIGradient', {
+            Rotation = Index % 2 == 0 and 0 or 90;
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0.00, 0.10);
+                NumberSequenceKeypoint.new(0.10, 0.035);
+                NumberSequenceKeypoint.new(0.50, 0.00);
+                NumberSequenceKeypoint.new(0.90, 0.035);
+                NumberSequenceKeypoint.new(1.00, 0.10);
+            });
+            Parent = Layer;
+        });
     end
 
     local Panel = Library:Create('Frame', {
