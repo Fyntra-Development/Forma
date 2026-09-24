@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.20.1+build.1';
+    Version = '1.20.2+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -6462,12 +6462,22 @@ do
 
         local ContainerLabel = Library:CreateLabel({
             TextXAlignment = Enum.TextXAlignment.Left;
-            Size = UDim2.new(1, 0, 0, 18);
+            Size = UDim2.fromOffset(1, 18);
             TextSize = 13;
             Visible = false;
             ZIndex = 110;
             Parent = Library.KeybindContainer;
         },  true);
+
+        Library:GiveSignal(
+            ContainerLabel:GetPropertyChangedSignal('TextBounds'):Connect(
+                function()
+                    if Library.RefreshKeybindLayout then
+                        Library.RefreshKeybindLayout();
+                    end
+                end
+            )
+        );
 
         local ModeButtons = {};
 
@@ -6532,19 +6542,9 @@ do
 
             Library.RegistryMap[ContainerLabel].Properties.TextColor3 = State and 'AccentColor' or 'FontColor';
 
-            local YSize = 0
-            local XSize = 0
-
-            for _, Label in next, Library.KeybindContainer:GetChildren() do
-                if Label:IsA('TextLabel') and Label.Visible then
-                    YSize = YSize + 18;
-                    if (Label.TextBounds.X > XSize) then
-                        XSize = Label.TextBounds.X
-                    end
-                end;
-            end;
-
-            Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 14, 210), 0, YSize + 26)
+            if Library.RefreshKeybindLayout then
+                Library.RefreshKeybindLayout();
+            end
         end;
 
         function KeyPicker:GetState()
@@ -12749,12 +12749,40 @@ do
         BackgroundColor3 = 'AccentColor';
     });
 
-    Library:AddMovingAccentGradient(KeybindHeader, 2.4);
+    local KeybindHeaderGradient = Library:AddMovingAccentGradient(
+        KeybindHeader,
+        2.4
+    );
+    if KeybindHeaderGradient then
+        local function GetKeybindHeaderGradientColor()
+            local Accent = Library.AccentColor;
+            local SemiDark = Accent:Lerp(Color3.new(0, 0, 0), 0.28);
+            local SoftBright = Accent:Lerp(Color3.new(1, 1, 1), 0.16);
+
+            return ColorSequence.new({
+                ColorSequenceKeypoint.new(0.00, SemiDark);
+                ColorSequenceKeypoint.new(0.16, Accent);
+                ColorSequenceKeypoint.new(0.34, SemiDark);
+                ColorSequenceKeypoint.new(0.52, SoftBright);
+                ColorSequenceKeypoint.new(0.70, Accent);
+                ColorSequenceKeypoint.new(0.86, SemiDark);
+                ColorSequenceKeypoint.new(1.00, Accent);
+            });
+        end
+
+        KeybindHeaderGradient.Rotation = 128;
+        KeybindHeaderGradient.Color = GetKeybindHeaderGradientColor();
+
+        local GradientRegistry = Library.RegistryMap[KeybindHeaderGradient];
+        if GradientRegistry and GradientRegistry.Properties then
+            GradientRegistry.Properties.Color = GetKeybindHeaderGradientColor;
+        end
+    end
 
     local KeybindLabel = Library:CreateLabel({
         BackgroundTransparency = 1;
         Position = UDim2.fromOffset(7, 1);
-        Size = UDim2.new(1, -14, 0, 20);
+        Size = UDim2.fromOffset(0, 20);
         TextXAlignment = Enum.TextXAlignment.Left;
         Text = 'Keybinds';
         ZIndex = 104;
@@ -12779,6 +12807,75 @@ do
         PaddingLeft = UDim.new(0, 5),
         Parent = KeybindContainer,
     })
+
+    local function RefreshKeybindLayout()
+        if not KeybindOuter.Parent then return; end
+
+        local HeaderTextWidth = select(
+            1,
+            Library:GetTextBounds(
+                KeybindLabel.Text,
+                Library.Font,
+                KeybindLabel.TextSize
+            )
+        );
+        local HeaderWidth = math.max(
+            math.ceil(HeaderTextWidth) + 14,
+            28
+        );
+
+        KeybindLabel.Size = UDim2.fromOffset(
+            math.ceil(HeaderTextWidth),
+            20
+        );
+        KeybindHeader.Size = UDim2.fromOffset(
+            HeaderWidth,
+            22
+        );
+
+        local RowCount = 0;
+        local MaxRowWidth = 0;
+
+        for _, Label in ipairs(KeybindContainer:GetChildren()) do
+            if Label:IsA('TextLabel') and Label.Visible then
+                local TextWidth = select(
+                    1,
+                    Library:GetTextBounds(
+                        Label.Text,
+                        Library.Font,
+                        Label.TextSize
+                    )
+                );
+                local RowWidth = math.max(math.ceil(TextWidth), 1);
+
+                -- Each row owns only the horizontal space its text needs.
+                Label.Size = UDim2.fromOffset(RowWidth, 18);
+
+                RowCount = RowCount + 1;
+                MaxRowWidth = math.max(MaxRowWidth, RowWidth);
+            end
+        end
+
+        local ContentWidth = math.max(
+            HeaderWidth,
+            MaxRowWidth + 10
+        );
+
+        KeybindOuter.Size = UDim2.fromOffset(
+            ContentWidth,
+            (RowCount * 18) + 26
+        );
+    end
+
+    Library.RefreshKeybindLayout = RefreshKeybindLayout;
+
+    Library:GiveSignal(
+        KeybindLabel:GetPropertyChangedSignal('TextBounds'):Connect(
+            RefreshKeybindLayout
+        )
+    );
+
+    task.defer(RefreshKeybindLayout);
 
     Library.KeybindFrame = KeybindOuter;
     Library.KeybindContainer = KeybindContainer;
