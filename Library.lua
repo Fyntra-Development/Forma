@@ -15389,28 +15389,33 @@ function Library:Dialog(Info)
             BorderSizePixel = 0;
             LayoutOrder = Index;
             Size = UDim2.fromOffset(ButtonWidth, ButtonHeight);
-            Text = ButtonText;
-            TextColor3 = ButtonInfo.Risky
-                and Library.RiskColor
-                or Library.FontColor;
-            TextSize = 13;
-            TextStrokeTransparency = 0;
+            Text = '';
             ZIndex = 900004;
             Parent = ButtonsRoot;
         });
         Library:AddCorner(Button, 3);
-        Library:ApplyFont(Button);
-        Library:ApplyTextStroke(Button);
         Library:AddControlBackgroundGradient(Button);
 
         Library:AddToRegistry(Button, {
             BackgroundColor3 = ButtonInfo.Accent
                 and 'AccentColor'
                 or 'Contrast';
-            TextColor3 = ButtonInfo.Risky
-                and 'RiskColor'
-                or 'FontColor';
         });
+
+        local ButtonLabel = Library:CreateLabel({
+            BackgroundTransparency = 1;
+            Size = UDim2.fromScale(1, 1);
+            Text = ButtonText;
+            TextColor3 = ButtonInfo.Risky
+                and Library.RiskColor
+                or Library.FontColor;
+            TextSize = 13;
+            TextXAlignment = Enum.TextXAlignment.Center;
+            ZIndex = 900006;
+            Parent = Button;
+        });
+        Library.RegistryMap[ButtonLabel].Properties.TextColor3 =
+            ButtonInfo.Risky and 'RiskColor' or 'FontColor';
 
         Button.MouseEnter:Connect(function()
             if Dialog.Closed then return; end
@@ -15508,14 +15513,14 @@ function Library:Dialog(Info)
         end
     end);
 
-    ClosingConnection = InputService.InputBegan:Connect(function(Input)
+    ClosingConnection = Library:GiveSignal(InputService.InputBegan:Connect(function(Input)
         if Dialog.Closed then return; end
         if Info.CloseOnEscape ~= false
             and Input.UserInputType == Enum.UserInputType.Keyboard
             and Input.KeyCode == Enum.KeyCode.Escape then
             Dialog:Close('Escape');
         end
-    end);
+    end));
 
     Library.OpenedFrames[Root] = true;
     Library.ActiveDialog = Dialog;
