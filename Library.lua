@@ -12702,6 +12702,14 @@ do
     Library.WatermarkAnimationId = 0;
     Library:MakeDraggable(Library.Watermark);
 
+    local InitialKeybindHeaderWidth = math.max(
+        math.ceil(select(
+            1,
+            Library:GetTextBounds('Keybinds', Library.Font, 13)
+        )) + 14,
+        28
+    );
+
     local KeybindOuter = Library:Create('Frame', {
         -- Top-left anchoring is intentional. The list changes height whenever
         -- keybind rows appear/disappear; a centered Y anchor made every resize
@@ -12710,7 +12718,7 @@ do
         BackgroundColor3 = Library.MainColor;
         BorderSizePixel = 0;
         Position = UDim2.new(0, 10, 0.5, -10);
-        Size = UDim2.new(0, 210, 0, 20);
+        Size = UDim2.fromOffset(InitialKeybindHeaderWidth, 20);
         Visible = false;
         ZIndex = 100;
         Parent = ScreenGui;
