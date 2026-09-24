@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.19.1+build.1';
+    Version = '1.19.2+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -10874,8 +10874,19 @@ do
                     ) ~= nil;
 
                 Row.FilterVisible = Matches;
-                Row.TargetFilterAlpha = Matches and 1 or 0;
-                Row.TargetFilterHeight = Matches and ROW_HEIGHT or 0;
+
+                if Instant then
+                    Row.TargetFilterAlpha = Matches and 1 or 0;
+                    Row.TargetFilterHeight = Matches and ROW_HEIGHT or 0;
+                elseif Matches then
+                    Row.TargetFilterHeight = ROW_HEIGHT;
+                    Row.TargetFilterAlpha =
+                        Row.FilterHeight >= ROW_HEIGHT - 0.40 and 1 or 0;
+                else
+                    Row.TargetFilterAlpha = 0;
+                    Row.TargetFilterHeight =
+                        Row.FilterAlpha <= 0.035 and 0 or ROW_HEIGHT;
+                end
 
                 if Instant then
                     Row.FilterAlpha = Row.TargetFilterAlpha;
@@ -10929,18 +10940,31 @@ do
             local Settled = true;
 
             for _, Row in ipairs(ButtonOrder) do
-                -- When hiding, text disappears before the slot collapses.
-                -- When revealing, the slot opens before the text becomes fully
-                -- opaque. This keeps glyphs from looking vertically squashed.
-                local HeightSmoothTime = Row.FilterVisible and 0.10 or 0.14;
-                local AlphaSmoothTime = Row.FilterVisible and 0.13 or 0.075;
+                -- Two-phase filtering keeps text at its normal geometry:
+                -- hide = fade first, then collapse;
+                -- show = expand first, then fade in.
+                if Row.FilterVisible then
+                    Row.TargetFilterHeight = ROW_HEIGHT;
+                    if Row.FilterHeight >= ROW_HEIGHT - 0.40 then
+                        Row.TargetFilterAlpha = 1;
+                    else
+                        Row.TargetFilterAlpha = 0;
+                    end
+                else
+                    Row.TargetFilterAlpha = 0;
+                    if Row.FilterAlpha <= 0.035 then
+                        Row.TargetFilterHeight = 0;
+                    else
+                        Row.TargetFilterHeight = ROW_HEIGHT;
+                    end
+                end
 
                 Row.FilterHeight, Row.FilterHeightVelocity =
                     Library:SmoothDampScalar(
                         Row.FilterHeight,
                         Row.TargetFilterHeight,
                         Row.FilterHeightVelocity,
-                        HeightSmoothTime,
+                        Row.FilterVisible and 0.10 or 0.115,
                         Dt
                     );
 
@@ -10949,7 +10973,7 @@ do
                         Row.FilterAlpha,
                         Row.TargetFilterAlpha,
                         Row.FilterAlphaVelocity,
-                        AlphaSmoothTime,
+                        Row.FilterVisible and 0.10 or 0.065,
                         Dt
                     );
 
@@ -15221,142 +15245,38 @@ function Library:Dialog(Info)
         Parent = ScreenGui;
     });
 
-    local BackdropCoreWidth = Width + 92;
-    local BackdropCoreHeight = Height + 72;
-    local HalfCoreWidth = math.floor(BackdropCoreWidth * 0.5);
-    local HalfCoreHeight = math.floor(BackdropCoreHeight * 0.5);
-    local NearTransparency = 0.48;
+    -- Soft center-weighted backdrop. The old 9-slice version exposed its piece
+    -- boundaries on large screens. These concentric, low-opacity layers blend
+    -- into one continuous vignette and naturally become lighter with distance.
+    local BackdropLayers = {
+        { Size = UDim2.fromOffset(Width + 150, Height + 120); Transparency = 0.92; Radius = 44; };
+        { Size = UDim2.new(0.38, 0, 0.34, 0); Transparency = 0.935; Radius = 58; };
+        { Size = UDim2.new(0.46, 0, 0.42, 0); Transparency = 0.942; Radius = 70; };
+        { Size = UDim2.new(0.54, 0, 0.50, 0); Transparency = 0.948; Radius = 84; };
+        { Size = UDim2.new(0.62, 0, 0.58, 0); Transparency = 0.954; Radius = 98; };
+        { Size = UDim2.new(0.70, 0, 0.66, 0); Transparency = 0.960; Radius = 112; };
+        { Size = UDim2.new(0.78, 0, 0.74, 0); Transparency = 0.966; Radius = 126; };
+        { Size = UDim2.new(0.86, 0, 0.82, 0); Transparency = 0.972; Radius = 140; };
+        { Size = UDim2.new(0.94, 0, 0.90, 0); Transparency = 0.978; Radius = 154; };
+        { Size = UDim2.new(1.02, 0, 0.98, 0); Transparency = 0.984; Radius = 168; };
+        { Size = UDim2.new(1.10, 0, 1.06, 0); Transparency = 0.989; Radius = 182; };
+        { Size = UDim2.new(1.18, 0, 1.14, 0); Transparency = 0.993; Radius = 196; };
+    };
 
-    local function CreateBackdropPiece(Name, Position, Size, AnchorPoint, Rotation, Transparency)
-        local Piece = Library:Create('Frame', {
-            Name = Name;
-            AnchorPoint = AnchorPoint or Vector2.zero;
+    for Index, LayerInfo in ipairs(BackdropLayers) do
+        local Layer = Library:Create('Frame', {
+            Name = 'BackdropFade' .. tostring(Index);
+            AnchorPoint = Vector2.new(0.5, 0.5);
             BackgroundColor3 = Color3.new(0, 0, 0);
-            BackgroundTransparency = 0;
+            BackgroundTransparency = LayerInfo.Transparency;
             BorderSizePixel = 0;
-            Position = Position;
-            Size = Size;
+            Position = UDim2.fromScale(0.5, 0.5);
+            Size = LayerInfo.Size;
             ZIndex = 900000;
             Parent = Root;
         });
-
-        if Transparency then
-            Library:Create('UIGradient', {
-                Rotation = Rotation or 0;
-                Transparency = Transparency;
-                Parent = Piece;
-            });
-        else
-            Piece.BackgroundTransparency = NearTransparency;
-        end
-
-        return Piece;
+        Library:AddCorner(Layer, LayerInfo.Radius);
     end
-
-    local FadeOut = NumberSequence.new({
-        NumberSequenceKeypoint.new(0.00, 1.00);
-        NumberSequenceKeypoint.new(0.42, 0.92);
-        NumberSequenceKeypoint.new(0.72, 0.72);
-        NumberSequenceKeypoint.new(1.00, NearTransparency);
-    });
-    local FadeIn = NumberSequence.new({
-        NumberSequenceKeypoint.new(0.00, NearTransparency);
-        NumberSequenceKeypoint.new(0.28, 0.72);
-        NumberSequenceKeypoint.new(0.58, 0.92);
-        NumberSequenceKeypoint.new(1.00, 1.00);
-    });
-    local CornerFadeOut = NumberSequence.new({
-        NumberSequenceKeypoint.new(0.00, 1.00);
-        NumberSequenceKeypoint.new(0.48, 0.94);
-        NumberSequenceKeypoint.new(0.76, 0.76);
-        NumberSequenceKeypoint.new(1.00, 0.56);
-    });
-    local CornerFadeIn = NumberSequence.new({
-        NumberSequenceKeypoint.new(0.00, 0.56);
-        NumberSequenceKeypoint.new(0.24, 0.76);
-        NumberSequenceKeypoint.new(0.52, 0.94);
-        NumberSequenceKeypoint.new(1.00, 1.00);
-    });
-
-    CreateBackdropPiece(
-        'BackdropCore',
-        UDim2.fromScale(0.5, 0.5),
-        UDim2.fromOffset(BackdropCoreWidth, BackdropCoreHeight),
-        Vector2.new(0.5, 0.5)
-    );
-
-    CreateBackdropPiece(
-        'BackdropLeft',
-        UDim2.new(0.5, -HalfCoreWidth, 0.5, 0),
-        UDim2.new(0.5, -HalfCoreWidth, 0, BackdropCoreHeight),
-        Vector2.new(1, 0.5),
-        0,
-        FadeOut
-    );
-    CreateBackdropPiece(
-        'BackdropRight',
-        UDim2.new(0.5, HalfCoreWidth, 0.5, 0),
-        UDim2.new(0.5, -HalfCoreWidth, 0, BackdropCoreHeight),
-        Vector2.new(0, 0.5),
-        0,
-        FadeIn
-    );
-    CreateBackdropPiece(
-        'BackdropTop',
-        UDim2.new(0.5, 0, 0.5, -HalfCoreHeight),
-        UDim2.new(0, BackdropCoreWidth, 0.5, -HalfCoreHeight),
-        Vector2.new(0.5, 1),
-        90,
-        FadeOut
-    );
-    CreateBackdropPiece(
-        'BackdropBottom',
-        UDim2.new(0.5, 0, 0.5, HalfCoreHeight),
-        UDim2.new(0, BackdropCoreWidth, 0.5, -HalfCoreHeight),
-        Vector2.new(0.5, 0),
-        90,
-        FadeIn
-    );
-
-    local CornerSize = UDim2.new(
-        0.5,
-        -HalfCoreWidth,
-        0.5,
-        -HalfCoreHeight
-    );
-
-    CreateBackdropPiece(
-        'BackdropTopLeft',
-        UDim2.new(0.5, -HalfCoreWidth, 0.5, -HalfCoreHeight),
-        CornerSize,
-        Vector2.new(1, 1),
-        45,
-        CornerFadeOut
-    );
-    CreateBackdropPiece(
-        'BackdropTopRight',
-        UDim2.new(0.5, HalfCoreWidth, 0.5, -HalfCoreHeight),
-        CornerSize,
-        Vector2.new(0, 1),
-        135,
-        CornerFadeOut
-    );
-    CreateBackdropPiece(
-        'BackdropBottomLeft',
-        UDim2.new(0.5, -HalfCoreWidth, 0.5, HalfCoreHeight),
-        CornerSize,
-        Vector2.new(1, 0),
-        135,
-        CornerFadeIn
-    );
-    CreateBackdropPiece(
-        'BackdropBottomRight',
-        UDim2.new(0.5, HalfCoreWidth, 0.5, HalfCoreHeight),
-        CornerSize,
-        Vector2.new(0, 0),
-        45,
-        CornerFadeIn
-    );
 
     local Panel = Library:Create('Frame', {
         Active = true;
@@ -15386,8 +15306,8 @@ function Library:Dialog(Info)
     local AccentBar = Library:Create('Frame', {
         BackgroundColor3 = Library.AccentColor;
         BorderSizePixel = 0;
-        Position = UDim2.fromOffset(0, 0);
-        Size = UDim2.new(1, 0, 0, 3);
+        Position = UDim2.fromOffset(-1, -1);
+        Size = UDim2.new(1, 2, 0, 4);
         ZIndex = 900004;
         Parent = Panel;
     });
