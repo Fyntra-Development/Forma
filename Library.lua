@@ -307,8 +307,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.19.4+build.1';
-    Release = 'HF';
+    Version = '1.20.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -530,6 +530,7 @@ Library.PropertyTweens = setmetatable({}, { __mode = 'k' });
 Library.BaseTextSizes = setmetatable({}, { __mode = 'k' });
 Library.FadeBaselines = setmetatable({}, { __mode = 'k' });
 Library.DraggableStates = setmetatable({}, { __mode = 'k' });
+Library.ResizableStates = setmetatable({}, { __mode = 'k' });
 Library.ResizeHitboxes = setmetatable({}, { __mode = 'k' });
 Library.ScrollRevealStates = setmetatable({}, { __mode = 'k' });
 Library.TypingControllers = setmetatable({}, { __mode = 'k' });
@@ -1590,9 +1591,18 @@ end
 function Library:ResetMenuPositions(Animated)
     for Instance, State in next, Library.DraggableStates do
         if Instance and Instance.Parent and State.InitialPosition then
+            if State.CancelMotion then
+                State:CancelMotion(false);
+            end
+            local ResizeState = Library.ResizableStates[Instance];
+            if ResizeState and ResizeState.CancelMotion then
+                ResizeState:CancelMotion(false);
+            end
+
             if Animated then
                 Library:TweenMenuProperty(Instance, 'Position', State.InitialPosition, nil);
             else
+                Library:CancelMotion(Instance, 'Position');
                 Instance.Position = State.InitialPosition;
             end
         end
@@ -2748,15 +2758,16 @@ function Library:MakeDraggable(Instance, Cutoff)
     local State = {
         InitialPosition = Instance.Position;
         Dragging = false;
-        DragConnection = nil;
+        Settling = false;
+        MotionConnection = nil;
         InputConnection = nil;
         Input = nil;
         ObjectOffset = nil;
         Anchor = nil;
         VisualAnchor = nil;
         TargetAnchor = nil;
-        DragResponse = 95;
-        MaxDragLag = 28;
+        Velocity = Vector2.zero;
+        Profile = nil;
     };
     Library.DraggableStates[Instance] = State;
 
@@ -2775,32 +2786,184 @@ function Library:MakeDraggable(Instance, Cutoff)
         return Vector2.new(Mouse.X, Mouse.Y);
     end
 
+    local function GetProfile()
+        local Profile = {
+            SmoothTime = 0.055;
+            CatchupDistance = 30;
+            CatchupStrength = 0.58;
+            SettlePositionEpsilon = 0.035;
+            SettleVelocityEpsilon = 0.12;
+        };
+
+        local Manager = Library.MenuManager;
+        if Manager and Manager.GetDirectManipulationProfile then
+            local Success, Result = pcall(
+                Manager.GetDirectManipulationProfile,
+                Manager,
+                'Drag'
+            );
+            if Success and type(Result) == 'table' then
+                for Key, Value in next, Result do
+                    Profile[Key] = Value;
+                end
+            end
+        end
+
+        Profile.SmoothTime = math.clamp(
+            tonumber(Profile.SmoothTime) or 0.055,
+            0.018,
+            0.18
+        );
+        Profile.CatchupDistance = math.clamp(
+            tonumber(Profile.CatchupDistance) or 30,
+            12,
+            96
+        );
+        Profile.CatchupStrength = math.clamp(
+            tonumber(Profile.CatchupStrength) or 0.58,
+            0,
+            0.82
+        );
+        return Profile;
+    end
+
+    local function ApplyVisual()
+        if not State.VisualAnchor or not Instance.Parent then return; end
+        Instance.Position = UDim2.fromOffset(
+            State.VisualAnchor.X,
+            State.VisualAnchor.Y
+        );
+    end
+
+    local function CancelMotion(_, SnapToTarget)
+        State.Dragging = false;
+        State.Settling = false;
+        Disconnect('InputConnection');
+        Disconnect('MotionConnection');
+
+        if SnapToTarget and State.TargetAnchor and Instance.Parent then
+            State.VisualAnchor = State.TargetAnchor;
+            ApplyVisual();
+        end
+
+        State.Velocity = Vector2.zero;
+        State.Input = nil;
+        State.ObjectOffset = nil;
+        State.Anchor = nil;
+    end
+    State.CancelMotion = CancelMotion;
+
+    local function UpdateTargetFromPointer()
+        if not State.Input
+            or not State.ObjectOffset
+            or not State.Anchor
+            or not Instance.Parent then
+            return;
+        end
+
+        local Pointer = GetPointer(State.Input);
+        State.TargetAnchor = Vector2.new(
+            Pointer.X
+                - State.ObjectOffset.X
+                + (Instance.AbsoluteSize.X * State.Anchor.X),
+            Pointer.Y
+                - State.ObjectOffset.Y
+                + (Instance.AbsoluteSize.Y * State.Anchor.Y)
+        );
+    end
+
+    local function EnsureMotionConnection()
+        if State.MotionConnection then return; end
+
+        State.MotionConnection = RenderStepped:Connect(function(Delta)
+            if not Instance.Parent then
+                State:CancelMotion(false);
+                return;
+            end
+
+            if State.Dragging then
+                UpdateTargetFromPointer();
+            end
+
+            if not State.TargetAnchor or not State.VisualAnchor then
+                return;
+            end
+
+            local Dt = math.min(
+                math.max(tonumber(Delta) or (1 / 60), 0),
+                0.05
+            );
+            local Profile = State.Profile or GetProfile();
+            local Error = (State.TargetAnchor - State.VisualAnchor).Magnitude;
+
+            -- Critically damped motion stays smooth at every frame rate. When
+            -- pointer velocity creates a large gap, continuously shorten the
+            -- response time instead of hard-clamping/snapping the window.
+            local Catchup = math.clamp(
+                Error / math.max(Profile.CatchupDistance, 1),
+                0,
+                1
+            );
+            local SmoothTime = math.max(
+                0.016,
+                Profile.SmoothTime
+                    * (1 - (Profile.CatchupStrength * Catchup))
+            );
+
+            local X, VX = Library:SmoothDampScalar(
+                State.VisualAnchor.X,
+                State.TargetAnchor.X,
+                State.Velocity.X,
+                SmoothTime,
+                Dt
+            );
+            local Y, VY = Library:SmoothDampScalar(
+                State.VisualAnchor.Y,
+                State.TargetAnchor.Y,
+                State.Velocity.Y,
+                SmoothTime,
+                Dt
+            );
+
+            State.VisualAnchor = Vector2.new(X, Y);
+            State.Velocity = Vector2.new(VX, VY);
+            ApplyVisual();
+
+            if State.Settling and not State.Dragging then
+                local PositionEpsilon =
+                    tonumber(Profile.SettlePositionEpsilon) or 0.035;
+                local VelocityEpsilon =
+                    tonumber(Profile.SettleVelocityEpsilon) or 0.12;
+
+                if (State.TargetAnchor - State.VisualAnchor).Magnitude
+                        <= PositionEpsilon
+                    and State.Velocity.Magnitude <= VelocityEpsilon then
+
+                    State.VisualAnchor = State.TargetAnchor;
+                    State.Velocity = Vector2.zero;
+                    State.Settling = false;
+                    ApplyVisual();
+                    Disconnect('MotionConnection');
+                end
+            end
+        end);
+    end
+
     local function FinishDrag()
         if not State.Dragging then return; end
 
-        if State.Input and State.ObjectOffset and State.Anchor and Instance.Parent then
-            local Pointer = GetPointer(State.Input);
-            local FinalAnchor = Vector2.new(
-                Pointer.X - State.ObjectOffset.X + (Instance.AbsoluteSize.X * State.Anchor.X),
-                Pointer.Y - State.ObjectOffset.Y + (Instance.AbsoluteSize.Y * State.Anchor.Y)
-            );
-            local Offset = (FinalAnchor - (State.VisualAnchor or FinalAnchor)).Magnitude;
-            if Offset > 0.5 and Offset < 32 then
-                Library:Animate(Instance, {
-                    Position = UDim2.fromOffset(FinalAnchor.X, FinalAnchor.Y);
-                }, 0.09, nil, 'DragRelease');
-            else
-                Instance.Position = UDim2.fromOffset(FinalAnchor.X, FinalAnchor.Y);
-            end;
-        end
-
+        UpdateTargetFromPointer();
         State.Dragging = false;
-        Disconnect('DragConnection');
+        State.Settling = true;
+
         Disconnect('InputConnection');
         State.Input = nil;
         State.ObjectOffset = nil;
         State.Anchor = nil;
 
+        -- Keep the same physical state alive after mouse-up. There is no
+        -- release tween and therefore no velocity discontinuity.
+        EnsureMotionConnection();
     end
 
     Instance.InputBegan:Connect(function(Input)
@@ -2813,70 +2976,62 @@ function Library:MakeDraggable(Instance, Cutoff)
         if Library:IsPointOverResizeHandle(Pointer) then
             return;
         end
-        local ObjPos = Pointer - Instance.AbsolutePosition;
 
+        local ObjPos = Pointer - Instance.AbsolutePosition;
         if ObjPos.Y > (Cutoff or 40) then
             return;
         end
 
-        FinishDrag();
+        local ResizeState = Library.ResizableStates[Instance];
+        if ResizeState and ResizeState.CancelMotion then
+            ResizeState:CancelMotion(false);
+        end
+
         Library:CancelMotion(Instance, 'Position');
-        State.ReleaseSequence = (State.ReleaseSequence or 0) + 1;
+        Disconnect('InputConnection');
+
         State.Dragging = true;
+        State.Settling = false;
+        State.Profile = GetProfile();
 
         local Anchor = Instance.AnchorPoint;
         State.Input = Input;
         State.ObjectOffset = ObjPos;
         State.Anchor = Anchor;
         State.VisualAnchor = Vector2.new(
-            Instance.AbsolutePosition.X + (Instance.AbsoluteSize.X * Anchor.X),
-            Instance.AbsolutePosition.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
+            Instance.AbsolutePosition.X
+                + (Instance.AbsoluteSize.X * Anchor.X),
+            Instance.AbsolutePosition.Y
+                + (Instance.AbsoluteSize.Y * Anchor.Y)
         );
         State.TargetAnchor = State.VisualAnchor;
-        State.DragResponse = 95;
-        local Manager = Library.MenuManager;
-        if Manager and Manager.GetDragResponse then
-            local Success, Response = pcall(Manager.GetDragResponse, Manager);
-            if Success and type(Response) == 'number' then
-                State.DragResponse = math.clamp(Response, 60, 150);
-            end;
-        end;
 
-        State.DragConnection = RenderStepped:Connect(function(Delta)
-            if not State.Dragging or not Instance.Parent then
-                FinishDrag();
-                return;
-            end
+        -- A new grab starts from exactly what is rendered. Keep only a small
+        -- amount of prior velocity when re-grabbing a settling window so rapid
+        -- interactions remain continuous without feeling slippery.
+        if State.Velocity.Magnitude > 180 then
+            State.Velocity = State.Velocity.Unit * 180;
+        end
 
-            local CurrentPointer = GetPointer(Input);
-            State.TargetAnchor = Vector2.new(
-                CurrentPointer.X - ObjPos.X + (Instance.AbsoluteSize.X * Anchor.X),
-                CurrentPointer.Y - ObjPos.Y + (Instance.AbsoluteSize.Y * Anchor.Y)
-            );
-
-            local SafeDelta = math.min(tonumber(Delta) or (1 / 60), 1 / 20);
-            local Response = State.DragResponse or 95;
-            local FollowAlpha = 1 - math.exp(-Response * SafeDelta);
-            State.VisualAnchor = State.VisualAnchor:Lerp(State.TargetAnchor, FollowAlpha);
-            local Remaining = State.TargetAnchor - State.VisualAnchor;
-            local MaxLag = State.MaxDragLag or 28;
-            if Remaining.Magnitude > MaxLag then
-                State.VisualAnchor = State.TargetAnchor - Remaining.Unit * MaxLag;
-            end;
-            Instance.Position = UDim2.fromOffset(State.VisualAnchor.X, State.VisualAnchor.Y);
-        end);
+        EnsureMotionConnection();
 
         State.InputConnection = Input.Changed:Connect(function()
-            if Input.UserInputState == Enum.UserInputState.End then FinishDrag(); end
+            if Input.UserInputState == Enum.UserInputState.End then
+                FinishDrag();
+            end
         end);
     end);
 
+    State.Finish = FinishDrag;
     return State;
 end;
 
 function Library:MakeResizable(Instance, Config)
     if not Instance then return nil; end
     Config = Config or {};
+
+    local Existing = Library.ResizableStates[Instance];
+    if Existing then return Existing; end
 
     local function ResolveVector(Value, Fallback)
         if typeof(Value) == 'Vector2' then return Value; end
@@ -2886,15 +3041,24 @@ function Library:MakeResizable(Instance, Config)
 
     local MinSize = ResolveVector(Config.MinSize, Vector2.new(420, 320));
     local MaxSize = ResolveVector(Config.MaxSize, Vector2.new(math.huge, math.huge));
-    local Response = math.clamp(tonumber(Config.Response) or 80, 25, 150);
+    local ConfigResponse = math.clamp(tonumber(Config.Response) or 80, 25, 150);
     local State = {
         InitialSize = Instance.Size;
         Resizing = false;
+        Settling = false;
         ActiveHandle = nil;
         RenderConnection = nil;
         InputConnection = nil;
         Handles = {};
+        VisualPosition = nil;
+        VisualSize = nil;
+        TargetPosition = nil;
+        TargetSize = nil;
+        PositionVelocity = Vector2.zero;
+        SizeVelocity = Vector2.zero;
+        Profile = nil;
     };
+    Library.ResizableStates[Instance] = State;
 
     local function GetPointer(Input)
         if Input and Input.UserInputType == Enum.UserInputType.Touch then
@@ -2908,6 +3072,51 @@ function Library:MakeResizable(Instance, Config)
             State[Name]:Disconnect();
             State[Name] = nil;
         end
+    end
+
+    local function GetResizeProfile()
+        local Profile = {
+            SmoothTime = 0.065;
+            CatchupDistance = 34;
+            CatchupStrength = 0.52;
+            SettlePositionEpsilon = 0.035;
+            SettleVelocityEpsilon = 0.12;
+        };
+
+        local Manager = Library.MenuManager;
+        if Manager and Manager.GetDirectManipulationProfile then
+            local Success, Result = pcall(
+                Manager.GetDirectManipulationProfile,
+                Manager,
+                'Resize'
+            );
+            if Success and type(Result) == 'table' then
+                for Key, Value in next, Result do
+                    Profile[Key] = Value;
+                end
+            end
+        end
+
+        -- Preserve the existing ResizeResponse config as a per-window modifier.
+        -- 80 is neutral; larger response values make the physical follower
+        -- faster without reverting to the old first-order interpolation.
+        local ResponseScale = math.sqrt(80 / ConfigResponse);
+        Profile.SmoothTime = math.clamp(
+            (tonumber(Profile.SmoothTime) or 0.065) * ResponseScale,
+            0.020,
+            0.20
+        );
+        Profile.CatchupDistance = math.clamp(
+            tonumber(Profile.CatchupDistance) or 34,
+            14,
+            110
+        );
+        Profile.CatchupStrength = math.clamp(
+            tonumber(Profile.CatchupStrength) or 0.52,
+            0,
+            0.80
+        );
+        return Profile;
     end
 
     local function SetHandleVisible(Handle, Visible)
@@ -2973,34 +3182,171 @@ function Library:MakeResizable(Instance, Config)
         State.TargetPosition = Position;
     end
 
-    local function FinishResize()
-        if not State.Resizing then return; end
-        local Handle = State.ActiveHandle;
-        if State.Input then CalculateTarget(Handle, GetPointer(State.Input)); end
+    local function ApplyResizeVisual()
+        if not Instance.Parent
+            or not State.VisualPosition
+            or not State.VisualSize then
+            return;
+        end
 
+        Instance.Position = UDim2.fromOffset(
+            State.VisualPosition.X,
+            State.VisualPosition.Y
+        );
+        Instance.Size = UDim2.fromOffset(
+            State.VisualSize.X,
+            State.VisualSize.Y
+        );
+    end
+
+    local function CancelResizeMotion(_, SnapToTarget)
         State.Resizing = false;
+        State.Settling = false;
+        Disconnect('InputConnection');
+        Disconnect('RenderConnection');
+
+        if SnapToTarget
+            and State.TargetPosition
+            and State.TargetSize
+            and Instance.Parent then
+            State.VisualPosition = State.TargetPosition;
+            State.VisualSize = State.TargetSize;
+            ApplyResizeVisual();
+        end
+
+        State.PositionVelocity = Vector2.zero;
+        State.SizeVelocity = Vector2.zero;
         State.ActiveHandle = nil;
         State.Input = nil;
         State.PointerOffset = nil;
-        Disconnect('RenderConnection');
+    end
+    State.CancelMotion = CancelResizeMotion;
+
+    local function EnsureResizeMotion()
+        if State.RenderConnection then return; end
+
+        State.RenderConnection = RenderStepped:Connect(function(Delta)
+            if not Instance.Parent then
+                State:CancelMotion(false);
+                return;
+            end
+
+            local Handle = State.ActiveHandle;
+            if State.Resizing and Handle and State.Input then
+                CalculateTarget(Handle, GetPointer(State.Input));
+            end
+
+            if not State.TargetPosition
+                or not State.TargetSize
+                or not State.VisualPosition
+                or not State.VisualSize then
+                return;
+            end
+
+            local Dt = math.min(
+                math.max(tonumber(Delta) or (1 / 60), 0),
+                0.05
+            );
+            local Profile = State.Profile or GetResizeProfile();
+            local PositionError =
+                (State.TargetPosition - State.VisualPosition).Magnitude;
+            local SizeError =
+                (State.TargetSize - State.VisualSize).Magnitude;
+            local Error = math.max(PositionError, SizeError);
+            local Catchup = math.clamp(
+                Error / math.max(Profile.CatchupDistance, 1),
+                0,
+                1
+            );
+            local SmoothTime = math.max(
+                0.018,
+                Profile.SmoothTime
+                    * (1 - (Profile.CatchupStrength * Catchup))
+            );
+
+            local PX, PVX = Library:SmoothDampScalar(
+                State.VisualPosition.X,
+                State.TargetPosition.X,
+                State.PositionVelocity.X,
+                SmoothTime,
+                Dt
+            );
+            local PY, PVY = Library:SmoothDampScalar(
+                State.VisualPosition.Y,
+                State.TargetPosition.Y,
+                State.PositionVelocity.Y,
+                SmoothTime,
+                Dt
+            );
+            local SX, SVX = Library:SmoothDampScalar(
+                State.VisualSize.X,
+                State.TargetSize.X,
+                State.SizeVelocity.X,
+                SmoothTime,
+                Dt
+            );
+            local SY, SVY = Library:SmoothDampScalar(
+                State.VisualSize.Y,
+                State.TargetSize.Y,
+                State.SizeVelocity.Y,
+                SmoothTime,
+                Dt
+            );
+
+            State.VisualPosition = Vector2.new(PX, PY);
+            State.PositionVelocity = Vector2.new(PVX, PVY);
+            State.VisualSize = Vector2.new(SX, SY);
+            State.SizeVelocity = Vector2.new(SVX, SVY);
+            ApplyResizeVisual();
+
+            if State.Settling and not State.Resizing then
+                local PositionEpsilon =
+                    tonumber(Profile.SettlePositionEpsilon) or 0.035;
+                local VelocityEpsilon =
+                    tonumber(Profile.SettleVelocityEpsilon) or 0.12;
+
+                local PositionSettled =
+                    (State.TargetPosition - State.VisualPosition).Magnitude
+                        <= PositionEpsilon
+                    and State.PositionVelocity.Magnitude <= VelocityEpsilon;
+                local SizeSettled =
+                    (State.TargetSize - State.VisualSize).Magnitude
+                        <= PositionEpsilon
+                    and State.SizeVelocity.Magnitude <= VelocityEpsilon;
+
+                if PositionSettled and SizeSettled then
+                    State.VisualPosition = State.TargetPosition;
+                    State.VisualSize = State.TargetSize;
+                    State.PositionVelocity = Vector2.zero;
+                    State.SizeVelocity = Vector2.zero;
+                    State.Settling = false;
+                    ApplyResizeVisual();
+                    Disconnect('RenderConnection');
+                end
+            end
+        end);
+    end
+
+    local function FinishResize()
+        if not State.Resizing then return; end
+
+        local Handle = State.ActiveHandle;
+        if State.Input and Handle then
+            CalculateTarget(Handle, GetPointer(State.Input));
+        end
+
+        State.Resizing = false;
+        State.Settling = true;
         Disconnect('InputConnection');
+        State.Input = nil;
+        State.PointerOffset = nil;
+
         SetHandleVisible(Handle, Handle and Handle.Hovering);
+        State.ActiveHandle = nil;
 
-        if not Instance.Parent or not State.TargetPosition or not State.TargetSize then return; end
-        local CurrentPos = Vector2.new(Instance.Position.X.Offset, Instance.Position.Y.Offset);
-        local CurrentSize = Vector2.new(Instance.Size.X.Offset, Instance.Size.Y.Offset);
-        local PosDelta = (State.TargetPosition - CurrentPos).Magnitude;
-        local SizeDelta = (State.TargetSize - CurrentSize).Magnitude;
-
-        if PosDelta > 0.5 or SizeDelta > 0.5 then
-            Library:Animate(Instance, {
-                Position = UDim2.fromOffset(State.TargetPosition.X, State.TargetPosition.Y);
-                Size = UDim2.fromOffset(State.TargetSize.X, State.TargetSize.Y);
-            }, 0.09, nil, 'Resize');
-        else
-            Instance.Position = UDim2.fromOffset(State.TargetPosition.X, State.TargetPosition.Y);
-            Instance.Size = UDim2.fromOffset(State.TargetSize.X, State.TargetSize.Y);
-        end;
+        -- Preserve velocity and settle through the exact same critically-damped
+        -- state used while resizing. Mouse-up never switches to TweenService.
+        EnsureResizeMotion();
     end
 
     local Handles = {
@@ -3245,48 +3591,54 @@ function Library:MakeResizable(Instance, Config)
                 return;
             end
 
+            local DragState = Library.DraggableStates[Instance];
+            if DragState and DragState.CancelMotion then
+                DragState:CancelMotion(false);
+            end
+
             Library:CancelMotion(Instance, 'Position');
             Library:CancelMotion(Instance, 'Size');
+            Disconnect('InputConnection');
+
             State.Resizing = true;
+            State.Settling = false;
             State.ActiveHandle = Handle;
             State.Input = Input;
+            State.Profile = GetResizeProfile();
             State.StartPosition = Instance.AbsolutePosition;
             State.StartSize = Instance.AbsoluteSize;
+
             local Pointer = GetPointer(Input);
             local Edge = Vector2.new(
                 Handle.Horizontal < 0 and State.StartPosition.X
-                    or Handle.Horizontal > 0 and (State.StartPosition.X + State.StartSize.X)
+                    or Handle.Horizontal > 0
+                        and (State.StartPosition.X + State.StartSize.X)
                     or Pointer.X,
                 Handle.Vertical < 0 and State.StartPosition.Y
-                    or Handle.Vertical > 0 and (State.StartPosition.Y + State.StartSize.Y)
+                    or Handle.Vertical > 0
+                        and (State.StartPosition.Y + State.StartSize.Y)
                     or Pointer.Y
             );
+
             State.PointerOffset = Pointer - Edge;
             State.VisualPosition = Vector2.new(
-                State.StartPosition.X + (State.StartSize.X * Instance.AnchorPoint.X),
-                State.StartPosition.Y + (State.StartSize.Y * Instance.AnchorPoint.Y)
+                State.StartPosition.X
+                    + (State.StartSize.X * Instance.AnchorPoint.X),
+                State.StartPosition.Y
+                    + (State.StartSize.Y * Instance.AnchorPoint.Y)
             );
             State.VisualSize = State.StartSize;
+            State.PositionVelocity = Vector2.zero;
+            State.SizeVelocity = Vector2.zero;
+
             CalculateTarget(Handle, Pointer);
             SetHandleVisible(Handle, true);
-
-            State.RenderConnection = RenderStepped:Connect(function(Delta)
-                if not State.Resizing or not Instance.Parent then
-                    FinishResize();
-                    return;
-                end
-
-                CalculateTarget(Handle, GetPointer(Input));
-                local SafeDelta = math.min(tonumber(Delta) or (1 / 60), 1 / 20);
-                local Alpha = 1 - math.exp(-Response * SafeDelta);
-                State.VisualPosition = State.VisualPosition:Lerp(State.TargetPosition, Alpha);
-                State.VisualSize = State.VisualSize:Lerp(State.TargetSize, Alpha);
-                Instance.Position = UDim2.fromOffset(State.VisualPosition.X, State.VisualPosition.Y);
-                Instance.Size = UDim2.fromOffset(State.VisualSize.X, State.VisualSize.Y);
-            end);
+            EnsureResizeMotion();
 
             State.InputConnection = Input.Changed:Connect(function()
-                if Input.UserInputState == Enum.UserInputState.End then FinishResize(); end
+                if Input.UserInputState == Enum.UserInputState.End then
+                    FinishResize();
+                end
             end);
         end);
     end
