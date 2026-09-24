@@ -2,9 +2,9 @@
   "schema": 2,
   "Components": {
     "Library": {
-      "version": "1.18.3+build.1",
+      "version": "1.19.0+build.1",
       "path": "Library.lua",
-      "release": "HF",
+      "release": "GA",
       "build": 1
     },
     "Loader": {
