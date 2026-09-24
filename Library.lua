@@ -307,8 +307,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.18.3+build.1';
-    Release = 'HF';
+    Version = '1.19.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -1285,11 +1285,14 @@ function Library:CreateTabTransitionController(Config)
         CancelStateMotion(Incoming);
 
         if Outgoing then
-            -- Refresh descendant baselines once at transition start. Render
-            -- frames use the cached fade driver only.
+            -- Stop descendant transparency tweens before the tab fade takes
+            -- ownership. Without this, an active toggle fill can briefly write
+            -- its unfaded opacity after the page has begun fading.
+            Library:CancelFadePropertyMotions(Outgoing.Frame);
             Library:SetUnifiedFadeProgress(Outgoing.Frame, Outgoing.Alpha);
         end
 
+        Library:CancelFadePropertyMotions(Incoming.Frame);
         local IncomingWasVisible = Incoming.Frame.Visible;
         if not IncomingWasVisible or Incoming.Alpha <= 0.001 then
             Incoming.Alpha = 0;
@@ -2027,6 +2030,21 @@ function Library:GetFadePropertyNames(Instance)
     end;
 
     return Properties;
+end;
+
+function Library:CancelFadePropertyMotions(Root)
+    if not Root then return; end
+
+    local Instances = { Root };
+    for _, Descendant in ipairs(Root:GetDescendants()) do
+        table.insert(Instances, Descendant);
+    end
+
+    for _, Instance in ipairs(Instances) do
+        for _, Property in ipairs(Library:GetFadePropertyNames(Instance)) do
+            Library:CancelMotion(Instance, Property);
+        end
+    end
 end;
 
 function Library:PrimeFadeTree(Root)
@@ -10580,6 +10598,12 @@ do
         local ButtonOrder = {};
         local ApplyDropdownSearch;
         local DropdownScrollReveal;
+        local DropdownFilterMotion = {
+            Running = false;
+            ListHeight = ListRowsHeight;
+            ListHeightVelocity = 0;
+            TargetListHeight = ListRowsHeight;
+        };
 
         function Dropdown:BuildDropdownList()
             table.clear(Buttons);
@@ -10622,6 +10646,13 @@ do
                 Row.Label = ButtonLabel;
                 Row.Value = Value;
                 Row.Hovering = false;
+                Row.FilterAlpha = 1;
+                Row.FilterAlphaVelocity = 0;
+                Row.FilterHeight = ROW_HEIGHT;
+                Row.FilterHeightVelocity = 0;
+                Row.TargetFilterAlpha = 1;
+                Row.TargetFilterHeight = ROW_HEIGHT;
+                Row.FilterVisible = true;
 
                 local BASE_LABEL_X = 6;
                 local HOVER_LABEL_X = 8;
@@ -10798,30 +10829,211 @@ do
             Library:UpdateDependencyBoxes();
         end;
 
+        local function ApplyDropdownFilterGeometry()
+            local Width = math.max(DropdownOuter.AbsoluteSize.X, 1);
+            ListRowsHeight = math.max(DropdownFilterMotion.ListHeight, ROW_HEIGHT);
+
+            ListOuter.Size = UDim2.fromOffset(
+                Width,
+                ListRowsHeight + (VALUES_PADDING * 2) + LIST_BOTTOM_GUARD
+            );
+            Scrolling.Size = UDim2.new(
+                1,
+                -(VALUES_PADDING * 2),
+                0,
+                ListRowsHeight
+            );
+            ScrollTrack.Size = UDim2.new(
+                0,
+                3,
+                0,
+                math.max(ListRowsHeight - 8, 1)
+            );
+        end;
+
         ApplyDropdownSearch = function(Instant)
             local Query = SearchBox and string.lower(SearchBox.Text or '') or '';
             local VisibleCount = 0;
 
             for _, Row in ipairs(ButtonOrder) do
-                local Matches = Query == '' or string.find(string.lower(tostring(Row.Value)), Query, 1, true) ~= nil;
+                local Matches = Query == ''
+                    or string.find(
+                        string.lower(tostring(Row.Value)),
+                        Query,
+                        1,
+                        true
+                    ) ~= nil;
+
                 if Matches then VisibleCount = VisibleCount + 1; end
-                Row.Button.Active = Matches;
+
+                Row.FilterVisible = Matches;
+                Row.TargetFilterAlpha = Matches and 1 or 0;
+                Row.TargetFilterHeight = Matches and ROW_HEIGHT or 0;
 
                 if Instant then
-                    Row.Button.Size = UDim2.new(1, -5, 0, Matches and ROW_HEIGHT or 0);
-                    Library:SetFadeTree(Row.Button, not Matches);
+                    Row.FilterAlpha = Row.TargetFilterAlpha;
+                    Row.FilterAlphaVelocity = 0;
+                    Row.FilterHeight = Row.TargetFilterHeight;
+                    Row.FilterHeightVelocity = 0;
+                    Row.Button.Size = UDim2.new(
+                        1,
+                        -5,
+                        0,
+                        Row.FilterHeight
+                    );
+                    Row.Button.Active = Matches;
+                    Library:SetUnifiedFadeProgress(
+                        Row.Button,
+                        Row.FilterAlpha
+                    );
                 else
-                    Library:Animate(Row.Button, { Size = UDim2.new(1, -5, 0, Matches and ROW_HEIGHT or 0) }, 0.18, nil, 'DropdownSearch');
-                    Library:TweenFadeTree(Row.Button, not Matches, Matches and 0.16 or 0.14);
+                    -- Prime once, then every rendered frame uses only the cached
+                    -- fade controller. This avoids rebuilding fade baselines
+                    -- while the list is continuously collapsing/expanding.
+                    Library:SetUnifiedFadeProgress(
+                        Row.Button,
+                        Row.FilterAlpha
+                    );
+                    Row.Button.Active = Matches or Row.FilterHeight > 0.35;
                 end
             end
 
-            local Rows = math.max(1, math.min(VisibleCount, MAX_DROPDOWN_ITEMS));
-            RecalculateListSize(Rows * ROW_HEIGHT, not Instant);
+            local Rows = math.max(
+                1,
+                math.min(VisibleCount, MAX_DROPDOWN_ITEMS)
+            );
+            DropdownFilterMotion.TargetListHeight = Rows * ROW_HEIGHT;
+
+            if Instant then
+                DropdownFilterMotion.ListHeight =
+                    DropdownFilterMotion.TargetListHeight;
+                DropdownFilterMotion.ListHeightVelocity = 0;
+                DropdownFilterMotion.Running = false;
+                ApplyDropdownFilterGeometry();
+            else
+                DropdownFilterMotion.Running = true;
+            end
+
             Scrolling.CanvasPosition = Vector2.new(0, 0);
             task.defer(UpdateDropdownScrollVisuals);
-            if DropdownScrollReveal then DropdownScrollReveal:QueueRefresh(); end
+            if DropdownScrollReveal then
+                DropdownScrollReveal:QueueRefresh();
+            end
         end;
+
+        Library:GiveSignal(RenderStepped:Connect(function(Delta)
+            if not DropdownFilterMotion.Running then return; end
+            if not ListOuter.Parent then return; end
+
+            local Dt = math.min(
+                math.max(tonumber(Delta) or (1 / 60), 0),
+                0.05
+            );
+            local Settled = true;
+
+            for _, Row in ipairs(ButtonOrder) do
+                Row.FilterHeight, Row.FilterHeightVelocity =
+                    Library:SmoothDampScalar(
+                        Row.FilterHeight,
+                        Row.TargetFilterHeight,
+                        Row.FilterHeightVelocity,
+                        0.105,
+                        Dt
+                    );
+
+                Row.FilterAlpha, Row.FilterAlphaVelocity =
+                    Library:SmoothDampScalar(
+                        Row.FilterAlpha,
+                        Row.TargetFilterAlpha,
+                        Row.FilterAlphaVelocity,
+                        0.09,
+                        Dt
+                    );
+
+                Row.FilterHeight = math.max(Row.FilterHeight, 0);
+                Row.FilterAlpha = math.clamp(Row.FilterAlpha, 0, 1);
+
+                Row.Button.Size = UDim2.new(
+                    1,
+                    -5,
+                    0,
+                    Row.FilterHeight
+                );
+                Row.Button.Active =
+                    Row.FilterVisible or Row.FilterHeight > 0.35;
+
+                Library:SetCachedUnifiedFadeProgress(
+                    Row.Button,
+                    Row.FilterAlpha
+                );
+
+                local RowSettled =
+                    math.abs(
+                        Row.FilterHeight - Row.TargetFilterHeight
+                    ) < 0.025
+                    and math.abs(Row.FilterHeightVelocity) < 0.10
+                    and math.abs(
+                        Row.FilterAlpha - Row.TargetFilterAlpha
+                    ) < 0.0015
+                    and math.abs(Row.FilterAlphaVelocity) < 0.015;
+
+                if not RowSettled then Settled = false; end
+            end
+
+            DropdownFilterMotion.ListHeight,
+            DropdownFilterMotion.ListHeightVelocity =
+                Library:SmoothDampScalar(
+                    DropdownFilterMotion.ListHeight,
+                    DropdownFilterMotion.TargetListHeight,
+                    DropdownFilterMotion.ListHeightVelocity,
+                    0.12,
+                    Dt
+                );
+
+            ApplyDropdownFilterGeometry();
+
+            local ListSettled =
+                math.abs(
+                    DropdownFilterMotion.ListHeight
+                        - DropdownFilterMotion.TargetListHeight
+                ) < 0.025
+                and math.abs(
+                    DropdownFilterMotion.ListHeightVelocity
+                ) < 0.10;
+
+            if not ListSettled then Settled = false; end
+
+            if Settled then
+                for _, Row in ipairs(ButtonOrder) do
+                    Row.FilterHeight = Row.TargetFilterHeight;
+                    Row.FilterHeightVelocity = 0;
+                    Row.FilterAlpha = Row.TargetFilterAlpha;
+                    Row.FilterAlphaVelocity = 0;
+                    Row.Button.Size = UDim2.new(
+                        1,
+                        -5,
+                        0,
+                        Row.FilterHeight
+                    );
+                    Row.Button.Active = Row.FilterVisible;
+                    Library:SetCachedUnifiedFadeProgress(
+                        Row.Button,
+                        Row.FilterAlpha
+                    );
+                end
+
+                DropdownFilterMotion.ListHeight =
+                    DropdownFilterMotion.TargetListHeight;
+                DropdownFilterMotion.ListHeightVelocity = 0;
+                DropdownFilterMotion.Running = false;
+                ApplyDropdownFilterGeometry();
+
+                task.defer(UpdateDropdownScrollVisuals);
+                if DropdownScrollReveal then
+                    DropdownScrollReveal:QueueRefresh();
+                end
+            end
+        end));
 
         local SearchUpdateId = 0;
         if SearchBox then
@@ -14960,6 +15172,386 @@ function Library:Notify(Text, Time, Title)
 
     return NotifyOuter;
 end;
+
+function Library:Dialog(Info)
+    if type(Info) ~= 'table' then
+        Info = {
+            Title = 'Dialog';
+            Text = tostring(Info or '');
+        };
+    end
+
+    if Library.ActiveDialog and Library.ActiveDialog.Close then
+        Library.ActiveDialog:Close('Replaced');
+    end
+
+    local Title = tostring(Info.Title or 'Dialog');
+    local Text = tostring(
+        Info.Text or Info.Message or Info.Description or ''
+    );
+    local Width = math.clamp(tonumber(Info.Width) or 360, 280, 520);
+    local TextSize = tonumber(Info.TextSize) or 14;
+    local TitleSize = tonumber(Info.TitleSize) or 15;
+    local ContentWidth = Width - 28;
+    local _, TextHeight = Library:GetTextBounds(
+        Text,
+        Library.Font,
+        TextSize,
+        Vector2.new(ContentWidth, 900)
+    );
+    TextHeight = math.max(TextHeight, 18);
+
+    local ButtonInfos = {};
+    if type(Info.Buttons) == 'table' then
+        for _, Button in ipairs(Info.Buttons) do
+            if type(Button) == 'string' then
+                table.insert(ButtonInfos, { Text = Button; });
+            elseif type(Button) == 'table' then
+                table.insert(ButtonInfos, Button);
+            end
+        end
+    end
+    if #ButtonInfos == 0 then
+        table.insert(ButtonInfos, {
+            Text = tostring(Info.ButtonText or 'OK');
+            Accent = true;
+        });
+    end
+
+    local ButtonHeight = 25;
+    local Height = math.clamp(
+        52 + TextHeight + ButtonHeight + 18,
+        118,
+        420
+    );
+
+    local Dialog = {
+        Closed = false;
+        Result = nil;
+    };
+
+    local Root = Library:Create('Frame', {
+        Active = true;
+        BackgroundColor3 = Color3.new(0, 0, 0);
+        BackgroundTransparency = 0.46;
+        BorderSizePixel = 0;
+        Size = UDim2.fromScale(1, 1);
+        Visible = false;
+        ZIndex = 900000;
+        Parent = ScreenGui;
+    });
+
+    local Panel = Library:Create('Frame', {
+        Active = true;
+        AnchorPoint = Vector2.new(0.5, 0.5);
+        BackgroundColor3 = Library.MainColor;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0.5, 0, 0.5, 8);
+        Size = UDim2.fromOffset(Width, Height);
+        ZIndex = 900001;
+        Parent = Root;
+    });
+    Library:AddCorner(Panel, 4);
+    Library:AddToRegistry(Panel, {
+        BackgroundColor3 = 'MainColor';
+    });
+
+    local Stroke = Library:Create('UIStroke', {
+        Color = Library.OutlineColor;
+        Thickness = 1;
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+        LineJoinMode = Enum.LineJoinMode.Round;
+        Parent = Panel;
+    });
+    Library:AddToRegistry(Stroke, { Color = 'OutlineColor'; });
+
+    local AccentBar = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(1, 1);
+        Size = UDim2.new(1, -2, 0, 2);
+        ZIndex = 900004;
+        Parent = Panel;
+    });
+    Library:AddCorner(AccentBar, 2);
+    Library:AddToRegistry(AccentBar, {
+        BackgroundColor3 = 'AccentColor';
+    });
+    Library:AddMovingAccentGradient(AccentBar, 2.4);
+
+    local TitleLabel = Library:CreateLabel({
+        BackgroundTransparency = 1;
+        Position = UDim2.fromOffset(14, 10);
+        Size = UDim2.new(1, -45, 0, 20);
+        Text = Title;
+        TextColor3 = Library.AccentColor;
+        TextSize = TitleSize;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 900003;
+        Parent = Panel;
+    });
+    Library.RegistryMap[TitleLabel].Properties.TextColor3 = 'AccentColor';
+
+    local MessageLabel = Library:CreateLabel({
+        BackgroundTransparency = 1;
+        Position = UDim2.fromOffset(14, 36);
+        Size = UDim2.new(1, -28, 0, TextHeight + 4);
+        Text = Text;
+        TextColor3 = Library.FontColor;
+        TextSize = TextSize;
+        TextWrapped = true;
+        TextXAlignment = Enum.TextXAlignment.Left;
+        TextYAlignment = Enum.TextYAlignment.Top;
+        ZIndex = 900003;
+        Parent = Panel;
+    });
+
+    local ButtonsRoot = Library:Create('Frame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 12, 1, -(ButtonHeight + 11));
+        Size = UDim2.new(1, -24, 0, ButtonHeight);
+        ZIndex = 900003;
+        Parent = Panel;
+    });
+
+    local ButtonsLayout = Library:Create('UIListLayout', {
+        FillDirection = Enum.FillDirection.Horizontal;
+        HorizontalAlignment = Enum.HorizontalAlignment.Right;
+        Padding = UDim.new(0, 6);
+        SortOrder = Enum.SortOrder.LayoutOrder;
+        Parent = ButtonsRoot;
+    });
+
+    local ClosingConnection;
+
+    function Dialog:Close(Reason)
+        if Dialog.Closed then return; end
+        Dialog.Closed = true;
+        Dialog.Result = Reason;
+        Library.OpenedFrames[Root] = nil;
+        if Library.ActiveDialog == Dialog then
+            Library.ActiveDialog = nil;
+        end
+        if ClosingConnection then
+            ClosingConnection:Disconnect();
+            ClosingConnection = nil;
+        end
+
+        Library:Animate(
+            Panel,
+            { Position = UDim2.new(0.5, 0, 0.5, -6); },
+            TweenInfo.new(
+                0.20,
+                Enum.EasingStyle.Quart,
+                Enum.EasingDirection.In
+            ),
+            nil,
+            'PopupExit'
+        );
+
+        Library:TweenUnifiedFade(
+            Root,
+            0,
+            TweenInfo.new(
+                0.19,
+                Enum.EasingStyle.Sine,
+                Enum.EasingDirection.In
+            ),
+            function(State)
+                if State ~= Enum.PlaybackState.Cancelled
+                    and Root.Parent then
+                    Root:Destroy();
+                end
+                if type(Info.OnClose) == 'function' then
+                    pcall(Info.OnClose, Reason, Dialog);
+                end
+            end,
+            'Fade'
+        );
+    end
+
+    for Index, ButtonInfo in ipairs(ButtonInfos) do
+        local ButtonText = tostring(
+            ButtonInfo.Text or ButtonInfo.Title or ('Button ' .. Index)
+        );
+        local TextWidth = select(
+            1,
+            Library:GetTextBounds(ButtonText, Library.Font, 13)
+        );
+        local ButtonWidth = math.clamp(TextWidth + 24, 72, 150);
+
+        local Button = Library:Create('TextButton', {
+            AutoButtonColor = false;
+            BackgroundColor3 = ButtonInfo.Accent
+                and Library.AccentColor
+                or Library.Contrast;
+            BorderSizePixel = 0;
+            LayoutOrder = Index;
+            Size = UDim2.fromOffset(ButtonWidth, ButtonHeight);
+            Text = ButtonText;
+            TextColor3 = ButtonInfo.Risky
+                and Library.RiskColor
+                or Library.FontColor;
+            TextSize = 13;
+            TextStrokeTransparency = 0;
+            ZIndex = 900004;
+            Parent = ButtonsRoot;
+        });
+        Library:AddCorner(Button, 3);
+        Library:ApplyFont(Button);
+        Library:ApplyTextStroke(Button);
+        Library:AddControlBackgroundGradient(Button);
+
+        Library:AddToRegistry(Button, {
+            BackgroundColor3 = ButtonInfo.Accent
+                and 'AccentColor'
+                or 'Contrast';
+            TextColor3 = ButtonInfo.Risky
+                and 'RiskColor'
+                or 'FontColor';
+        });
+
+        Button.MouseEnter:Connect(function()
+            if Dialog.Closed then return; end
+            Library:Animate(
+                Button,
+                {
+                    BackgroundColor3 = ButtonInfo.Accent
+                        and Library.AccentColor:Lerp(
+                            Color3.new(1, 1, 1),
+                            0.08
+                        )
+                        or Library.MainColor;
+                },
+                0.10,
+                nil,
+                'Color'
+            );
+        end);
+
+        Button.MouseLeave:Connect(function()
+            if Dialog.Closed then return; end
+            Library:Animate(
+                Button,
+                {
+                    BackgroundColor3 = ButtonInfo.Accent
+                        and Library.AccentColor
+                        or Library.Contrast;
+                },
+                0.12,
+                nil,
+                'Color'
+            );
+        end);
+
+        Button.MouseButton1Click:Connect(function()
+            if Dialog.Closed then return; end
+
+            Dialog.Result = ButtonInfo.Value ~= nil
+                and ButtonInfo.Value
+                or ButtonText;
+
+            local ShouldClose = ButtonInfo.Close ~= false;
+            local CallbackResult;
+            if type(ButtonInfo.Callback) == 'function' then
+                local Success, Result = pcall(
+                    ButtonInfo.Callback,
+                    Dialog.Result,
+                    Dialog
+                );
+                if not Success then
+                    Library:Notify(Result, 3);
+                else
+                    CallbackResult = Result;
+                end
+            end
+
+            if CallbackResult == false then
+                ShouldClose = false;
+            end
+
+            if ShouldClose then
+                Dialog:Close(Dialog.Result);
+            end
+        end);
+    end
+
+    if Info.CloseButton ~= false then
+        local CloseButton = Library:Create('TextButton', {
+            AutoButtonColor = false;
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = UDim2.new(1, -30, 0, 5);
+            Size = UDim2.fromOffset(24, 24);
+            Text = '×';
+            TextColor3 = Library.DisabledTextColor;
+            TextSize = 18;
+            TextStrokeTransparency = 1;
+            ZIndex = 900005;
+            Parent = Panel;
+        });
+        Library:ApplyFont(CloseButton);
+        Library:AddToRegistry(CloseButton, {
+            TextColor3 = 'DisabledTextColor';
+        });
+        CloseButton.MouseButton1Click:Connect(function()
+            Dialog:Close('Close');
+        end);
+    end
+
+    Root.InputBegan:Connect(function(Input)
+        if Input.UserInputType == Enum.UserInputType.MouseButton1
+            and Info.DismissOnBackdrop == true
+            and not Library:IsMouseOverFrame(Panel) then
+            Dialog:Close('Backdrop');
+        end
+    end);
+
+    ClosingConnection = InputService.InputBegan:Connect(function(Input)
+        if Dialog.Closed then return; end
+        if Info.CloseOnEscape ~= false
+            and Input.UserInputType == Enum.UserInputType.Keyboard
+            and Input.KeyCode == Enum.KeyCode.Escape then
+            Dialog:Close('Escape');
+        end
+    end);
+
+    Library.OpenedFrames[Root] = true;
+    Library.ActiveDialog = Dialog;
+    Dialog.Frame = Root;
+    Dialog.Panel = Panel;
+
+    Library:SetUnifiedFadeProgress(Root, 0);
+    Root.Visible = true;
+
+    Library:Animate(
+        Panel,
+        { Position = UDim2.fromScale(0.5, 0.5); },
+        TweenInfo.new(
+            0.27,
+            Enum.EasingStyle.Quint,
+            Enum.EasingDirection.Out
+        ),
+        nil,
+        'Picker'
+    );
+    Library:TweenUnifiedFade(
+        Root,
+        1,
+        TweenInfo.new(
+            0.24,
+            Enum.EasingStyle.Sine,
+            Enum.EasingDirection.Out
+        ),
+        nil,
+        'Fade'
+    );
+
+    return Dialog;
+end;
+
+Library.ShowDialog = Library.Dialog;
 
 function Library:CreateWindow(...)
     task.defer(function()
