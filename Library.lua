@@ -280,6 +280,8 @@ local Library = {
     BackgroundColor = Color3.fromRGB(20, 20, 20);
     AccentColor = Color3.fromRGB(0, 85, 255);
     BlendShade = Color3.fromRGB(7, 21, 47);
+    UpperGradient = Color3.fromRGB(36, 36, 36);
+    LowerGradient = Color3.fromRGB(24, 24, 24);
     OutlineColor = Color3.fromRGB(50, 50, 50);
     DisabledTextColor = Color3.fromRGB(143, 143, 143);
     Contrast = Color3.fromRGB(36, 36, 36);
@@ -304,8 +306,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.17.2+build.1';
-    Release = 'HF';
+    Version = '1.18.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -2231,6 +2233,79 @@ function Library:GetNeutralBlendShade()
     return Color3.new(Luminance, Luminance, Luminance);
 end;
 
+function Library:AddControlBackgroundGradient(Parent, Config)
+    if not Parent then return nil; end
+    Config = Config or {};
+
+    local Existing = Parent:FindFirstChild('FormaControlGradient');
+    if Existing then
+        return Existing;
+    end
+
+    local Root = Library:Create('Frame', {
+        Name = 'FormaControlGradient';
+        Active = false;
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Size = UDim2.fromScale(1, 1);
+        ZIndex = Parent.ZIndex;
+        Parent = Parent;
+    });
+    Library:AddCorner(Root, tonumber(Config.Radius) or 3);
+
+    local Upper = Library:Create('Frame', {
+        Name = 'Upper';
+        Active = false;
+        BackgroundColor3 = Library.UpperGradient;
+        BackgroundTransparency = 0;
+        BorderSizePixel = 0;
+        Size = UDim2.fromScale(1, 1);
+        ZIndex = Root.ZIndex;
+        Parent = Root;
+    });
+    Library:AddCorner(Upper, tonumber(Config.Radius) or 3);
+    Library:AddToRegistry(Upper, { BackgroundColor3 = 'UpperGradient'; });
+
+    Library:Create('UIGradient', {
+        Rotation = 90;
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.00, 0.12);
+            NumberSequenceKeypoint.new(0.28, 0.34);
+            NumberSequenceKeypoint.new(0.58, 0.78);
+            NumberSequenceKeypoint.new(0.78, 0.96);
+            NumberSequenceKeypoint.new(1.00, 1.00);
+        });
+        Parent = Upper;
+    });
+
+    local Lower = Library:Create('Frame', {
+        Name = 'Lower';
+        Active = false;
+        BackgroundColor3 = Library.LowerGradient;
+        BackgroundTransparency = 0;
+        BorderSizePixel = 0;
+        Size = UDim2.fromScale(1, 1);
+        ZIndex = Root.ZIndex;
+        Parent = Root;
+    });
+    Library:AddCorner(Lower, tonumber(Config.Radius) or 3);
+    Library:AddToRegistry(Lower, { BackgroundColor3 = 'LowerGradient'; });
+
+    Library:Create('UIGradient', {
+        Rotation = 90;
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.00, 1.00);
+            NumberSequenceKeypoint.new(0.22, 0.96);
+            NumberSequenceKeypoint.new(0.48, 0.80);
+            NumberSequenceKeypoint.new(0.72, 0.36);
+            NumberSequenceKeypoint.new(1.00, 0.10);
+        });
+        Parent = Lower;
+    });
+
+    return Root;
+end;
+
 function Library:AddMovingAccentGradient(Parent, Duration)
     if not Parent then return nil; end;
 
@@ -2817,14 +2892,34 @@ function Library:MakeResizable(Instance, Config)
     end
 
     local function SetHandleVisible(Handle, Visible)
-        if not Handle or not Handle.Visual then return; end
-        Library:Animate(
-            Handle.Visual,
-            { BackgroundTransparency = Visible and (Handle.VisibleTransparency or 0.06) or 1 },
-            Visible and 0.15 or 0.20,
-            nil,
-            'Fade'
-        );
+        if not Handle then return; end
+
+        local Layers = Handle.VisualLayers;
+        if type(Layers) == 'table' and #Layers > 0 then
+            for _, Layer in ipairs(Layers) do
+                local Instance = Layer.Instance;
+                if Instance and Instance.Parent then
+                    Library:Animate(
+                        Instance,
+                        { BackgroundTransparency = Visible and (Layer.VisibleTransparency or 0.06) or 1 },
+                        Visible and 0.16 or 0.23,
+                        nil,
+                        'Fade'
+                    );
+                end
+            end
+            return;
+        end
+
+        if Handle.Visual then
+            Library:Animate(
+                Handle.Visual,
+                { BackgroundTransparency = Visible and (Handle.VisibleTransparency or 0.06) or 1 },
+                Visible and 0.16 or 0.23,
+                nil,
+                'Fade'
+            );
+        end
     end
 
     local function CalculateTarget(Handle, Pointer)
@@ -2980,59 +3075,42 @@ function Library:MakeResizable(Instance, Config)
         local VisualAnchor;
         local VisualPosition;
         local VisualSize;
+        local BloomSize;
         local GlowRotation = 0;
-        local GlowTransparency;
+        local NearEdgeAtEnd = false;
 
         if Definition.Corner then
-            -- Keep the resize cube pinned exactly to the actual window corner.
-            -- The hitbox extends inward, while the visual itself sits on the edge.
             VisualAnchor = Definition.Anchor;
             VisualPosition = Definition.Position;
             VisualSize = UDim2.fromOffset(6, 6);
         elseif Definition.Horizontal < 0 then
-            -- Left edge: glow exists only outside the window and fades outward.
             VisualAnchor = Vector2.new(1, 0.5);
             VisualPosition = UDim2.fromScale(0, 0.5);
-            VisualSize = UDim2.new(0, 10, 1, -10);
+            VisualSize = UDim2.new(0, 14, 1, -18);
+            BloomSize = UDim2.new(0, 24, 1, -30);
             GlowRotation = 0;
-            GlowTransparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0.00, 1.00);
-                NumberSequenceKeypoint.new(0.38, 0.78);
-                NumberSequenceKeypoint.new(1.00, 0.16);
-            });
+            NearEdgeAtEnd = true;
         elseif Definition.Horizontal > 0 then
-            -- Right edge: strongest at the window, transparent farther outward.
             VisualAnchor = Vector2.new(0, 0.5);
             VisualPosition = UDim2.fromScale(1, 0.5);
-            VisualSize = UDim2.new(0, 10, 1, -10);
+            VisualSize = UDim2.new(0, 14, 1, -18);
+            BloomSize = UDim2.new(0, 24, 1, -30);
             GlowRotation = 0;
-            GlowTransparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0.00, 0.16);
-                NumberSequenceKeypoint.new(0.62, 0.78);
-                NumberSequenceKeypoint.new(1.00, 1.00);
-            });
+            NearEdgeAtEnd = false;
         elseif Definition.Vertical < 0 then
-            -- Top edge: glow rises outward from the top border.
             VisualAnchor = Vector2.new(0.5, 1);
             VisualPosition = UDim2.fromScale(0.5, 0);
-            VisualSize = UDim2.new(1, -10, 0, 10);
+            VisualSize = UDim2.new(1, -18, 0, 14);
+            BloomSize = UDim2.new(1, -30, 0, 24);
             GlowRotation = 90;
-            GlowTransparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0.00, 1.00);
-                NumberSequenceKeypoint.new(0.38, 0.78);
-                NumberSequenceKeypoint.new(1.00, 0.16);
-            });
+            NearEdgeAtEnd = true;
         else
-            -- Bottom edge: glow falls outward from the bottom border.
             VisualAnchor = Vector2.new(0.5, 0);
             VisualPosition = UDim2.fromScale(0.5, 1);
-            VisualSize = UDim2.new(1, -10, 0, 10);
+            VisualSize = UDim2.new(1, -18, 0, 14);
+            BloomSize = UDim2.new(1, -30, 0, 24);
             GlowRotation = 90;
-            GlowTransparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0.00, 0.16);
-                NumberSequenceKeypoint.new(0.62, 0.78);
-                NumberSequenceKeypoint.new(1.00, 1.00);
-            });
+            NearEdgeAtEnd = false;
         end
 
         local Visual = Library:Create('Frame', {
@@ -3047,21 +3125,88 @@ function Library:MakeResizable(Instance, Config)
         });
         Library:AddToRegistry(Visual, { BackgroundColor3 = 'AccentColor'; });
 
-        if GlowTransparency then
+        local VisualLayers = {};
+
+        if Definition.Corner then
+            table.insert(VisualLayers, {
+                Instance = Visual;
+                VisibleTransparency = 0.06;
+            });
+        else
+            Library:AddCorner(Visual, 8);
+
+            local function MakeOutwardTransparency(Soft)
+                local Far = 1.00;
+                local MidA = Soft and 0.995 or 0.97;
+                local MidB = Soft and 0.96 or 0.84;
+                local MidC = Soft and 0.84 or 0.58;
+                local Near = Soft and 0.68 or 0.30;
+
+                local Points;
+                if NearEdgeAtEnd then
+                    Points = {
+                        NumberSequenceKeypoint.new(0.00, Far);
+                        NumberSequenceKeypoint.new(0.30, MidA);
+                        NumberSequenceKeypoint.new(0.58, MidB);
+                        NumberSequenceKeypoint.new(0.82, MidC);
+                        NumberSequenceKeypoint.new(1.00, Near);
+                    };
+                else
+                    Points = {
+                        NumberSequenceKeypoint.new(0.00, Near);
+                        NumberSequenceKeypoint.new(0.18, MidC);
+                        NumberSequenceKeypoint.new(0.42, MidB);
+                        NumberSequenceKeypoint.new(0.70, MidA);
+                        NumberSequenceKeypoint.new(1.00, Far);
+                    };
+                end
+
+                return NumberSequence.new(Points);
+            end
+
             Library:Create('UIGradient', {
                 Rotation = GlowRotation;
-                Transparency = GlowTransparency;
+                Transparency = MakeOutwardTransparency(false);
                 Parent = Visual;
+            });
+
+            local Bloom = Library:Create('Frame', {
+                AnchorPoint = VisualAnchor;
+                BackgroundColor3 = Library.AccentColor;
+                BackgroundTransparency = 1;
+                BorderSizePixel = 0;
+                Position = VisualPosition;
+                Size = BloomSize;
+                ZIndex = 250;
+                Parent = Hitbox;
+            });
+            Library:AddCorner(Bloom, 12);
+            Library:AddToRegistry(Bloom, { BackgroundColor3 = 'AccentColor'; });
+
+            Library:Create('UIGradient', {
+                Rotation = GlowRotation;
+                Transparency = MakeOutwardTransparency(true);
+                Parent = Bloom;
+            });
+
+            table.insert(VisualLayers, {
+                Instance = Bloom;
+                VisibleTransparency = 0.56;
+            });
+            table.insert(VisualLayers, {
+                Instance = Visual;
+                VisibleTransparency = 0.18;
             });
         end
 
         local Handle = {
             Hitbox = Hitbox;
             Visual = Visual;
+            VisualLayers = VisualLayers;
             Horizontal = Definition.Horizontal;
             Vertical = Definition.Vertical;
             Hovering = false;
-            VisibleTransparency = Definition.Corner and 0.06 or 0.34;
+            VisibleTransparency = Definition.Corner and 0.06 or 0.18;
         };
         State.Handles[Definition.Name] = Handle;
         Library.ResizeHitboxes[Hitbox] = Instance;
@@ -4085,14 +4230,7 @@ do
             Parent = HueBoxOuter;
         });
 
-        Library:Create('UIGradient', {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
-            });
-            Rotation = 90;
-            Parent = HueBoxInner;
-        });
+        Library:AddControlBackgroundGradient(HueBoxInner);
 
         local HueBox = Library:Create('TextBox', {
             BackgroundTransparency = 1;
@@ -4204,14 +4342,7 @@ do
         Library:AddCorner(CopyBtnOuter, 3);
         Library:AddCorner(CopyBtnInner, 3);
 
-        Library:Create('UIGradient', {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
-            });
-            Rotation = 90;
-            Parent = CopyBtnInner;
-        });
+        Library:AddControlBackgroundGradient(CopyBtnInner);
 
         local CopyIcon = Library:Create('ImageLabel', {
             BackgroundTransparency = 1;
@@ -4258,14 +4389,7 @@ do
         Library:AddCorner(PasteBtnOuter, 3);
         Library:AddCorner(PasteBtnInner, 3);
 
-        Library:Create('UIGradient', {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
-            });
-            Rotation = 90;
-            Parent = PasteBtnInner;
-        });
+        Library:AddControlBackgroundGradient(PasteBtnInner);
 
         local PasteIcon = Library:Create('ImageLabel', {
             BackgroundTransparency = 1;
@@ -7946,18 +8070,11 @@ do
                 Size = UDim2.new(1, 0, 1, 0);
                 TextSize = 14;
                 Text = Button.Text;
-                ZIndex = 6;
+                ZIndex = 7;
                 Parent = Inner;
             });
 
-            Library:Create('UIGradient', {
-                Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
-                });
-                Rotation = 90;
-                Parent = Inner;
-            });
+            Library:AddControlBackgroundGradient(Inner);
 
             Library:AddToRegistry(Outer, {
                 BackgroundColor3 = 'OutlineColor';
@@ -8275,14 +8392,7 @@ do
             Library:AddToolTip(Info.Tooltip, TextBoxOuter)
         end
 
-        Library:Create('UIGradient', {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
-            });
-            Rotation = 90;
-            Parent = TextBoxInner;
-        });
+        Library:AddControlBackgroundGradient(TextBoxInner);
 
         local Container = Library:Create('Frame', {
             BackgroundTransparency = 1;
@@ -8680,6 +8790,7 @@ do
                 BackgroundColor3 = 'MainColor';
                 BorderColor3 = 'OutlineColor';
             });
+            Library:AddControlBackgroundGradient(Inner);
 
             Library:CreateLabel({
                 BackgroundTransparency = 1;
@@ -8733,6 +8844,7 @@ do
             BackgroundColor3 = 'MainColor';
             BorderColor3 = 'OutlineColor';
         });
+        Library:AddControlBackgroundGradient(SliderInner);
 
         local Fill = Library:Create('Frame', {
             BackgroundColor3 = Library.AccentColor;
@@ -10063,14 +10175,7 @@ do
             BorderColor3 = 'OutlineColor';
         });
 
-        Library:Create('UIGradient', {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
-            });
-            Rotation = 90;
-            Parent = DropdownInner;
-        });
+        Library:AddControlBackgroundGradient(DropdownInner);
 
         local DropdownArrow = Library:Create('ImageLabel', {
             AnchorPoint = Vector2.new(0, 0.5);
@@ -11867,6 +11972,11 @@ do
         BackgroundColor3 = 'AccentColor';
     });
 
+    local KeybindHeaderGradient = Library:AddMovingAccentGradient(KeybindHeader, 2.4);
+    if KeybindHeaderGradient then
+        KeybindHeaderGradient.Rotation = 118;
+    end
+
     local KeybindHeaderShade = Library:Create('Frame', {
         BackgroundColor3 = Library.BlendShade;
         BorderSizePixel = 0;
@@ -11878,8 +11988,8 @@ do
         BackgroundColor3 = 'BlendShade';
     });
     Library:Create('UIGradient', {
-        Rotation = -90;
-        Transparency = Library:GetBlendShadeTransparency(0.50);
+        Rotation = 118;
+        Transparency = Library:GetBlendShadeTransparency(0.42);
         Parent = KeybindHeaderShade;
     });
 
