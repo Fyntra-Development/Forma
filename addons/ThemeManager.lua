@@ -2,7 +2,7 @@ local httpService = game:GetService('HttpService')
 local tweenService = game:GetService('TweenService')
 local contentProvider = game:GetService('ContentProvider')
 local ThemeManager = {} do
-	ThemeManager.Version = '1.9.0+build.1'
+	ThemeManager.Version = '1.10.0+build.1'
 	ThemeManager.Folder = 'LinoriaLibSettings'
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -56,6 +56,8 @@ local ThemeManager = {} do
 	ThemeManager.ThemeFields = {
 		{ Key = 'BackgroundColor'; Label = 'Background color' };
 		{ Key = 'MainColor'; Label = 'Main color' };
+		{ Key = 'UpperGradient'; Label = 'Upper Gradient' };
+		{ Key = 'LowerGradient'; Label = 'Lower Gradient' };
 		{ Key = 'AccentColor'; Label = 'Accent color' };
 		{ Key = 'BlendShade'; Label = 'Blend Shade' };
 		{ Key = 'OutlineColor'; Label = 'Outline color' };
@@ -112,12 +114,38 @@ local ThemeManager = {} do
 			end
 		end
 
-		-- Older custom themes predate Blend Shade. Derive a dark companion from
-		-- their accent instead of leaking the shade from whichever theme ran last.
+		-- Older themes predate Blend Shade and the control-gradient endpoints.
+		-- Derive every missing field from the theme being applied so switching an
+		-- old preset never leaks colors from the previously selected theme.
 		if colors.AccentColor and not colors.BlendShade then
 			local blendShade = Color3.fromHex(colors.AccentColor):Lerp(Color3.new(0, 0, 0), 0.72)
 			self.Library.BlendShade = blendShade
 			if Options.BlendShade then Options.BlendShade:SetValueRGB(blendShade) end
+		end
+
+		local function ReadThemeColor(Key, Fallback)
+			local Hex = colors[Key]
+			if type(Hex) == 'string' then
+				local Success, Color = pcall(Color3.fromHex, Hex)
+				if Success then return Color end
+			end
+			return Fallback
+		end
+
+		local Main = ReadThemeColor('MainColor', self.Library.MainColor)
+		local Background = ReadThemeColor('BackgroundColor', self.Library.BackgroundColor)
+		local Contrast = ReadThemeColor('Contrast', Main)
+
+		if not colors.UpperGradient then
+			local Upper = Contrast:Lerp(Main, 0.18)
+			self.Library.UpperGradient = Upper
+			if Options.UpperGradient then Options.UpperGradient:SetValueRGB(Upper) end
+		end
+
+		if not colors.LowerGradient then
+			local Lower = Main:Lerp(Background, 0.55)
+			self.Library.LowerGradient = Lower
+			if Options.LowerGradient then Options.LowerGradient:SetValueRGB(Lower) end
 		end
 
 		self:ThemeUpdate()
