@@ -307,8 +307,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.19.0+build.1';
-    Release = 'GA';
+    Version = '1.19.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -10600,9 +10600,6 @@ do
         local DropdownScrollReveal;
         local DropdownFilterMotion = {
             Running = false;
-            ListHeight = ListRowsHeight;
-            ListHeightVelocity = 0;
-            TargetListHeight = ListRowsHeight;
         };
 
         function Dropdown:BuildDropdownList()
@@ -10630,7 +10627,8 @@ do
 
                 local ButtonLabel = Library:CreateLabel({
                     Active = false;
-                    Position = UDim2.new(0, 6, 0, 0);
+                    AnchorPoint = Vector2.new(0, 0.5);
+                    Position = UDim2.new(0, 6, 0.5, 0);
                     Size = UDim2.new(1, -8, 0, ROW_HEIGHT);
                     TextSize = 14;
                     Text = tostring(Value);
@@ -10668,12 +10666,12 @@ do
 
                 local function ResolveRowLabelPosition()
                     if IsRowSelected() then
-                        return UDim2.new(0, SELECTED_LABEL_X, 0, 0);
+                        return UDim2.new(0, SELECTED_LABEL_X, 0.5, 0);
                     end;
                     if Row.Hovering then
-                        return UDim2.new(0, HOVER_LABEL_X, 0, 0);
+                        return UDim2.new(0, HOVER_LABEL_X, 0.5, 0);
                     end;
-                    return UDim2.new(0, BASE_LABEL_X, 0, 0);
+                    return UDim2.new(0, BASE_LABEL_X, 0.5, 0);
                 end;
 
                 Library.RegistryMap[ButtonLabel].Properties.TextColor3 = ResolveRowTextColor;
@@ -10829,9 +10827,21 @@ do
             Library:UpdateDependencyBoxes();
         end;
 
+        local function GetAnimatedRowsHeight()
+            local Height = 0;
+            for _, Row in ipairs(ButtonOrder) do
+                Height = Height + math.max(Row.FilterHeight or 0, 0);
+            end
+            return math.clamp(
+                Height,
+                ROW_HEIGHT,
+                MAX_DROPDOWN_ITEMS * ROW_HEIGHT
+            );
+        end;
+
         local function ApplyDropdownFilterGeometry()
             local Width = math.max(DropdownOuter.AbsoluteSize.X, 1);
-            ListRowsHeight = math.max(DropdownFilterMotion.ListHeight, ROW_HEIGHT);
+            ListRowsHeight = GetAnimatedRowsHeight();
 
             ListOuter.Size = UDim2.fromOffset(
                 Width,
@@ -10853,7 +10863,6 @@ do
 
         ApplyDropdownSearch = function(Instant)
             local Query = SearchBox and string.lower(SearchBox.Text or '') or '';
-            local VisibleCount = 0;
 
             for _, Row in ipairs(ButtonOrder) do
                 local Matches = Query == ''
@@ -10863,8 +10872,6 @@ do
                         1,
                         true
                     ) ~= nil;
-
-                if Matches then VisibleCount = VisibleCount + 1; end
 
                 Row.FilterVisible = Matches;
                 Row.TargetFilterAlpha = Matches and 1 or 0;
@@ -10887,9 +10894,8 @@ do
                         Row.FilterAlpha
                     );
                 else
-                    -- Prime once, then every rendered frame uses only the cached
-                    -- fade controller. This avoids rebuilding fade baselines
-                    -- while the list is continuously collapsing/expanding.
+                    -- Prime once. The render loop below then owns both fade and
+                    -- collapse, preserving velocity across rapid search edits.
                     Library:SetUnifiedFadeProgress(
                         Row.Button,
                         Row.FilterAlpha
@@ -10898,16 +10904,7 @@ do
                 end
             end
 
-            local Rows = math.max(
-                1,
-                math.min(VisibleCount, MAX_DROPDOWN_ITEMS)
-            );
-            DropdownFilterMotion.TargetListHeight = Rows * ROW_HEIGHT;
-
             if Instant then
-                DropdownFilterMotion.ListHeight =
-                    DropdownFilterMotion.TargetListHeight;
-                DropdownFilterMotion.ListHeightVelocity = 0;
                 DropdownFilterMotion.Running = false;
                 ApplyDropdownFilterGeometry();
             else
@@ -10932,12 +10929,18 @@ do
             local Settled = true;
 
             for _, Row in ipairs(ButtonOrder) do
+                -- When hiding, text disappears before the slot collapses.
+                -- When revealing, the slot opens before the text becomes fully
+                -- opaque. This keeps glyphs from looking vertically squashed.
+                local HeightSmoothTime = Row.FilterVisible and 0.10 or 0.14;
+                local AlphaSmoothTime = Row.FilterVisible and 0.13 or 0.075;
+
                 Row.FilterHeight, Row.FilterHeightVelocity =
                     Library:SmoothDampScalar(
                         Row.FilterHeight,
                         Row.TargetFilterHeight,
                         Row.FilterHeightVelocity,
-                        0.105,
+                        HeightSmoothTime,
                         Dt
                     );
 
@@ -10946,7 +10949,7 @@ do
                         Row.FilterAlpha,
                         Row.TargetFilterAlpha,
                         Row.FilterAlphaVelocity,
-                        0.09,
+                        AlphaSmoothTime,
                         Dt
                     );
 
@@ -10980,28 +10983,9 @@ do
                 if not RowSettled then Settled = false; end
             end
 
-            DropdownFilterMotion.ListHeight,
-            DropdownFilterMotion.ListHeightVelocity =
-                Library:SmoothDampScalar(
-                    DropdownFilterMotion.ListHeight,
-                    DropdownFilterMotion.TargetListHeight,
-                    DropdownFilterMotion.ListHeightVelocity,
-                    0.12,
-                    Dt
-                );
-
+            -- The popup follows the rows themselves rather than a second spring,
+            -- so there is no lag or rubber-banding between text and container.
             ApplyDropdownFilterGeometry();
-
-            local ListSettled =
-                math.abs(
-                    DropdownFilterMotion.ListHeight
-                        - DropdownFilterMotion.TargetListHeight
-                ) < 0.025
-                and math.abs(
-                    DropdownFilterMotion.ListHeightVelocity
-                ) < 0.10;
-
-            if not ListSettled then Settled = false; end
 
             if Settled then
                 for _, Row in ipairs(ButtonOrder) do
@@ -11022,9 +11006,6 @@ do
                     );
                 end
 
-                DropdownFilterMotion.ListHeight =
-                    DropdownFilterMotion.TargetListHeight;
-                DropdownFilterMotion.ListHeightVelocity = 0;
                 DropdownFilterMotion.Running = false;
                 ApplyDropdownFilterGeometry();
 
@@ -15232,8 +15213,7 @@ function Library:Dialog(Info)
 
     local Root = Library:Create('Frame', {
         Active = true;
-        BackgroundColor3 = Color3.new(0, 0, 0);
-        BackgroundTransparency = 0.46;
+        BackgroundTransparency = 1;
         BorderSizePixel = 0;
         Size = UDim2.fromScale(1, 1);
         Visible = false;
@@ -15241,11 +15221,149 @@ function Library:Dialog(Info)
         Parent = ScreenGui;
     });
 
+    local BackdropCoreWidth = Width + 92;
+    local BackdropCoreHeight = Height + 72;
+    local HalfCoreWidth = math.floor(BackdropCoreWidth * 0.5);
+    local HalfCoreHeight = math.floor(BackdropCoreHeight * 0.5);
+    local NearTransparency = 0.48;
+
+    local function CreateBackdropPiece(Name, Position, Size, AnchorPoint, Rotation, Transparency)
+        local Piece = Library:Create('Frame', {
+            Name = Name;
+            AnchorPoint = AnchorPoint or Vector2.zero;
+            BackgroundColor3 = Color3.new(0, 0, 0);
+            BackgroundTransparency = 0;
+            BorderSizePixel = 0;
+            Position = Position;
+            Size = Size;
+            ZIndex = 900000;
+            Parent = Root;
+        });
+
+        if Transparency then
+            Library:Create('UIGradient', {
+                Rotation = Rotation or 0;
+                Transparency = Transparency;
+                Parent = Piece;
+            });
+        else
+            Piece.BackgroundTransparency = NearTransparency;
+        end
+
+        return Piece;
+    end
+
+    local FadeOut = NumberSequence.new({
+        NumberSequenceKeypoint.new(0.00, 1.00);
+        NumberSequenceKeypoint.new(0.42, 0.92);
+        NumberSequenceKeypoint.new(0.72, 0.72);
+        NumberSequenceKeypoint.new(1.00, NearTransparency);
+    });
+    local FadeIn = NumberSequence.new({
+        NumberSequenceKeypoint.new(0.00, NearTransparency);
+        NumberSequenceKeypoint.new(0.28, 0.72);
+        NumberSequenceKeypoint.new(0.58, 0.92);
+        NumberSequenceKeypoint.new(1.00, 1.00);
+    });
+    local CornerFadeOut = NumberSequence.new({
+        NumberSequenceKeypoint.new(0.00, 1.00);
+        NumberSequenceKeypoint.new(0.48, 0.94);
+        NumberSequenceKeypoint.new(0.76, 0.76);
+        NumberSequenceKeypoint.new(1.00, 0.56);
+    });
+    local CornerFadeIn = NumberSequence.new({
+        NumberSequenceKeypoint.new(0.00, 0.56);
+        NumberSequenceKeypoint.new(0.24, 0.76);
+        NumberSequenceKeypoint.new(0.52, 0.94);
+        NumberSequenceKeypoint.new(1.00, 1.00);
+    });
+
+    CreateBackdropPiece(
+        'BackdropCore',
+        UDim2.fromScale(0.5, 0.5),
+        UDim2.fromOffset(BackdropCoreWidth, BackdropCoreHeight),
+        Vector2.new(0.5, 0.5)
+    );
+
+    CreateBackdropPiece(
+        'BackdropLeft',
+        UDim2.new(0.5, -HalfCoreWidth, 0.5, 0),
+        UDim2.new(0.5, -HalfCoreWidth, 0, BackdropCoreHeight),
+        Vector2.new(1, 0.5),
+        0,
+        FadeOut
+    );
+    CreateBackdropPiece(
+        'BackdropRight',
+        UDim2.new(0.5, HalfCoreWidth, 0.5, 0),
+        UDim2.new(0.5, -HalfCoreWidth, 0, BackdropCoreHeight),
+        Vector2.new(0, 0.5),
+        0,
+        FadeIn
+    );
+    CreateBackdropPiece(
+        'BackdropTop',
+        UDim2.new(0.5, 0, 0.5, -HalfCoreHeight),
+        UDim2.new(0, BackdropCoreWidth, 0.5, -HalfCoreHeight),
+        Vector2.new(0.5, 1),
+        90,
+        FadeOut
+    );
+    CreateBackdropPiece(
+        'BackdropBottom',
+        UDim2.new(0.5, 0, 0.5, HalfCoreHeight),
+        UDim2.new(0, BackdropCoreWidth, 0.5, -HalfCoreHeight),
+        Vector2.new(0.5, 0),
+        90,
+        FadeIn
+    );
+
+    local CornerSize = UDim2.new(
+        0.5,
+        -HalfCoreWidth,
+        0.5,
+        -HalfCoreHeight
+    );
+
+    CreateBackdropPiece(
+        'BackdropTopLeft',
+        UDim2.new(0.5, -HalfCoreWidth, 0.5, -HalfCoreHeight),
+        CornerSize,
+        Vector2.new(1, 1),
+        45,
+        CornerFadeOut
+    );
+    CreateBackdropPiece(
+        'BackdropTopRight',
+        UDim2.new(0.5, HalfCoreWidth, 0.5, -HalfCoreHeight),
+        CornerSize,
+        Vector2.new(0, 1),
+        135,
+        CornerFadeOut
+    );
+    CreateBackdropPiece(
+        'BackdropBottomLeft',
+        UDim2.new(0.5, -HalfCoreWidth, 0.5, HalfCoreHeight),
+        CornerSize,
+        Vector2.new(1, 0),
+        135,
+        CornerFadeIn
+    );
+    CreateBackdropPiece(
+        'BackdropBottomRight',
+        UDim2.new(0.5, HalfCoreWidth, 0.5, HalfCoreHeight),
+        CornerSize,
+        Vector2.new(0, 0),
+        45,
+        CornerFadeIn
+    );
+
     local Panel = Library:Create('Frame', {
         Active = true;
         AnchorPoint = Vector2.new(0.5, 0.5);
         BackgroundColor3 = Library.MainColor;
         BorderSizePixel = 0;
+        ClipsDescendants = true;
         Position = UDim2.new(0.5, 0, 0.5, 8);
         Size = UDim2.fromOffset(Width, Height);
         ZIndex = 900001;
@@ -15268,12 +15386,11 @@ function Library:Dialog(Info)
     local AccentBar = Library:Create('Frame', {
         BackgroundColor3 = Library.AccentColor;
         BorderSizePixel = 0;
-        Position = UDim2.fromOffset(1, 1);
-        Size = UDim2.new(1, -2, 0, 2);
+        Position = UDim2.fromOffset(0, 0);
+        Size = UDim2.new(1, 0, 0, 3);
         ZIndex = 900004;
         Parent = Panel;
     });
-    Library:AddCorner(AccentBar, 2);
     Library:AddToRegistry(AccentBar, {
         BackgroundColor3 = 'AccentColor';
     });
