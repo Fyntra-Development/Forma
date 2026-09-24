@@ -306,8 +306,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.18.0+build.1';
-    Release = 'GA';
+    Version = '1.18.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -5583,23 +5583,36 @@ do
             CancelPickerTweens();
 
             local TargetPosition = GetPickerTargetPosition();
+            local StartPosition = UDim2.fromOffset(
+                TargetPosition.X.Offset,
+                TargetPosition.Y.Offset - 8
+            );
+
             if not PickerFrameOuter.Visible then
-                PickerFrameOuter.Position = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 6);
-                PickerScale.Scale = 0.94;
+                PickerFrameOuter.Position = StartPosition;
+                PickerScale.Scale = 1;
                 Library:SetUnifiedFadeProgress(PickerFrameOuter, 0);
             end;
 
             PickerFrameOuter.Visible = true;
             Library.OpenedFrames[PickerFrameOuter] = true;
 
-            local OpenInfo = Library:GetMenuTweenInfo(0.22, 'Picker');
+            local OpenInfo = TweenInfo.new(
+                0.24,
+                Enum.EasingStyle.Quint,
+                Enum.EasingDirection.Out
+            );
+
             PlayPickerTween(PickerFrameOuter, OpenInfo, {
                 Position = TargetPosition;
             });
-            Library:TweenUnifiedFade(PickerFrameOuter, 1, 0.22, nil, 'Fade');
-            PlayPickerTween(PickerScale, OpenInfo, {
-                Scale = 1;
-            });
+            Library:TweenUnifiedFade(
+                PickerFrameOuter,
+                1,
+                TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                nil,
+                'Fade'
+            );
         end;
 
         function ColorPicker:Hide()
@@ -5617,7 +5630,11 @@ do
             Library.OpenedFrames[PickerFrameOuter] = nil;
 
             local TargetPosition = GetPickerTargetPosition();
-            local ExitPosition = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 4);
+            local ExitPosition = UDim2.fromOffset(
+                TargetPosition.X.Offset,
+                TargetPosition.Y.Offset - 7
+            );
+
             local Finished = false;
             local function FinishHide(State)
                 if Finished or CurrentId ~= PickerAnimationId or State == Enum.PlaybackState.Cancelled then
@@ -5631,20 +5648,31 @@ do
                 table.clear(PickerTweens);
             end
 
-            local ExitInfo = Library:GetMenuTweenInfo(0.16, 'PopupExit');
-            PlayPickerTween(PickerFrameOuter, ExitInfo, {
+            local ExitInfo = TweenInfo.new(
+                0.18,
+                Enum.EasingStyle.Quart,
+                Enum.EasingDirection.In
+            );
+
+            local PositionTween = PlayPickerTween(PickerFrameOuter, ExitInfo, {
                 Position = ExitPosition;
             });
-            Library:TweenUnifiedFade(PickerFrameOuter, 0, 0.16, FinishHide, 'Fade');
-            local ScaleTween = PlayPickerTween(PickerScale, ExitInfo, {
-                Scale = 0.96;
-            });
 
-            if ScaleTween then
-                ScaleTween.Completed:Connect(FinishHide);
-            else
-                FinishHide(Enum.PlaybackState.Completed);
-            end;
+            Library:TweenUnifiedFade(
+                PickerFrameOuter,
+                0,
+                TweenInfo.new(0.17, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+                FinishHide,
+                'Fade'
+            );
+
+            if PositionTween then
+                PositionTween.Completed:Connect(function(State)
+                    if State ~= Enum.PlaybackState.Cancelled then
+                        FinishHide(State);
+                    end
+                end);
+            end
         end;
 
         function ColorPicker:SetValue(HSV, Transparency, PreserveMode)
@@ -11972,26 +12000,7 @@ do
         BackgroundColor3 = 'AccentColor';
     });
 
-    local KeybindHeaderGradient = Library:AddMovingAccentGradient(KeybindHeader, 2.4);
-    if KeybindHeaderGradient then
-        KeybindHeaderGradient.Rotation = 118;
-    end
-
-    local KeybindHeaderShade = Library:Create('Frame', {
-        BackgroundColor3 = Library.BlendShade;
-        BorderSizePixel = 0;
-        Size = UDim2.fromScale(1, 1);
-        ZIndex = 103;
-        Parent = KeybindHeader;
-    });
-    Library:AddToRegistry(KeybindHeaderShade, {
-        BackgroundColor3 = 'BlendShade';
-    });
-    Library:Create('UIGradient', {
-        Rotation = 118;
-        Transparency = Library:GetBlendShadeTransparency(0.42);
-        Parent = KeybindHeaderShade;
-    });
+    Library:AddMovingAccentGradient(KeybindHeader, 2.4);
 
     local KeybindLabel = Library:CreateLabel({
         BackgroundTransparency = 1;
