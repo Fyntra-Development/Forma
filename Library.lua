@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.19.3+build.1';
+    Version = '1.19.4+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -10456,12 +10456,7 @@ do
             Parent = ScrollThumb;
         });
 
-        local ListLayout = Library:Create('UIListLayout', {
-            Padding = UDim.new(0, 0);
-            FillDirection = Enum.FillDirection.Vertical;
-            SortOrder = Enum.SortOrder.LayoutOrder;
-            Parent = Scrolling;
-        });
+        local DropdownContentHeight = ROW_HEIGHT;
 
         local function RecalculateListPosition()
             local Width = math.max(DropdownOuter.AbsoluteSize.X, 1);
@@ -10505,7 +10500,11 @@ do
 
         local function UpdateDropdownScrollVisuals()
             local ViewportHeight = math.max(Scrolling.AbsoluteSize.Y, 0);
-            local ContentHeight = math.max(Scrolling.AbsoluteCanvasSize.Y, ListLayout.AbsoluteContentSize.Y, 0);
+            local ContentHeight = math.max(
+                Scrolling.AbsoluteCanvasSize.Y,
+                DropdownContentHeight,
+                0
+            );
             if ViewportHeight <= 0 or ContentHeight <= ViewportHeight + 1 then
                 ScrollTrack.Visible = false;
                 return;
@@ -10523,10 +10522,6 @@ do
             ScrollThumb.Position = UDim2.new(0.5, 0, 0, ThumbY);
         end;
 
-        ListLayout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(function()
-            Scrolling.CanvasSize = UDim2.fromOffset(0, math.max(ListLayout.AbsoluteContentSize.Y, 1));
-            task.defer(UpdateDropdownScrollVisuals);
-        end);
         Scrolling:GetPropertyChangedSignal('CanvasPosition'):Connect(UpdateDropdownScrollVisuals);
         Scrolling:GetPropertyChangedSignal('AbsoluteSize'):Connect(function() task.defer(UpdateDropdownScrollVisuals); end);
         ListOuter:GetPropertyChangedSignal('AbsoluteSize'):Connect(function() task.defer(UpdateDropdownScrollVisuals); end);
@@ -10600,6 +10595,9 @@ do
         local DropdownScrollReveal;
         local DropdownFilterMotion = {
             Running = false;
+            ViewHeight = ListRowsHeight;
+            ViewHeightVelocity = 0;
+            TargetViewHeight = ListRowsHeight;
         };
 
         function Dropdown:BuildDropdownList()
@@ -10607,9 +10605,7 @@ do
             table.clear(ButtonOrder);
 
             for _, Element in next, Scrolling:GetChildren() do
-                if Element ~= ListLayout then
-                    Element:Destroy();
-                end
+                Element:Destroy();
             end
 
             for Index, Value in ipairs(Dropdown.Values) do
@@ -10620,7 +10616,9 @@ do
                     BorderSizePixel = 0;
                     ClipsDescendants = true;
                     LayoutOrder = Index;
+                    Position = UDim2.fromOffset(0, (Index - 1) * ROW_HEIGHT);
                     Size = UDim2.new(1, -5, 0, ROW_HEIGHT);
+                    Visible = true;
                     ZIndex = 23;
                     Parent = Scrolling;
                 });
@@ -10646,10 +10644,10 @@ do
                 Row.Hovering = false;
                 Row.FilterAlpha = 1;
                 Row.FilterAlphaVelocity = 0;
-                Row.FilterHeight = ROW_HEIGHT;
-                Row.FilterHeightVelocity = 0;
+                Row.CurrentY = (Index - 1) * ROW_HEIGHT;
+                Row.TargetY = Row.CurrentY;
+                Row.YVelocity = 0;
                 Row.TargetFilterAlpha = 1;
-                Row.TargetFilterHeight = ROW_HEIGHT;
                 Row.FilterVisible = true;
 
                 local BASE_LABEL_X = 6;
@@ -10781,6 +10779,8 @@ do
                 ApplyDropdownSearch(true);
             else
                 local Rows = math.max(1, math.min(#ButtonOrder, MAX_DROPDOWN_ITEMS));
+                DropdownContentHeight = math.max(#ButtonOrder * ROW_HEIGHT, 1);
+                Scrolling.CanvasSize = UDim2.fromOffset(0, DropdownContentHeight);
                 RecalculateListSize(Rows * ROW_HEIGHT, false);
             end
             if DropdownScrollReveal then DropdownScrollReveal:QueueRefresh(); end
@@ -10827,21 +10827,13 @@ do
             Library:UpdateDependencyBoxes();
         end;
 
-        local function GetAnimatedRowsHeight()
-            local Height = 0;
-            for _, Row in ipairs(ButtonOrder) do
-                Height = Height + math.max(Row.FilterHeight or 0, 0);
-            end
-            return math.clamp(
-                Height,
+        local function ApplyDropdownFilterGeometry()
+            local Width = math.max(DropdownOuter.AbsoluteSize.X, 1);
+            ListRowsHeight = math.clamp(
+                DropdownFilterMotion.ViewHeight or ROW_HEIGHT,
                 ROW_HEIGHT,
                 MAX_DROPDOWN_ITEMS * ROW_HEIGHT
             );
-        end;
-
-        local function ApplyDropdownFilterGeometry()
-            local Width = math.max(DropdownOuter.AbsoluteSize.X, 1);
-            ListRowsHeight = GetAnimatedRowsHeight();
 
             ListOuter.Size = UDim2.fromOffset(
                 Width,
@@ -10863,6 +10855,7 @@ do
 
         ApplyDropdownSearch = function(Instant)
             local Query = SearchBox and string.lower(SearchBox.Text or '') or '';
+            local VisibleCount = 0;
 
             for _, Row in ipairs(ButtonOrder) do
                 local Matches = Query == ''
@@ -10873,49 +10866,87 @@ do
                         true
                     ) ~= nil;
 
+                local WasVisible = Row.FilterVisible;
                 Row.FilterVisible = Matches;
+                Row.TargetFilterAlpha = Matches and 1 or 0;
 
-                if Instant then
-                    Row.TargetFilterAlpha = Matches and 1 or 0;
-                    Row.TargetFilterHeight = Matches and ROW_HEIGHT or 0;
-                elseif Matches then
-                    Row.TargetFilterHeight = ROW_HEIGHT;
-                    Row.TargetFilterAlpha =
-                        Row.FilterHeight >= ROW_HEIGHT - 0.40 and 1 or 0;
-                else
-                    Row.TargetFilterAlpha = 0;
-                    Row.TargetFilterHeight =
-                        Row.FilterAlpha <= 0.035 and 0 or ROW_HEIGHT;
+                if Matches then
+                    Row.TargetY = VisibleCount * ROW_HEIGHT;
+                    VisibleCount = VisibleCount + 1;
                 end
 
                 if Instant then
                     Row.FilterAlpha = Row.TargetFilterAlpha;
                     Row.FilterAlphaVelocity = 0;
-                    Row.FilterHeight = Row.TargetFilterHeight;
-                    Row.FilterHeightVelocity = 0;
+                    Row.YVelocity = 0;
+
+                    if Matches then
+                        Row.CurrentY = Row.TargetY;
+                    end
+
+                    Row.Button.Position = UDim2.fromOffset(
+                        0,
+                        Row.CurrentY
+                    );
                     Row.Button.Size = UDim2.new(
                         1,
                         -5,
                         0,
-                        Row.FilterHeight
+                        ROW_HEIGHT
                     );
                     Row.Button.Active = Matches;
+                    Row.Button.Visible = Matches;
                     Library:SetUnifiedFadeProgress(
                         Row.Button,
                         Row.FilterAlpha
                     );
                 else
-                    -- Prime once. The render loop below then owns both fade and
-                    -- collapse, preserving velocity across rapid search edits.
-                    Library:SetUnifiedFadeProgress(
-                        Row.Button,
-                        Row.FilterAlpha
+                    -- A newly-revealed row starts at its final slot and fades in.
+                    -- Existing visible rows glide between slots. Hidden rows fade
+                    -- out in-place. No text object is ever resized or clipped.
+                    if Matches and not WasVisible then
+                        Row.CurrentY = Row.TargetY;
+                        Row.YVelocity = 0;
+                        Row.FilterAlpha = 0;
+                        Row.FilterAlphaVelocity = 0;
+                        Row.Button.Position = UDim2.fromOffset(
+                            0,
+                            Row.CurrentY
+                        );
+                        Row.Button.Visible = true;
+                        Library:SetUnifiedFadeProgress(Row.Button, 0);
+                    else
+                        Library:SetUnifiedFadeProgress(
+                            Row.Button,
+                            Row.FilterAlpha
+                        );
+                    end
+
+                    Row.Button.Size = UDim2.new(
+                        1,
+                        -5,
+                        0,
+                        ROW_HEIGHT
                     );
-                    Row.Button.Active = Matches or Row.FilterHeight > 0.35;
+                    Row.Button.Active = Matches;
                 end
             end
 
+            DropdownContentHeight = math.max(VisibleCount * ROW_HEIGHT, 1);
+            Scrolling.CanvasSize = UDim2.fromOffset(
+                0,
+                DropdownContentHeight
+            );
+
+            DropdownFilterMotion.TargetViewHeight = math.max(
+                ROW_HEIGHT,
+                math.min(VisibleCount, MAX_DROPDOWN_ITEMS) * ROW_HEIGHT
+            );
+
             if Instant then
+                DropdownFilterMotion.ViewHeight =
+                    DropdownFilterMotion.TargetViewHeight;
+                DropdownFilterMotion.ViewHeightVelocity = 0;
                 DropdownFilterMotion.Running = false;
                 ApplyDropdownFilterGeometry();
             else
@@ -10940,33 +10971,18 @@ do
             local Settled = true;
 
             for _, Row in ipairs(ButtonOrder) do
-                -- Two-phase filtering keeps text at its normal geometry:
-                -- hide = fade first, then collapse;
-                -- show = expand first, then fade in.
                 if Row.FilterVisible then
-                    Row.TargetFilterHeight = ROW_HEIGHT;
-                    if Row.FilterHeight >= ROW_HEIGHT - 0.40 then
-                        Row.TargetFilterAlpha = 1;
-                    else
-                        Row.TargetFilterAlpha = 0;
-                    end
+                    Row.CurrentY, Row.YVelocity =
+                        Library:SmoothDampScalar(
+                            Row.CurrentY,
+                            Row.TargetY,
+                            Row.YVelocity,
+                            0.115,
+                            Dt
+                        );
                 else
-                    Row.TargetFilterAlpha = 0;
-                    if Row.FilterAlpha <= 0.035 then
-                        Row.TargetFilterHeight = 0;
-                    else
-                        Row.TargetFilterHeight = ROW_HEIGHT;
-                    end
+                    Row.YVelocity = 0;
                 end
-
-                Row.FilterHeight, Row.FilterHeightVelocity =
-                    Library:SmoothDampScalar(
-                        Row.FilterHeight,
-                        Row.TargetFilterHeight,
-                        Row.FilterHeightVelocity,
-                        Row.FilterVisible and 0.10 or 0.115,
-                        Dt
-                    );
 
                 Row.FilterAlpha, Row.FilterAlphaVelocity =
                     Library:SmoothDampScalar(
@@ -10977,59 +10993,110 @@ do
                         Dt
                     );
 
-                Row.FilterHeight = math.max(Row.FilterHeight, 0);
                 Row.FilterAlpha = math.clamp(Row.FilterAlpha, 0, 1);
 
+                -- Constant 20px row geometry is the important part: text is
+                -- never scaled, compressed, or repeatedly reflowed.
+                Row.Button.Position = UDim2.fromOffset(
+                    0,
+                    Row.CurrentY
+                );
                 Row.Button.Size = UDim2.new(
                     1,
                     -5,
                     0,
-                    Row.FilterHeight
+                    ROW_HEIGHT
                 );
-                Row.Button.Active =
-                    Row.FilterVisible or Row.FilterHeight > 0.35;
 
                 Library:SetCachedUnifiedFadeProgress(
                     Row.Button,
                     Row.FilterAlpha
                 );
 
-                local RowSettled =
+                if not Row.FilterVisible and Row.FilterAlpha <= 0.002 then
+                    Row.FilterAlpha = 0;
+                    Row.FilterAlphaVelocity = 0;
+                    Row.Button.Visible = false;
+                    Row.Button.Active = false;
+                    Library:SetCachedUnifiedFadeProgress(Row.Button, 0);
+                elseif Row.FilterVisible then
+                    Row.Button.Visible = true;
+                    Row.Button.Active = true;
+                end
+
+                local PositionSettled = not Row.FilterVisible
+                    or (
+                        math.abs(Row.CurrentY - Row.TargetY) < 0.025
+                        and math.abs(Row.YVelocity) < 0.10
+                    );
+                local FadeSettled =
                     math.abs(
-                        Row.FilterHeight - Row.TargetFilterHeight
-                    ) < 0.025
-                    and math.abs(Row.FilterHeightVelocity) < 0.10
-                    and math.abs(
                         Row.FilterAlpha - Row.TargetFilterAlpha
                     ) < 0.0015
                     and math.abs(Row.FilterAlphaVelocity) < 0.015;
 
-                if not RowSettled then Settled = false; end
+                if not PositionSettled or not FadeSettled then
+                    Settled = false;
+                end
             end
 
-            -- The popup follows the rows themselves rather than a second spring,
-            -- so there is no lag or rubber-banding between text and container.
+            DropdownFilterMotion.ViewHeight,
+            DropdownFilterMotion.ViewHeightVelocity =
+                Library:SmoothDampScalar(
+                    DropdownFilterMotion.ViewHeight,
+                    DropdownFilterMotion.TargetViewHeight,
+                    DropdownFilterMotion.ViewHeightVelocity,
+                    0.13,
+                    Dt
+                );
+
             ApplyDropdownFilterGeometry();
+
+            local ViewSettled =
+                math.abs(
+                    DropdownFilterMotion.ViewHeight
+                        - DropdownFilterMotion.TargetViewHeight
+                ) < 0.025
+                and math.abs(
+                    DropdownFilterMotion.ViewHeightVelocity
+                ) < 0.10;
+
+            if not ViewSettled then Settled = false; end
 
             if Settled then
                 for _, Row in ipairs(ButtonOrder) do
-                    Row.FilterHeight = Row.TargetFilterHeight;
-                    Row.FilterHeightVelocity = 0;
                     Row.FilterAlpha = Row.TargetFilterAlpha;
                     Row.FilterAlphaVelocity = 0;
+                    Row.YVelocity = 0;
+
+                    if Row.FilterVisible then
+                        Row.CurrentY = Row.TargetY;
+                        Row.Button.Position = UDim2.fromOffset(
+                            0,
+                            Row.CurrentY
+                        );
+                        Row.Button.Visible = true;
+                        Row.Button.Active = true;
+                    else
+                        Row.Button.Visible = false;
+                        Row.Button.Active = false;
+                    end
+
                     Row.Button.Size = UDim2.new(
                         1,
                         -5,
                         0,
-                        Row.FilterHeight
+                        ROW_HEIGHT
                     );
-                    Row.Button.Active = Row.FilterVisible;
                     Library:SetCachedUnifiedFadeProgress(
                         Row.Button,
                         Row.FilterAlpha
                     );
                 end
 
+                DropdownFilterMotion.ViewHeight =
+                    DropdownFilterMotion.TargetViewHeight;
+                DropdownFilterMotion.ViewHeightVelocity = 0;
                 DropdownFilterMotion.Running = false;
                 ApplyDropdownFilterGeometry();
 
