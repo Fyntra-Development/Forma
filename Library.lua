@@ -299,6 +299,7 @@ local Library = {
     ShowGlow = false;
 
     OpenedFrames = {};
+    ColorPickerFrames = {};
     DependencyBoxes = {};
 
     Signals = {};
@@ -306,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.18.2+build.1';
+    Version = '1.18.3+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -4081,14 +4082,15 @@ do
             Parent = ScreenGui,
         });
 
-        local PickerScale = Library:Create('UIScale', {
-            Scale = 1;
-            Parent = PickerFrameOuter;
-        });
+        local PickerMotion;
 
         DisplayFrame:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()
             if PickerFrameOuter.Visible then
-                PickerFrameOuter.Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18);
+                local Offset = PickerMotion and PickerMotion.Offset or 0;
+                PickerFrameOuter.Position = UDim2.fromOffset(
+                    DisplayFrame.AbsolutePosition.X,
+                    DisplayFrame.AbsolutePosition.Y + 18 + Offset
+                );
             end;
         end)
 
@@ -5545,135 +5547,124 @@ do
             Func(ColorPicker.Value)
         end;
 
-        local PickerAnimationId = 0;
-        local PickerTweens = {}
-
         local function GetPickerTargetPosition()
-            return UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18);
+            return UDim2.fromOffset(
+                DisplayFrame.AbsolutePosition.X,
+                DisplayFrame.AbsolutePosition.Y + 18
+            );
         end;
 
-        local function CancelPickerTweens()
-            for _, Tween in next, PickerTweens do
-                pcall(function() Tween:Cancel(); end);
-            end;
-            table.clear(PickerTweens);
+        PickerMotion = {
+            Alpha = 0;
+            AlphaVelocity = 0;
+            Offset = -7;
+            OffsetVelocity = 0;
+            TargetAlpha = 0;
+            TargetOffset = -7;
+            Running = false;
+            Closing = false;
+        };
+
+        local function PositionPicker()
+            local TargetPosition = GetPickerTargetPosition();
+            PickerFrameOuter.Position = UDim2.fromOffset(
+                TargetPosition.X.Offset,
+                TargetPosition.Y.Offset + PickerMotion.Offset
+            );
+        end;
+
+        local function SetPickerMotionTarget(Open)
             Library:CancelMotion(PickerFrameOuter);
-            if PickerScale then Library:CancelMotion(PickerScale); end;
-        end;
 
-        local function PlayPickerTween(Instance, InfoValue, Properties)
-            local Tween = Library:Animate(Instance, Properties, InfoValue, nil, 'Picker');
-            if not Tween then return nil; end
-            table.insert(PickerTweens, Tween);
-            return Tween;
+            if Open then
+                if not PickerFrameOuter.Visible then
+                    PickerMotion.Alpha = 0;
+                    PickerMotion.AlphaVelocity = 0;
+                    PickerMotion.Offset = -7;
+                    PickerMotion.OffsetVelocity = 0;
+                    PickerMotion.TargetAlpha = 1;
+                    PickerMotion.TargetOffset = 0;
+                    PickerMotion.Closing = false;
+
+                    PositionPicker();
+
+                    -- Build the fade cache while fully hidden, then expose the
+                    -- frame. That prevents a one-frame flash before the first
+                    -- physically-smoothed fade sample.
+                    Library:SetUnifiedFadeProgress(PickerFrameOuter, 0);
+                    PickerFrameOuter.Visible = true;
+                else
+                    -- Preserve the exact rendered alpha/position/velocity when
+                    -- reversing a close back into an open.
+                    Library:SetUnifiedFadeProgress(
+                        PickerFrameOuter,
+                        PickerMotion.Alpha
+                    );
+                    PickerMotion.TargetAlpha = 1;
+                    PickerMotion.TargetOffset = 0;
+                    PickerMotion.Closing = false;
+                end
+
+                Library.OpenedFrames[PickerFrameOuter] = true;
+            else
+                if not PickerFrameOuter.Visible then
+                    PickerMotion.Running = false;
+                    PickerMotion.TargetAlpha = 0;
+                    PickerMotion.TargetOffset = -7;
+                    PickerMotion.Closing = true;
+                    Library.OpenedFrames[PickerFrameOuter] = nil;
+                    return;
+                end
+
+                -- Do not restart from a canned point. The same velocity state is
+                -- simply retargeted upward and transparent, so closing mid-open
+                -- bends smoothly into the new direction.
+                Library:SetUnifiedFadeProgress(
+                    PickerFrameOuter,
+                    PickerMotion.Alpha
+                );
+                PickerMotion.TargetAlpha = 0;
+                PickerMotion.TargetOffset = -7;
+                PickerMotion.Closing = true;
+                Library.OpenedFrames[PickerFrameOuter] = nil;
+            end
+
+            PickerMotion.Running = true;
         end;
 
         function ColorPicker:Show()
             IsInteractivelyPicking = false;
             PickerCurrentAccent = Library.AccentColor;
             ApplyPickerAccent(PickerCurrentAccent);
+
+            local OtherFrames = {};
             for Frame in next, Library.OpenedFrames do
                 if Frame.Name == 'Color' and Frame ~= PickerFrameOuter then
-                    Frame.Visible = false;
-                    Library.OpenedFrames[Frame] = nil;
+                    table.insert(OtherFrames, Frame);
                 end;
             end;
 
-            PickerAnimationId = PickerAnimationId + 1;
-            CancelPickerTweens();
-
-            local TargetPosition = GetPickerTargetPosition();
-            local StartPosition = UDim2.fromOffset(
-                TargetPosition.X.Offset,
-                TargetPosition.Y.Offset - 6
-            );
-
-            if not PickerFrameOuter.Visible then
-                PickerFrameOuter.Position = StartPosition;
-                PickerScale.Scale = 1;
-                Library:SetUnifiedFadeProgress(PickerFrameOuter, 0);
+            for _, Frame in ipairs(OtherFrames) do
+                local OtherPicker = Library.ColorPickerFrames[Frame];
+                if OtherPicker and type(OtherPicker.Hide) == 'function' then
+                    OtherPicker:Hide();
+                else
+                    Frame.Visible = false;
+                    Library.OpenedFrames[Frame] = nil;
+                end
             end;
 
-            PickerFrameOuter.Visible = true;
-            Library.OpenedFrames[PickerFrameOuter] = true;
-
-            local OpenInfo = TweenInfo.new(
-                0.34,
-                Enum.EasingStyle.Sine,
-                Enum.EasingDirection.InOut
-            );
-
-            PlayPickerTween(PickerFrameOuter, OpenInfo, {
-                Position = TargetPosition;
-            });
-            Library:TweenUnifiedFade(
-                PickerFrameOuter,
-                1,
-                TweenInfo.new(0.30, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                nil,
-                'Fade'
-            );
+            SetPickerMotionTarget(true);
         end;
 
         function ColorPicker:Hide()
             IsInteractivelyPicking = false;
             PickerCurrentAccent = Library.AccentColor;
             ApplyPickerAccent(PickerCurrentAccent);
-            if not PickerFrameOuter.Visible then
-                Library.OpenedFrames[PickerFrameOuter] = nil;
-                return;
-            end;
-
-            PickerAnimationId = PickerAnimationId + 1;
-            local CurrentId = PickerAnimationId;
-            CancelPickerTweens();
-            Library.OpenedFrames[PickerFrameOuter] = nil;
-
-            local TargetPosition = GetPickerTargetPosition();
-            local ExitPosition = UDim2.fromOffset(
-                TargetPosition.X.Offset,
-                TargetPosition.Y.Offset - 6
-            );
-
-            local Finished = false;
-            local function FinishHide(State)
-                if Finished or CurrentId ~= PickerAnimationId or State == Enum.PlaybackState.Cancelled then
-                    return;
-                end;
-                Finished = true;
-
-                PickerFrameOuter.Visible = false;
-                PickerFrameOuter.Position = TargetPosition;
-                PickerScale.Scale = 1;
-                table.clear(PickerTweens);
-            end
-
-            local ExitInfo = TweenInfo.new(
-                0.30,
-                Enum.EasingStyle.Sine,
-                Enum.EasingDirection.InOut
-            );
-
-            local PositionTween = PlayPickerTween(PickerFrameOuter, ExitInfo, {
-                Position = ExitPosition;
-            });
-
-            Library:TweenUnifiedFade(
-                PickerFrameOuter,
-                0,
-                TweenInfo.new(0.26, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                FinishHide,
-                'Fade'
-            );
-
-            if PositionTween then
-                PositionTween.Completed:Connect(function(State)
-                    if State ~= Enum.PlaybackState.Cancelled then
-                        FinishHide(State);
-                    end
-                end);
-            end
+            SetPickerMotionTarget(false);
         end;
+
+        Library.ColorPickerFrames[PickerFrameOuter] = ColorPicker;
 
         function ColorPicker:SetValue(HSV, Transparency, PreserveMode)
             local Color = Color3.fromHSV(HSV[1], HSV[2], HSV[3]);
@@ -5796,7 +5787,61 @@ do
         end))
 
         Library:GiveSignal(RenderStepped:Connect(function(Delta)
-            local Dt = math.min(math.max(tonumber(Delta) or 0, 0), 0.1);
+            local Dt = math.min(math.max(tonumber(Delta) or 0, 0), 0.05);
+
+            if PickerMotion and PickerMotion.Running and PickerFrameOuter.Parent then
+                PickerMotion.Offset, PickerMotion.OffsetVelocity = Library:SmoothDampScalar(
+                    PickerMotion.Offset,
+                    PickerMotion.TargetOffset,
+                    PickerMotion.OffsetVelocity,
+                    0.19,
+                    Dt
+                );
+
+                PickerMotion.Alpha, PickerMotion.AlphaVelocity = Library:SmoothDampScalar(
+                    PickerMotion.Alpha,
+                    PickerMotion.TargetAlpha,
+                    PickerMotion.AlphaVelocity,
+                    0.16,
+                    Dt
+                );
+
+                PickerMotion.Alpha = math.clamp(PickerMotion.Alpha, 0, 1);
+                PositionPicker();
+                Library:SetCachedUnifiedFadeProgress(
+                    PickerFrameOuter,
+                    PickerMotion.Alpha
+                );
+
+                local PositionSettled =
+                    math.abs(PickerMotion.Offset - PickerMotion.TargetOffset) < 0.025
+                    and math.abs(PickerMotion.OffsetVelocity) < 0.10;
+                local FadeSettled =
+                    math.abs(PickerMotion.Alpha - PickerMotion.TargetAlpha) < 0.0015
+                    and math.abs(PickerMotion.AlphaVelocity) < 0.015;
+
+                if PositionSettled and FadeSettled then
+                    PickerMotion.Offset = PickerMotion.TargetOffset;
+                    PickerMotion.OffsetVelocity = 0;
+                    PickerMotion.Alpha = PickerMotion.TargetAlpha;
+                    PickerMotion.AlphaVelocity = 0;
+                    PickerMotion.Running = false;
+
+                    PositionPicker();
+                    Library:SetCachedUnifiedFadeProgress(
+                        PickerFrameOuter,
+                        PickerMotion.Alpha
+                    );
+
+                    if PickerMotion.Closing and PickerMotion.TargetAlpha <= 0 then
+                        PickerFrameOuter.Visible = false;
+                        PickerMotion.Offset = -7;
+                        PickerMotion.TargetOffset = -7;
+                        local TargetPosition = GetPickerTargetPosition();
+                        PickerFrameOuter.Position = TargetPosition;
+                    end
+                end
+            end
 
             local TargetAccent = IsInteractivelyPicking
                 and Color3.fromHSV(ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib)
