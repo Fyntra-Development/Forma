@@ -307,8 +307,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.20.0+build.1';
-    Release = 'GA';
+    Version = '1.20.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -2553,6 +2553,7 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         WidthVelocity = 0;
         HeightVelocity = 0;
         Initialized = false;
+        SelectionMoving = false;
         FollowConnection = nil;
     };
 
@@ -2616,6 +2617,19 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         Indicator.Size = UDim2.fromOffset(Width, TargetHeight);
     end
 
+    local function IsInsideActiveResize()
+        local Current = Layer;
+        while Current do
+            local ResizeState = Library.ResizableStates
+                and Library.ResizableStates[Current];
+            if ResizeState and ResizeState.Resizing then
+                return true;
+            end
+            Current = Current.Parent;
+        end
+        return false;
+    end
+
     Controller.FollowConnection = RenderStepped:Connect(function(Delta)
         if not Layer.Parent then
             Controller.FollowConnection:Disconnect();
@@ -2634,6 +2648,16 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         if not Indicator.Visible then return; end
         if not Controller.Initialized then
             SnapToTarget(X, Y, Width, TargetHeight);
+            Controller.SelectionMoving = false;
+            return;
+        end
+
+        -- Resizing and ordinary layout changes are not navigation. The
+        -- indicator should remain attached to its active button pixel-for-pixel
+        -- instead of trailing the new geometry through the selection spring.
+        if IsInsideActiveResize() or not Controller.SelectionMoving then
+            SnapToTarget(X, Y, Width, TargetHeight);
+            Controller.SelectionMoving = false;
             return;
         end
 
@@ -2655,6 +2679,22 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
 
         Indicator.Position = UDim2.fromOffset(Controller.X, Controller.Y);
         Indicator.Size = UDim2.fromOffset(Controller.Width, Controller.Height);
+
+        local PositionSettled =
+            math.abs(Controller.X - Controller.TargetX) < 0.035
+            and math.abs(Controller.Y - Controller.TargetY) < 0.035
+            and math.abs(Controller.XVelocity) < 0.12
+            and math.abs(Controller.YVelocity) < 0.12;
+        local SizeSettled =
+            math.abs(Controller.Width - Controller.TargetWidth) < 0.035
+            and math.abs(Controller.Height - Controller.TargetHeight) < 0.035
+            and math.abs(Controller.WidthVelocity) < 0.12
+            and math.abs(Controller.HeightVelocity) < 0.12;
+
+        if PositionSettled and SizeSettled then
+            SnapToTarget(X, Y, Width, TargetHeight);
+            Controller.SelectionMoving = false;
+        end
     end);
     Library:GiveSignal(Controller.FollowConnection);
 
@@ -2663,6 +2703,7 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
         if not X then return; end
 
         local WasVisible = Indicator.Visible;
+        local ButtonChanged = self.ActiveButton ~= Button;
         self.ActiveButton = Button;
         self.TargetX = X;
         self.TargetY = Y;
@@ -2671,6 +2712,9 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
 
         if Instant or not WasVisible or not self.Initialized then
             SnapToTarget(X, Y, Width, TargetHeight);
+            self.SelectionMoving = false;
+        else
+            self.SelectionMoving = ButtonChanged;
         end
 
         Indicator.Visible = true;
@@ -2694,6 +2738,7 @@ function Library:CreateSlidingTabIndicator(Layer, Height)
     function Controller:Hide()
         self.ActiveButton = nil;
         self.Initialized = false;
+        self.SelectionMoving = false;
         Indicator.Visible = false;
     end
 
@@ -11713,6 +11758,20 @@ do
         local DependencySizeTween;
         local DependencyFadeTween;
         local DependencyVisible = false;
+        local DependencyInitialized = false;
+
+        local function GetDependencyHeight()
+            -- Do not depend on UIListLayout.AbsoluteContentSize during initial
+            -- construction. Roblox can publish that measurement a frame late,
+            -- which used to make dependency holders briefly reserve empty space.
+            local Height = 0;
+            for _, Child in ipairs(Frame:GetChildren()) do
+                if Child:IsA('GuiObject') and Child.Visible then
+                    Height = Height + math.max(Child.Size.Y.Offset, 0);
+                end
+            end
+            return Height;
+        end;
 
         local function CancelDependencyTweens()
             if DependencySizeTween then
@@ -11731,7 +11790,7 @@ do
             local CurrentId = DependencyAnimationId;
             CancelDependencyTweens();
 
-            local Height = Layout.AbsoluteContentSize.Y;
+            local Height = GetDependencyHeight();
 
             if Visible == DependencyVisible and Holder.Visible == Visible then
                 if Visible then
@@ -11796,7 +11855,7 @@ do
         end;
 
         function Depbox:Resize(Instant)
-            local Height = Layout.AbsoluteContentSize.Y;
+            local Height = GetDependencyHeight();
             if DependencyVisible and Holder.Visible then
                 if Instant then
                     Holder.Size = UDim2.new(1, 0, 0, Height);
@@ -11808,14 +11867,14 @@ do
         end;
 
         Layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(function()
-            Depbox:Resize(false);
+            Depbox:Resize(not DependencyInitialized);
         end);
 
         Holder:GetPropertyChangedSignal('Size'):Connect(function()
             Groupbox:Resize();
         end);
 
-        function Depbox:Update()
+        function Depbox:Update(Instant)
             local ShouldShow = true;
             for _, Dependency in next, Depbox.Dependencies do
                 local Elem = Dependency[1];
@@ -11864,7 +11923,7 @@ do
                     break;
                 end;
             end;
-            SetDependencyVisible(ShouldShow, false);
+            SetDependencyVisible(ShouldShow, Instant == true);
         end;
 
         function Depbox:SetupDependencies(Dependencies)
@@ -11875,7 +11934,13 @@ do
             end;
 
             Depbox.Dependencies = Dependencies;
-            Depbox:Update();
+
+            -- Initial dependency state is layout, not an interaction. Apply it
+            -- in one pass before the groupbox is allowed to animate; this
+            -- prevents startup-only blank slots and nested dependency gaps.
+            Depbox:Update(true);
+            DependencyInitialized = true;
+            Depbox:Resize(true);
         end;
 
         Depbox.Container = Frame;
@@ -12638,10 +12703,13 @@ do
     Library:MakeDraggable(Library.Watermark);
 
     local KeybindOuter = Library:Create('Frame', {
-        AnchorPoint = Vector2.new(0, 0.5);
+        -- Top-left anchoring is intentional. The list changes height whenever
+        -- keybind rows appear/disappear; a centered Y anchor made every resize
+        -- shift the whole panel by half of the size delta.
+        AnchorPoint = Vector2.new(0, 0);
         BackgroundColor3 = Library.MainColor;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, 10, 0.5, 0);
+        Position = UDim2.new(0, 10, 0.5, -10);
         Size = UDim2.new(0, 210, 0, 20);
         Visible = false;
         ZIndex = 100;
