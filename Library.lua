@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.20.2+build.1';
+    Version = '1.20.3+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -12764,21 +12764,24 @@ do
     if KeybindHeaderGradient then
         local function GetKeybindHeaderGradientColor()
             local Accent = Library.AccentColor;
-            local SemiDark = Accent:Lerp(Color3.new(0, 0, 0), 0.28);
-            local SoftBright = Accent:Lerp(Color3.new(1, 1, 1), 0.16);
+            local SemiDark = Accent:Lerp(Color3.new(0, 0, 0), 0.34);
+            local DeepAccent = Accent:Lerp(Color3.new(0, 0, 0), 0.18);
+            local SoftBright = Accent:Lerp(Color3.new(1, 1, 1), 0.10);
 
             return ColorSequence.new({
-                ColorSequenceKeypoint.new(0.00, SemiDark);
-                ColorSequenceKeypoint.new(0.16, Accent);
-                ColorSequenceKeypoint.new(0.34, SemiDark);
-                ColorSequenceKeypoint.new(0.52, SoftBright);
-                ColorSequenceKeypoint.new(0.70, Accent);
-                ColorSequenceKeypoint.new(0.86, SemiDark);
+                ColorSequenceKeypoint.new(0.00, DeepAccent);
+                ColorSequenceKeypoint.new(0.12, Accent);
+                ColorSequenceKeypoint.new(0.26, SemiDark);
+                ColorSequenceKeypoint.new(0.40, Accent);
+                ColorSequenceKeypoint.new(0.54, SoftBright);
+                ColorSequenceKeypoint.new(0.67, SemiDark);
+                ColorSequenceKeypoint.new(0.82, Accent);
+                ColorSequenceKeypoint.new(0.93, DeepAccent);
                 ColorSequenceKeypoint.new(1.00, Accent);
             });
         end
 
-        KeybindHeaderGradient.Rotation = 128;
+        KeybindHeaderGradient.Rotation = 135;
         KeybindHeaderGradient.Color = GetKeybindHeaderGradientColor();
 
         local GradientRegistry = Library.RegistryMap[KeybindHeaderGradient];
@@ -12836,6 +12839,9 @@ do
             math.ceil(HeaderTextWidth),
             20
         );
+
+        -- Header width is intentionally independent from the longest keybind
+        -- row so the accent cap hugs only the header text.
         KeybindHeader.Size = UDim2.fromOffset(
             HeaderWidth,
             22
@@ -12856,7 +12862,8 @@ do
                 );
                 local RowWidth = math.max(math.ceil(TextWidth), 1);
 
-                -- Each row owns only the horizontal space its text needs.
+                -- Each row owns exactly the horizontal space its rendered
+                -- text needs; it never stretches to the panel width.
                 Label.Size = UDim2.fromOffset(RowWidth, 18);
 
                 RowCount = RowCount + 1;
