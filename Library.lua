@@ -304,7 +304,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.17.1+build.1';
+    Version = '1.17.2+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -5932,7 +5932,7 @@ do
                 end;
             end;
 
-            Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 10, 210), 0, YSize + 23)
+            Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 14, 210), 0, YSize + 26)
         end;
 
         function KeyPicker:GetState()
@@ -11825,7 +11825,8 @@ do
 
     local KeybindOuter = Library:Create('Frame', {
         AnchorPoint = Vector2.new(0, 0.5);
-        BorderColor3 = Color3.new(0, 0, 0);
+        BackgroundColor3 = Library.MainColor;
+        BorderSizePixel = 0;
         Position = UDim2.new(0, 10, 0.5, 0);
         Size = UDim2.new(0, 210, 0, 20);
         Visible = false;
@@ -11835,37 +11836,67 @@ do
 
     local KeybindInner = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
-        BorderColor3 = Library.AccentColor;
-        BorderMode = Enum.BorderMode.Inset;
-        Position = UDim2.fromOffset(1, 1);
-        Size = UDim2.new(1, -2, 1, -2);
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(0, 0);
+        Size = UDim2.fromScale(1, 1);
+        ClipsDescendants = true;
         ZIndex = 101;
         Parent = KeybindOuter;
     });
 
+    Library:AddToRegistry(KeybindOuter, {
+        BackgroundColor3 = 'MainColor';
+    }, true);
     Library:AddToRegistry(KeybindInner, {
         BackgroundColor3 = 'MainColor';
-        BorderColor3 = 'AccentColor';
     }, true);
     Library:AddCorner(KeybindOuter, 3);
     Library:AddCorner(KeybindInner, 3);
-    Library:AddAccentGlow(KeybindInner, 0.9);
-    Library:AddAccentOutline(KeybindInner, 1);
+
+    local KeybindHeader = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Position = UDim2.fromOffset(0, 0);
+        Size = UDim2.new(1, 0, 0, 22);
+        ClipsDescendants = true;
+        ZIndex = 102;
+        Parent = KeybindInner;
+    });
+    Library:AddTopCorners(KeybindHeader, 3);
+    Library:AddToRegistry(KeybindHeader, {
+        BackgroundColor3 = 'AccentColor';
+    });
+
+    local KeybindHeaderShade = Library:Create('Frame', {
+        BackgroundColor3 = Library.BlendShade;
+        BorderSizePixel = 0;
+        Size = UDim2.fromScale(1, 1);
+        ZIndex = 103;
+        Parent = KeybindHeader;
+    });
+    Library:AddToRegistry(KeybindHeaderShade, {
+        BackgroundColor3 = 'BlendShade';
+    });
+    Library:Create('UIGradient', {
+        Rotation = -90;
+        Transparency = Library:GetBlendShadeTransparency(0.50);
+        Parent = KeybindHeaderShade;
+    });
 
     local KeybindLabel = Library:CreateLabel({
-        Size = UDim2.new(1, 0, 0, 20);
-        Position = UDim2.fromOffset(5, 2),
-        TextXAlignment = Enum.TextXAlignment.Left,
-
+        BackgroundTransparency = 1;
+        Position = UDim2.fromOffset(7, 1);
+        Size = UDim2.new(1, -14, 0, 20);
+        TextXAlignment = Enum.TextXAlignment.Left;
         Text = 'Keybinds';
         ZIndex = 104;
-        Parent = KeybindInner;
+        Parent = KeybindHeader;
     });
 
     local KeybindContainer = Library:Create('Frame', {
         BackgroundTransparency = 1;
-        Size = UDim2.new(1, 0, 1, -20);
-        Position = UDim2.new(0, 0, 0, 20);
+        Size = UDim2.new(1, 0, 1, -22);
+        Position = UDim2.new(0, 0, 0, 22);
         ZIndex = 1;
         Parent = KeybindInner;
     });
