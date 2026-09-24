@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.20.3+build.1';
+    Version = '1.20.4+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -6535,7 +6535,7 @@ do
 
             local State = KeyPicker:GetState();
 
-            ContainerLabel.Text = string.format('<%s> %s (%s)', KeyPicker.Value, Info.Text, KeyPicker.Mode);
+            ContainerLabel.Text = string.format('[%s] %s ~ (%s)', KeyPicker.Value, Info.Text, KeyPicker.Mode);
 
             ContainerLabel.Visible = true;
             ContainerLabel.TextColor3 = State and Library.AccentColor or Library.FontColor;
@@ -12740,19 +12740,27 @@ do
     Library:AddToRegistry(KeybindInner, {
         BackgroundColor3 = 'MainColor';
     }, true);
-    Library:AddCorner(KeybindOuter, 3);
-    Library:AddCorner(KeybindInner, 3);
+    Library:AddCorner(KeybindOuter, 1);
+    Library:AddCorner(KeybindInner, 1);
 
     local KeybindHeader = Library:Create('Frame', {
         BackgroundColor3 = Library.AccentColor;
         BorderSizePixel = 0;
-        Position = UDim2.fromOffset(0, 0);
-        Size = UDim2.new(1, 0, 0, 22);
+        Position = UDim2.fromOffset(4, 2);
+        Size = UDim2.fromOffset(1, 20);
         ClipsDescendants = true;
         ZIndex = 102;
         Parent = KeybindInner;
     });
-    Library:AddTopCorners(KeybindHeader, 3);
+    Library:AddCorner(KeybindHeader, 1);
+
+    local KeybindHeaderStroke = Library:Create('UIStroke', {
+        Color = Color3.new(0, 0, 0);
+        Thickness = 1;
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+        LineJoinMode = Enum.LineJoinMode.Miter;
+        Parent = KeybindHeader;
+    });
     Library:AddToRegistry(KeybindHeader, {
         BackgroundColor3 = 'AccentColor';
     });
@@ -12764,24 +12772,22 @@ do
     if KeybindHeaderGradient then
         local function GetKeybindHeaderGradientColor()
             local Accent = Library.AccentColor;
-            local SemiDark = Accent:Lerp(Color3.new(0, 0, 0), 0.34);
-            local DeepAccent = Accent:Lerp(Color3.new(0, 0, 0), 0.18);
-            local SoftBright = Accent:Lerp(Color3.new(1, 1, 1), 0.10);
+            local Upper = Accent:Lerp(Color3.new(1, 1, 1), 0.08);
+            local Mid = Accent:Lerp(Color3.new(0, 0, 0), 0.06);
+            local Lower = Accent:Lerp(Color3.new(0, 0, 0), 0.22);
 
             return ColorSequence.new({
-                ColorSequenceKeypoint.new(0.00, DeepAccent);
-                ColorSequenceKeypoint.new(0.12, Accent);
-                ColorSequenceKeypoint.new(0.26, SemiDark);
-                ColorSequenceKeypoint.new(0.40, Accent);
-                ColorSequenceKeypoint.new(0.54, SoftBright);
-                ColorSequenceKeypoint.new(0.67, SemiDark);
-                ColorSequenceKeypoint.new(0.82, Accent);
-                ColorSequenceKeypoint.new(0.93, DeepAccent);
-                ColorSequenceKeypoint.new(1.00, Accent);
+                ColorSequenceKeypoint.new(0.00, Upper);
+                ColorSequenceKeypoint.new(0.38, Accent);
+                ColorSequenceKeypoint.new(0.62, Mid);
+                ColorSequenceKeypoint.new(1.00, Lower);
             });
         end
 
-        KeybindHeaderGradient.Rotation = 135;
+        -- The supplied reference is mostly a top-to-bottom shaded accent.
+        -- A slight angle keeps the requested diagonal character without
+        -- creating obvious stripes or dark blobs.
+        KeybindHeaderGradient.Rotation = 100;
         KeybindHeaderGradient.Color = GetKeybindHeaderGradientColor();
 
         local GradientRegistry = Library.RegistryMap[KeybindHeaderGradient];
@@ -12792,8 +12798,9 @@ do
 
     local KeybindLabel = Library:CreateLabel({
         BackgroundTransparency = 1;
-        Position = UDim2.fromOffset(7, 1);
+        Position = UDim2.fromOffset(5, 0);
         Size = UDim2.fromOffset(0, 20);
+        TextSize = 13;
         TextXAlignment = Enum.TextXAlignment.Left;
         Text = 'Keybinds';
         ZIndex = 104;
@@ -12802,8 +12809,8 @@ do
 
     local KeybindContainer = Library:Create('Frame', {
         BackgroundTransparency = 1;
-        Size = UDim2.new(1, 0, 1, -22);
-        Position = UDim2.new(0, 0, 0, 22);
+        Size = UDim2.new(1, 0, 1, -24);
+        Position = UDim2.new(0, 0, 0, 24);
         ZIndex = 1;
         Parent = KeybindInner;
     });
@@ -12815,7 +12822,7 @@ do
     });
 
     Library:Create('UIPadding', {
-        PaddingLeft = UDim.new(0, 5),
+        PaddingLeft = UDim.new(0, 6),
         Parent = KeybindContainer,
     })
 
@@ -12831,8 +12838,8 @@ do
             )
         );
         local HeaderWidth = math.max(
-            math.ceil(HeaderTextWidth) + 14,
-            28
+            math.ceil(HeaderTextWidth) + 10,
+            24
         );
 
         KeybindLabel.Size = UDim2.fromOffset(
@@ -12844,7 +12851,7 @@ do
         -- row so the accent cap hugs only the header text.
         KeybindHeader.Size = UDim2.fromOffset(
             HeaderWidth,
-            22
+            20
         );
 
         local RowCount = 0;
@@ -12872,13 +12879,13 @@ do
         end
 
         local ContentWidth = math.max(
-            HeaderWidth,
-            MaxRowWidth + 10
+            4 + HeaderWidth + 3,
+            6 + MaxRowWidth + 5
         );
 
         KeybindOuter.Size = UDim2.fromOffset(
             ContentWidth,
-            (RowCount * 18) + 26
+            (RowCount * 18) + 27
         );
     end
 
