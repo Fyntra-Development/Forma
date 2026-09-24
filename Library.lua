@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.20.4+build.1';
+    Version = '1.20.5+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -6461,13 +6461,15 @@ do
         });
 
         local ContainerLabel = Library:CreateLabel({
+            BackgroundTransparency = 1;
             TextXAlignment = Enum.TextXAlignment.Left;
-            Size = UDim2.fromOffset(1, 18);
-            TextSize = 13;
+            TextYAlignment = Enum.TextYAlignment.Center;
+            Size = UDim2.fromOffset(1, 16);
+            TextSize = 11;
             Visible = false;
             ZIndex = 110;
             Parent = Library.KeybindContainer;
-        },  true);
+        }, true);
 
         Library:GiveSignal(
             ContainerLabel:GetPropertyChangedSignal('TextBounds'):Connect(
@@ -12702,23 +12704,28 @@ do
     Library.WatermarkAnimationId = 0;
     Library:MakeDraggable(Library.Watermark);
 
+    local KEYBIND_HEADER_HEIGHT = 17;
+    local KEYBIND_ROW_HEIGHT = 16;
+    local KEYBIND_HEADER_PAD_X = 5;
+    local KEYBIND_BODY_PAD_X = 6;
+
     local InitialKeybindHeaderWidth = math.max(
         math.ceil(select(
             1,
-            Library:GetTextBounds('Keybinds', Library.Font, 13)
-        )) + 14,
-        28
+            Library:GetTextBounds('Keybinds', Library.Font, 11)
+        )) + (KEYBIND_HEADER_PAD_X * 2),
+        24
     );
 
     local KeybindOuter = Library:Create('Frame', {
-        -- Top-left anchoring is intentional. The list changes height whenever
-        -- keybind rows appear/disappear; a centered Y anchor made every resize
-        -- shift the whole panel by half of the size delta.
         AnchorPoint = Vector2.new(0, 0);
         BackgroundColor3 = Library.MainColor;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, 10, 0.5, -10);
-        Size = UDim2.fromOffset(InitialKeybindHeaderWidth, 20);
+        Position = UDim2.new(0, 10, 0.5, -9);
+        Size = UDim2.fromOffset(
+            InitialKeybindHeaderWidth,
+            KEYBIND_HEADER_HEIGHT + 4
+        );
         Visible = false;
         ZIndex = 100;
         Parent = ScreenGui;
@@ -12744,10 +12751,12 @@ do
     Library:AddCorner(KeybindInner, 1);
 
     local KeybindHeader = Library:Create('Frame', {
-        BackgroundColor3 = Library.AccentColor;
         BorderSizePixel = 0;
         Position = UDim2.fromOffset(4, 2);
-        Size = UDim2.fromOffset(1, 20);
+        Size = UDim2.fromOffset(
+            InitialKeybindHeaderWidth,
+            KEYBIND_HEADER_HEIGHT
+        );
         ClipsDescendants = true;
         ZIndex = 102;
         Parent = KeybindInner;
@@ -12761,8 +12770,16 @@ do
         LineJoinMode = Enum.LineJoinMode.Miter;
         Parent = KeybindHeader;
     });
+
+    local function GetKeybindHeaderBaseColor()
+        -- Reference-style softer accent: still themed, but closer to the
+        -- muted lavender/periwinkle cap shown in the supplied screenshot.
+        return Library.AccentColor:Lerp(Library.FontColor, 0.34);
+    end
+
+    KeybindHeader.BackgroundColor3 = GetKeybindHeaderBaseColor();
     Library:AddToRegistry(KeybindHeader, {
-        BackgroundColor3 = 'AccentColor';
+        BackgroundColor3 = GetKeybindHeaderBaseColor;
     });
 
     local KeybindHeaderGradient = Library:AddMovingAccentGradient(
@@ -12771,23 +12788,24 @@ do
     );
     if KeybindHeaderGradient then
         local function GetKeybindHeaderGradientColor()
-            local Accent = Library.AccentColor;
-            local Upper = Accent:Lerp(Color3.new(1, 1, 1), 0.08);
-            local Mid = Accent:Lerp(Color3.new(0, 0, 0), 0.06);
-            local Lower = Accent:Lerp(Color3.new(0, 0, 0), 0.22);
+            local Base = GetKeybindHeaderBaseColor();
+            local SemiDark = Base:Lerp(Color3.new(0, 0, 0), 0.18);
+            local DarkPocket = Base:Lerp(Color3.new(0, 0, 0), 0.27);
+            local SoftBright = Base:Lerp(Color3.new(1, 1, 1), 0.05);
 
             return ColorSequence.new({
-                ColorSequenceKeypoint.new(0.00, Upper);
-                ColorSequenceKeypoint.new(0.38, Accent);
-                ColorSequenceKeypoint.new(0.62, Mid);
-                ColorSequenceKeypoint.new(1.00, Lower);
+                ColorSequenceKeypoint.new(0.00, SemiDark);
+                ColorSequenceKeypoint.new(0.16, Base);
+                ColorSequenceKeypoint.new(0.31, DarkPocket);
+                ColorSequenceKeypoint.new(0.47, Base);
+                ColorSequenceKeypoint.new(0.60, SoftBright);
+                ColorSequenceKeypoint.new(0.74, SemiDark);
+                ColorSequenceKeypoint.new(0.88, Base);
+                ColorSequenceKeypoint.new(1.00, DarkPocket);
             });
         end
 
-        -- The supplied reference is mostly a top-to-bottom shaded accent.
-        -- A slight angle keeps the requested diagonal character without
-        -- creating obvious stripes or dark blobs.
-        KeybindHeaderGradient.Rotation = 100;
+        KeybindHeaderGradient.Rotation = 115;
         KeybindHeaderGradient.Color = GetKeybindHeaderGradientColor();
 
         local GradientRegistry = Library.RegistryMap[KeybindHeaderGradient];
@@ -12798,10 +12816,11 @@ do
 
     local KeybindLabel = Library:CreateLabel({
         BackgroundTransparency = 1;
-        Position = UDim2.fromOffset(5, 0);
-        Size = UDim2.fromOffset(0, 20);
-        TextSize = 13;
+        Position = UDim2.fromOffset(KEYBIND_HEADER_PAD_X, 0);
+        Size = UDim2.fromOffset(1, KEYBIND_HEADER_HEIGHT);
+        TextSize = 11;
         TextXAlignment = Enum.TextXAlignment.Left;
+        TextYAlignment = Enum.TextYAlignment.Center;
         Text = 'Keybinds';
         ZIndex = 104;
         Parent = KeybindHeader;
@@ -12809,8 +12828,16 @@ do
 
     local KeybindContainer = Library:Create('Frame', {
         BackgroundTransparency = 1;
-        Size = UDim2.new(1, 0, 1, -24);
-        Position = UDim2.new(0, 0, 0, 24);
+        Size = UDim2.new(
+            1,
+            0,
+            1,
+            -(KEYBIND_HEADER_HEIGHT + 5)
+        );
+        Position = UDim2.fromOffset(
+            0,
+            KEYBIND_HEADER_HEIGHT + 5
+        );
         ZIndex = 1;
         Parent = KeybindInner;
     });
@@ -12822,9 +12849,10 @@ do
     });
 
     Library:Create('UIPadding', {
-        PaddingLeft = UDim.new(0, 6),
-        Parent = KeybindContainer,
-    })
+        PaddingLeft = UDim.new(0, KEYBIND_BODY_PAD_X);
+        PaddingRight = UDim.new(0, KEYBIND_BODY_PAD_X);
+        Parent = KeybindContainer;
+    });
 
     local function RefreshKeybindLayout()
         if not KeybindOuter.Parent then return; end
@@ -12834,24 +12862,22 @@ do
             Library:GetTextBounds(
                 KeybindLabel.Text,
                 Library.Font,
-                KeybindLabel.TextSize
+                11
             )
         );
         local HeaderWidth = math.max(
-            math.ceil(HeaderTextWidth) + 10,
+            math.ceil(HeaderTextWidth)
+                + (KEYBIND_HEADER_PAD_X * 2),
             24
         );
 
         KeybindLabel.Size = UDim2.fromOffset(
             math.ceil(HeaderTextWidth),
-            20
+            KEYBIND_HEADER_HEIGHT
         );
-
-        -- Header width is intentionally independent from the longest keybind
-        -- row so the accent cap hugs only the header text.
         KeybindHeader.Size = UDim2.fromOffset(
             HeaderWidth,
-            20
+            KEYBIND_HEADER_HEIGHT
         );
 
         local RowCount = 0;
@@ -12864,28 +12890,42 @@ do
                     Library:GetTextBounds(
                         Label.Text,
                         Library.Font,
-                        Label.TextSize
+                        11
                     )
                 );
-                local RowWidth = math.max(math.ceil(TextWidth), 1);
+                local RowWidth = math.max(
+                    math.ceil(TextWidth),
+                    1
+                );
 
-                -- Each row owns exactly the horizontal space its rendered
-                -- text needs; it never stretches to the panel width.
-                Label.Size = UDim2.fromOffset(RowWidth, 18);
+                -- Match the reference: each row's GuiObject is exactly as wide
+                -- as its text, while only the body grows to the longest row.
+                Label.Size = UDim2.fromOffset(
+                    RowWidth,
+                    KEYBIND_ROW_HEIGHT
+                );
 
                 RowCount = RowCount + 1;
-                MaxRowWidth = math.max(MaxRowWidth, RowWidth);
+                MaxRowWidth = math.max(
+                    MaxRowWidth,
+                    RowWidth
+                );
             end
         end
 
         local ContentWidth = math.max(
-            4 + HeaderWidth + 3,
-            6 + MaxRowWidth + 5
+            4 + HeaderWidth + 4,
+            KEYBIND_BODY_PAD_X
+                + MaxRowWidth
+                + KEYBIND_BODY_PAD_X
         );
 
         KeybindOuter.Size = UDim2.fromOffset(
             ContentWidth,
-            (RowCount * 18) + 27
+            KEYBIND_HEADER_HEIGHT
+                + 5
+                + (RowCount * KEYBIND_ROW_HEIGHT)
+                + 3
         );
     end
 
