@@ -1,12 +1,20 @@
 local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
-	MenuManager.Version = '1.3.1'
+	MenuManager.Version = '1.4.0+build.1'
 	MenuManager.Library = nil
 	MenuManager.EasingStyle = 'Sine'
 	MenuManager.EasingDirection = 'Out'
 	MenuManager.TweenSpeed = 0.18
 	MenuManager.DefaultTweenSpeed = 0.18
+
+	-- Direct-manipulation motion is intentionally physical rather than tweened.
+	-- These values are critically-damped response times in seconds. They feed
+	-- Library:MakeDraggable and Library:MakeResizable every rendered frame.
+	MenuManager.DragSmoothTime = 0.055
+	MenuManager.ResizeSmoothTime = 0.065
+	MenuManager.DragCatchupDistance = 30
+	MenuManager.ResizeCatchupDistance = 34
 
 	MenuManager.EasingStyles = {
 		'Linear', 'Sine', 'Quad', 'Cubic', 'Quart', 'Quint', 'Exponential', 'Circular', 'Back', 'Elastic', 'Bounce'
@@ -135,11 +143,68 @@ local MenuManager = {} do
 		return TweenInfo.new(self:GetDuration(Duration, Context), Profile.Style, Profile.Direction)
 	end
 
+	function MenuManager:GetDirectManipulationProfile(Context)
+		local IsResize = tostring(Context or 'Drag') == 'Resize'
+		local BaseSmoothTime = IsResize
+			and self.ResizeSmoothTime
+			or self.DragSmoothTime
+		local CatchupDistance = IsResize
+			and self.ResizeCatchupDistance
+			or self.DragCatchupDistance
+
+		-- Keep direct manipulation linked to the MenuManager's global animation
+		-- response without feeding it arbitrary easing curves. A critically
+		-- damped follower needs a physical time constant, not a TweenInfo.
+		local GlobalScale = math.clamp(
+			(tonumber(self.TweenSpeed) or self.DefaultTweenSpeed)
+				/ self.DefaultTweenSpeed,
+			0.55,
+			1.85
+		)
+
+		return {
+			SmoothTime = math.clamp(
+				(tonumber(BaseSmoothTime) or 0.06) * GlobalScale,
+				0.022,
+				0.18
+			);
+			CatchupDistance = math.clamp(
+				tonumber(CatchupDistance) or 32,
+				18,
+				64
+			);
+			CatchupStrength = IsResize and 0.52 or 0.58;
+			SettlePositionEpsilon = 0.035;
+			SettleVelocityEpsilon = 0.12;
+		}
+	end
+
 	function MenuManager:GetDragResponse()
-		-- High-response micro-filter used by direct-manipulation surfaces. The
-		-- library also caps visual error to 2.5 px, preserving smoothness without
-		-- allowing the window or HUDs to trail behind the pointer.
-		return 120
+		-- Compatibility for older integrations. The new library consumes the
+		-- direct-manipulation profile above rather than a first-order response.
+		local Profile = self:GetDirectManipulationProfile('Drag')
+		return 2 / math.max(Profile.SmoothTime, 0.001)
+	end
+
+	function MenuManager:GetResizeResponse()
+		local Profile = self:GetDirectManipulationProfile('Resize')
+		return 2 / math.max(Profile.SmoothTime, 0.001)
+	end
+
+	function MenuManager:SetDragSmoothTime(Value)
+		self.DragSmoothTime = math.clamp(
+			tonumber(Value) or 0.055,
+			0.025,
+			0.14
+		)
+	end
+
+	function MenuManager:SetResizeSmoothTime(Value)
+		self.ResizeSmoothTime = math.clamp(
+			tonumber(Value) or 0.065,
+			0.03,
+			0.16
+		)
 	end
 
 	function MenuManager:GetReleaseDuration(Distance)
@@ -182,6 +247,33 @@ local MenuManager = {} do
 		Options.MenuManager_EasingDirection:OnChanged(function() self:SetEasingDirection(Options.MenuManager_EasingDirection.Value) end)
 		Groupbox:AddSlider('MenuManager_TweenSpeed', { Text = 'Animation response'; Default = self.TweenSpeed; Min = 0.08; Max = 0.45; Rounding = 2; Step = 0.01; Suffix = 's'; })
 		Options.MenuManager_TweenSpeed:OnChanged(function() self:SetTweenSpeed(Options.MenuManager_TweenSpeed.Value) end)
+
+		Groupbox:AddSlider('MenuManager_DragSmoothTime', {
+			Text = 'Drag smoothing';
+			Default = self.DragSmoothTime;
+			Min = 0.025;
+			Max = 0.14;
+			Rounding = 3;
+			Step = 0.005;
+			Suffix = 's';
+		})
+		Options.MenuManager_DragSmoothTime:OnChanged(function()
+			self:SetDragSmoothTime(Options.MenuManager_DragSmoothTime.Value)
+		end)
+
+		Groupbox:AddSlider('MenuManager_ResizeSmoothTime', {
+			Text = 'Resize smoothing';
+			Default = self.ResizeSmoothTime;
+			Min = 0.03;
+			Max = 0.16;
+			Rounding = 3;
+			Step = 0.005;
+			Suffix = 's';
+		})
+		Options.MenuManager_ResizeSmoothTime:OnChanged(function()
+			self:SetResizeSmoothTime(Options.MenuManager_ResizeSmoothTime.Value)
+		end)
+
 		Groupbox:AddButton('Reset menu positions', function() self:ResetMenuPositions() end)
 	end
 
