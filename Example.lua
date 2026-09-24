@@ -152,6 +152,46 @@ LeftGroupBox:AddButton({
     end,
 })
 
+-- Library:Dialog
+-- Modal dialogs block interaction with the underlying UI until dismissed.
+-- Buttons can return a custom Value, run a Callback, and opt out of closing
+-- by setting Close = false (or by returning false from the callback).
+LeftGroupBox:AddButton({
+    Text = 'Open dialog',
+    Tooltip = 'Shows Forma\'s modal dialog popup.',
+    Func = function()
+        Library:Dialog({
+            Title = 'Apply changes?',
+            Text = 'This is a modal Forma dialog. The background UI is blocked until you choose an action.',
+            DismissOnBackdrop = false,
+            CloseOnEscape = true,
+
+            Buttons = {
+                {
+                    Text = 'Cancel',
+                    Value = 'Cancel',
+                },
+                {
+                    Text = 'Apply',
+                    Value = 'Apply',
+                    Accent = true,
+                    Callback = function(Result)
+                        Library:Notify({
+                            Title = 'Dialog result',
+                            Text = 'Selected: ' .. tostring(Result),
+                            Duration = 3,
+                        })
+                    end,
+                },
+            },
+
+            OnClose = function(Reason)
+                print('[dialog] closed with:', Reason)
+            end,
+        })
+    end,
+})
+
 -- Groupbox:AddLabel
 -- Arguments: Text, DoesWrap
 LeftGroupBox:AddLabel('This is a label')
