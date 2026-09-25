@@ -13372,8 +13372,8 @@ do
         end
 
         table.sort(Rows, function(A, B)
-            return (A.Row.LayoutOrder or 0)
-                < (B.Row.LayoutOrder or 0);
+            return (A.Order or A.Row.LayoutOrder or 0)
+                < (B.Order or B.Row.LayoutOrder or 0);
         end);
         return Rows;
     end
@@ -13387,10 +13387,15 @@ do
             return Existing;
         end
 
+        Library.KeybindRowSerial =
+            (Library.KeybindRowSerial or 0) + 1;
+        Row.LayoutOrder = Library.KeybindRowSerial;
+
         local Profile = GetKeybindMotionProfile();
         local State = {
             Row = Row;
             Visual = Visual;
+            Order = Library.KeybindRowSerial;
             Offset = -Profile.Travel;
             OffsetVelocity = 0;
             Alpha = 0;
