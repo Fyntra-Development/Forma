@@ -307,8 +307,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.21.0+build.1';
-    Release = 'GA';
+    Version = '1.21.1+build.1';
+    Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -6826,74 +6826,302 @@ do
         DisplayLabel:GetPropertyChangedSignal('TextBounds'):Connect(ResizeKeyDisplay);
         SetKeyDisplay(Info.Default);
 
+        -- Dedicated keybind mode mini-menu. This is intentionally a real
+        -- floating panel rather than a bare vertical list so right-clicking a
+        -- keybind feels like opening a compact Forma window.
+        local MODE_MENU_WIDTH = 132;
+        local MODE_MENU_HEADER_HEIGHT = 25;
+        local MODE_MENU_ROW_HEIGHT = 20;
+        local MODE_MENU_PADDING = 5;
+        local MODE_MENU_HEIGHT =
+            2
+            + MODE_MENU_HEADER_HEIGHT
+            + (#Modes * MODE_MENU_ROW_HEIGHT)
+            + (MODE_MENU_PADDING * 2);
+
         local ModeSelectOuter = Library:Create('Frame', {
-            BackgroundColor3 = Color3.new(0, 0, 0);
+            BackgroundColor3 = Library.MainColor;
             BorderSizePixel = 0;
-            Position = UDim2.fromOffset(ToggleLabel.AbsolutePosition.X + ToggleLabel.AbsoluteSize.X + 4, ToggleLabel.AbsolutePosition.Y + 1);
-            Size = UDim2.new(0, 60, 0, (#Modes * 15) + 2);
+            Position = UDim2.fromOffset(0, 0);
+            Size = UDim2.fromOffset(
+                MODE_MENU_WIDTH,
+                MODE_MENU_HEIGHT
+            );
             Visible = false;
-            ZIndex = 14;
+            ZIndex = 620;
             Parent = ScreenGui;
         });
-
-        local ModeAnimationId = 0;
-        local function ShowModeSelect()
-            ModeAnimationId = ModeAnimationId + 1;
-            if not ModeSelectOuter.Visible then
-                Library:SetUnifiedFadeProgress(ModeSelectOuter, 0);
-                ModeSelectOuter.Visible = true;
-            end
-            Library:TweenUnifiedFade(ModeSelectOuter, 1, 0.19, nil, 'Fade');
-        end
-
-        local function HideModeSelect()
-            if not ModeSelectOuter.Visible then return; end
-            ModeAnimationId = ModeAnimationId + 1;
-            local CurrentId = ModeAnimationId;
-            Library:TweenUnifiedFade(ModeSelectOuter, 0, 0.16, function(State)
-                if CurrentId == ModeAnimationId and State ~= Enum.PlaybackState.Cancelled then
-                    ModeSelectOuter.Visible = false;
-                end
-            end, 'Fade');
-        end
-
-        ToggleLabel:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()
-            ModeSelectOuter.Position = UDim2.fromOffset(ToggleLabel.AbsolutePosition.X + ToggleLabel.AbsoluteSize.X + 4, ToggleLabel.AbsolutePosition.Y + 1);
-        end);
-
-        local ModeSelectInner = Library:Create('Frame', {
-            BackgroundColor3 = Library.BackgroundColor;
-            BorderSizePixel = 0;
-            Position = UDim2.new(0, 1, 0, 1);
-            Size = UDim2.new(1, -2, 1, -2);
-            ZIndex = 15;
-            Parent = ModeSelectOuter;
+        Library:AddCorner(ModeSelectOuter, 4);
+        Library:AddToRegistry(ModeSelectOuter, {
+            BackgroundColor3 = 'MainColor';
         });
 
-        Library:AddCorner(ModeSelectOuter, 3);
-        Library:AddCorner(ModeSelectInner, 2);
-
-        local ModeSelectStroke = Library:Create('UIStroke', {
-            Name = 'ModeSelectOutline';
+        local ModeSelectOutline = Library:Create('UIStroke', {
+            Name = 'KeybindMiniMenuOutline';
             Color = Library.OutlineColor;
             Thickness = 1;
-            LineJoinMode = Enum.LineJoinMode.Round;
+            Transparency = 0.08;
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-            Parent = ModeSelectInner;
+            LineJoinMode = Enum.LineJoinMode.Round;
+            Parent = ModeSelectOuter;
         });
-        Library:AddToRegistry(ModeSelectStroke, {
+        Library:AddToRegistry(ModeSelectOutline, {
             Color = 'OutlineColor';
         });
 
-        Library:AddToRegistry(ModeSelectInner, {
-            BackgroundColor3 = 'BackgroundColor';
+        local ModeAccentBar = Library:Create('Frame', {
+            Name = 'AccentBar';
+            BackgroundColor3 = Library.AccentColor;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(0, 0);
+            Size = UDim2.new(1, 0, 0, 2);
+            ZIndex = 624;
+            Parent = ModeSelectOuter;
+        });
+        Library:AddToRegistry(ModeAccentBar, {
+            BackgroundColor3 = 'AccentColor';
+        });
+        Library:AddCorner(ModeAccentBar, 2);
+        local ModeAccentGradient =
+            Library:AddMovingAccentGradient(
+                ModeAccentBar,
+                2.2
+            );
+        if ModeAccentGradient then
+            ModeAccentGradient.Rotation = 0;
+        end
+
+        local ModeHeader = Library:Create('Frame', {
+            BackgroundColor3 = Library.MainColor;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(0, 2);
+            Size = UDim2.new(
+                1,
+                0,
+                0,
+                MODE_MENU_HEADER_HEIGHT
+            );
+            ZIndex = 621;
+            Parent = ModeSelectOuter;
+        });
+        Library:AddToRegistry(ModeHeader, {
+            BackgroundColor3 = 'MainColor';
+        });
+
+        local ModeTitle = Library:CreateLabel({
+            BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(7, 0);
+            Size = UDim2.new(1, -48, 1, 0);
+            Text = 'Keybind';
+            TextSize = 13;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            TextYAlignment = Enum.TextYAlignment.Center;
+            ZIndex = 623;
+            Parent = ModeHeader;
+        });
+
+        local ModeKeyValue = Library:CreateLabel({
+            BackgroundTransparency = 1;
+            AnchorPoint = Vector2.new(1, 0);
+            Position = UDim2.new(1, -7, 0, 0);
+            Size = UDim2.fromOffset(38, MODE_MENU_HEADER_HEIGHT);
+            Text = tostring(KeyPicker.Value or Info.Default or '');
+            TextColor3 = Library.DisabledTextColor;
+            TextSize = 11;
+            TextXAlignment = Enum.TextXAlignment.Right;
+            TextYAlignment = Enum.TextYAlignment.Center;
+            ZIndex = 623;
+            Parent = ModeHeader;
+        });
+        Library:AddToRegistry(ModeKeyValue, {
+            TextColor3 = 'DisabledTextColor';
+        }, true);
+
+        local ModeHeaderDivider = Library:Create('Frame', {
+            BackgroundColor3 = Library.OutlineColor;
+            BackgroundTransparency = 0.38;
+            BorderSizePixel = 0;
+            Position = UDim2.new(
+                0,
+                6,
+                0,
+                MODE_MENU_HEADER_HEIGHT + 2
+            );
+            Size = UDim2.new(1, -12, 0, 1);
+            ZIndex = 622;
+            Parent = ModeSelectOuter;
+        });
+        Library:AddToRegistry(ModeHeaderDivider, {
+            BackgroundColor3 = 'OutlineColor';
+        });
+
+        local ModeOptions = Library:Create('Frame', {
+            BackgroundTransparency = 1;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(
+                MODE_MENU_PADDING,
+                MODE_MENU_HEADER_HEIGHT + 7
+            );
+            Size = UDim2.new(
+                1,
+                -(MODE_MENU_PADDING * 2),
+                0,
+                #Modes * MODE_MENU_ROW_HEIGHT
+            );
+            ZIndex = 621;
+            Parent = ModeSelectOuter;
         });
 
         Library:Create('UIListLayout', {
             FillDirection = Enum.FillDirection.Vertical;
             SortOrder = Enum.SortOrder.LayoutOrder;
-            Parent = ModeSelectInner;
+            Padding = UDim.new(0, 0);
+            Parent = ModeOptions;
         });
+
+        local ModeAnimationId = 0;
+        local ModeTargetPosition = UDim2.fromOffset(0, 0);
+
+        local function ResolveModeMenuPosition()
+            local Viewport = workspace.CurrentCamera
+                and workspace.CurrentCamera.ViewportSize
+                or Vector2.new(1920, 1080);
+
+            local X = Mouse.X + 9;
+            local Y = Mouse.Y + 7;
+            X = math.clamp(
+                X,
+                6,
+                math.max(
+                    6,
+                    Viewport.X - MODE_MENU_WIDTH - 6
+                )
+            );
+            Y = math.clamp(
+                Y,
+                6,
+                math.max(
+                    6,
+                    Viewport.Y - MODE_MENU_HEIGHT - 6
+                )
+            );
+
+            return UDim2.fromOffset(X, Y);
+        end
+
+        local function ShowModeSelect()
+            ModeAnimationId = ModeAnimationId + 1;
+            ModeKeyValue.Text = tostring(
+                KeyPicker.Value or Info.Default or ''
+            );
+
+            if Library.ActiveKeybindModeMenu
+                and Library.ActiveKeybindModeMenu.Hide
+                and Library.ActiveKeybindModeMenu.Frame
+                    ~= ModeSelectOuter then
+                Library.ActiveKeybindModeMenu.Hide(true);
+            end
+
+            ModeTargetPosition = ResolveModeMenuPosition();
+
+            if not ModeSelectOuter.Visible then
+                Library:SetUnifiedFadeProgress(
+                    ModeSelectOuter,
+                    0
+                );
+                ModeSelectOuter.Position =
+                    ModeTargetPosition
+                    + UDim2.fromOffset(0, 5);
+                ModeSelectOuter.Visible = true;
+            end
+
+            Library.ActiveKeybindModeMenu = {
+                Frame = ModeSelectOuter;
+                Hide = function(Instant)
+                    if Instant then
+                        ModeAnimationId =
+                            ModeAnimationId + 1;
+                        Library:CancelMotion(
+                            ModeSelectOuter
+                        );
+                        Library:SetUnifiedFadeProgress(
+                            ModeSelectOuter,
+                            0
+                        );
+                        ModeSelectOuter.Visible = false;
+                    end
+                end;
+            };
+
+            Library:Animate(
+                ModeSelectOuter,
+                { Position = ModeTargetPosition; },
+                0.20,
+                nil,
+                'Menu'
+            );
+            Library:TweenUnifiedFade(
+                ModeSelectOuter,
+                1,
+                0.18,
+                nil,
+                'Fade'
+            );
+        end
+
+        local function HideModeSelect(Instant)
+            if not ModeSelectOuter.Visible then
+                return;
+            end
+
+            ModeAnimationId = ModeAnimationId + 1;
+            local CurrentId = ModeAnimationId;
+
+            if Library.ActiveKeybindModeMenu
+                and Library.ActiveKeybindModeMenu.Frame
+                    == ModeSelectOuter then
+                Library.ActiveKeybindModeMenu = nil;
+            end
+
+            if Instant then
+                Library:CancelMotion(ModeSelectOuter);
+                Library:SetUnifiedFadeProgress(
+                    ModeSelectOuter,
+                    0
+                );
+                ModeSelectOuter.Visible = false;
+                ModeSelectOuter.Position =
+                    ModeTargetPosition;
+                return;
+            end
+
+            Library:Animate(
+                ModeSelectOuter,
+                {
+                    Position =
+                        ModeTargetPosition
+                        + UDim2.fromOffset(0, 4);
+                },
+                0.16,
+                nil,
+                'MenuExit'
+            );
+            Library:TweenUnifiedFade(
+                ModeSelectOuter,
+                0,
+                0.15,
+                function(State)
+                    if CurrentId == ModeAnimationId
+                        and State
+                            ~= Enum.PlaybackState.Cancelled then
+                        ModeSelectOuter.Visible = false;
+                        ModeSelectOuter.Position =
+                            ModeTargetPosition;
+                    end
+                end,
+                'Fade'
+            );
+        end
 
         local ContainerRow = Library:Create('Frame', {
             Name = 'KeybindRow';
@@ -6962,52 +7190,201 @@ do
 
         local ModeButtons = {};
 
-        for Idx, Mode in next, Modes do
-            local ModeButton = {};
+        local function RefreshModeButtons(Animated)
+            for ModeName, Button in next, ModeButtons do
+                local Selected = KeyPicker.Mode == ModeName;
+                local Background = Selected
+                    and Library.AccentColor:Lerp(
+                        Library.MainColor,
+                        0.82
+                    )
+                    or Library.BackgroundColor;
+                local TextColor = Selected
+                    and Library.AccentColor
+                    or Library.FontColor;
+                local MarkerTransparency =
+                    Selected and 0 or 1;
 
-            local Label = Library:CreateLabel({
-                Active = false;
-                Size = UDim2.new(1, 0, 0, 15);
-                TextSize = 13;
-                Text = Mode;
-                ZIndex = 16;
-                Parent = ModeSelectInner;
+                if Animated then
+                    Library:Animate(
+                        Button.Frame,
+                        {
+                            BackgroundColor3 =
+                                Background;
+                        },
+                        0.13,
+                        nil,
+                        'Color'
+                    );
+                    Library:Animate(
+                        Button.Label,
+                        { TextColor3 = TextColor; },
+                        0.13,
+                        nil,
+                        'Color'
+                    );
+                    Library:Animate(
+                        Button.Marker,
+                        {
+                            BackgroundTransparency =
+                                MarkerTransparency;
+                        },
+                        0.13,
+                        nil,
+                        'Fade'
+                    );
+                else
+                    Library:CancelMotion(Button.Frame);
+                    Library:CancelMotion(Button.Label);
+                    Library:CancelMotion(Button.Marker);
+                    Button.Frame.BackgroundColor3 =
+                        Background;
+                    Button.Label.TextColor3 =
+                        TextColor;
+                    Button.Marker.BackgroundTransparency =
+                        MarkerTransparency;
+                end
+            end
+        end
+
+        for Idx, Mode in ipairs(Modes) do
+            local ModeButton = {
+                Hovering = false;
+            };
+
+            local Button = Library:Create('TextButton', {
+                AutoButtonColor = false;
+                BackgroundColor3 = Library.BackgroundColor;
+                BorderSizePixel = 0;
+                LayoutOrder = Idx;
+                Size = UDim2.new(
+                    1,
+                    0,
+                    0,
+                    MODE_MENU_ROW_HEIGHT
+                );
+                Text = '';
+                ZIndex = 622;
+                Parent = ModeOptions;
+            });
+            Library:AddCorner(Button, 2);
+            Library:AddToRegistry(Button, {
+                BackgroundColor3 = function()
+                    return KeyPicker.Mode == Mode
+                        and Library.AccentColor:Lerp(
+                            Library.MainColor,
+                            0.82
+                        )
+                        or Library.BackgroundColor;
+                end;
             });
 
-            function ModeButton:Select()
-                for _, Button in next, ModeButtons do
-                    Button:Deselect();
-                end;
+            local Marker = Library:Create('Frame', {
+                BackgroundColor3 = Library.AccentColor;
+                BackgroundTransparency = 1;
+                BorderSizePixel = 0;
+                Position = UDim2.fromOffset(0, 5);
+                Size = UDim2.fromOffset(2, 10);
+                ZIndex = 624;
+                Parent = Button;
+            });
+            Library:AddCorner(Marker, 1);
+            Library:AddToRegistry(Marker, {
+                BackgroundColor3 = 'AccentColor';
+            });
 
+            local Label = Library:CreateLabel({
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(8, 0);
+                Size = UDim2.new(1, -16, 1, 0);
+                Text = Mode;
+                TextSize = 12;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                TextYAlignment = Enum.TextYAlignment.Center;
+                ZIndex = 624;
+                Parent = Button;
+            });
+
+            local RightDot = Library:Create('Frame', {
+                AnchorPoint = Vector2.new(1, 0.5);
+                BackgroundColor3 = Library.DisabledTextColor;
+                BackgroundTransparency = 0.72;
+                BorderSizePixel = 0;
+                Position = UDim2.new(1, -7, 0.5, 0);
+                Size = UDim2.fromOffset(3, 3);
+                ZIndex = 624;
+                Parent = Button;
+            });
+            Library:AddCorner(RightDot, 3);
+            Library:AddToRegistry(RightDot, {
+                BackgroundColor3 = 'DisabledTextColor';
+            });
+
+            ModeButton.Frame = Button;
+            ModeButton.Label = Label;
+            ModeButton.Marker = Marker;
+            ModeButton.Dot = RightDot;
+
+            function ModeButton:Select()
                 KeyPicker.Mode = Mode;
                 KeyPicker.Held = false;
-
-                Label.TextColor3 = Library.AccentColor;
-                Library.RegistryMap[Label].Properties.TextColor3 = 'AccentColor';
-
+                RefreshModeButtons(true);
                 HideModeSelect();
-            end;
+            end
 
             function ModeButton:Deselect()
-                Label.TextColor3 = Library.FontColor;
-                Library.RegistryMap[Label].Properties.TextColor3 = 'FontColor';
-            end;
+                RefreshModeButtons(false);
+            end
 
-            Label.InputBegan:Connect(function(Input)
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    ModeButton:Select();
-                    if KeyPicker.DoClick then KeyPicker:DoClick(); end
-                    if KeyPicker.Update then KeyPicker:Update(); end
-                    Library:AttemptSave();
-                end;
+            Button.MouseEnter:Connect(function()
+                ModeButton.Hovering = true;
+                if KeyPicker.Mode ~= Mode then
+                    Library:Animate(
+                        Button,
+                        {
+                            BackgroundColor3 =
+                                Library.Contrast;
+                        },
+                        0.11,
+                        nil,
+                        'Color'
+                    );
+                    Library:Animate(
+                        Label,
+                        {
+                            TextColor3 =
+                                Library.AccentColor:Lerp(
+                                    Library.FontColor,
+                                    0.28
+                                );
+                        },
+                        0.11,
+                        nil,
+                        'Color'
+                    );
+                end
             end);
 
-            if Mode == KeyPicker.Mode then
+            Button.MouseLeave:Connect(function()
+                ModeButton.Hovering = false;
+                RefreshModeButtons(true);
+            end);
+
+            Button.MouseButton1Click:Connect(function()
                 ModeButton:Select();
-            end;
+                if KeyPicker.DoClick then
+                    KeyPicker:DoClick();
+                end
+                if KeyPicker.Update then
+                    KeyPicker:Update();
+                end
+                Library:AttemptSave();
+            end);
 
             ModeButtons[Mode] = ModeButton;
-        end;
+        end
+
+        RefreshModeButtons(false);
 
         function KeyPicker:Update()
             if Info.NoUI then
@@ -7017,6 +7394,7 @@ do
             local State = KeyPicker:GetState();
 
             ContainerLabel.Text = string.format('[%s] %s ~ (%s)', KeyPicker.Value, Info.Text, KeyPicker.Mode);
+            ModeKeyValue.Text = tostring(KeyPicker.Value or '');
 
             ContainerRow.Visible = true;
             ContainerVisual.Visible = true;
@@ -7149,14 +7527,23 @@ do
                 KeyPicker:Update();
             end;
 
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                local AbsPos, AbsSize = ModeSelectOuter.AbsolutePosition, ModeSelectOuter.AbsoluteSize;
+            if Input.UserInputType == Enum.UserInputType.MouseButton1
+                or Input.UserInputType == Enum.UserInputType.MouseButton2 then
+                if ModeSelectOuter.Visible then
+                    local AbsPos =
+                        ModeSelectOuter.AbsolutePosition;
+                    local AbsSize =
+                        ModeSelectOuter.AbsoluteSize;
+                    local Inside =
+                        Mouse.X >= AbsPos.X
+                        and Mouse.X <= AbsPos.X + AbsSize.X
+                        and Mouse.Y >= AbsPos.Y
+                        and Mouse.Y <= AbsPos.Y + AbsSize.Y;
 
-                if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
-                    or Mouse.Y < (AbsPos.Y - 20 - 1) or Mouse.Y > AbsPos.Y + AbsSize.Y then
-
-                    HideModeSelect();
-                end;
+                    if not Inside then
+                        HideModeSelect();
+                    end
+                end
             end;
         end))
 
