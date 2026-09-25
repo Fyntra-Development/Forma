@@ -2,9 +2,9 @@
   "schema": 2,
   "Components": {
     "Library": {
-      "version": "1.20.6+build.1",
+      "version": "1.21.0+build.1",
       "path": "Library.lua",
-      "release": "HF",
+      "release": "GA",
       "build": 1
     },
     "Loader": {
@@ -14,7 +14,7 @@
       "build": 1
     },
     "MenuManager": {
-      "version": "1.4.0+build.1",
+      "version": "1.5.0+build.1",
       "path": "addons/MenuManager.lua",
       "release": "GA",
       "build": 1
