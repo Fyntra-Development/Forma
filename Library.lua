@@ -307,8 +307,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.20.6+build.1';
-    Release = 'HF';
+    Version = '1.21.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -623,6 +623,344 @@ function Library:GetMenuTweenInfo(Duration, Context)
     );
 end;
 
+Library.ActiveFluidMotions = Library.ActiveFluidMotions or {};
+
+local function FluidSmootherStep(Value)
+    local T = math.clamp(tonumber(Value) or 0, 0, 1);
+    return T * T * T * (T * ((T * 6) - 15) + 10);
+end
+
+local function FluidLerpNumber(A, B, Alpha)
+    return A + ((B - A) * Alpha);
+end
+
+local function FluidLerpValue(A, B, Alpha)
+    local AType = typeof(A);
+    if AType ~= typeof(B) then
+        return nil, false;
+    end
+
+    if AType == 'number' then
+        return FluidLerpNumber(A, B, Alpha), true;
+    elseif AType == 'Color3' then
+        return A:Lerp(B, Alpha), true;
+    elseif AType == 'Vector2' then
+        return A:Lerp(B, Alpha), true;
+    elseif AType == 'Vector3' then
+        return A:Lerp(B, Alpha), true;
+    elseif AType == 'CFrame' then
+        return A:Lerp(B, Alpha), true;
+    elseif AType == 'UDim' then
+        return UDim.new(
+            FluidLerpNumber(A.Scale, B.Scale, Alpha),
+            FluidLerpNumber(A.Offset, B.Offset, Alpha)
+        ), true;
+    elseif AType == 'UDim2' then
+        return UDim2.new(
+            FluidLerpNumber(A.X.Scale, B.X.Scale, Alpha),
+            FluidLerpNumber(A.X.Offset, B.X.Offset, Alpha),
+            FluidLerpNumber(A.Y.Scale, B.Y.Scale, Alpha),
+            FluidLerpNumber(A.Y.Offset, B.Y.Offset, Alpha)
+        ), true;
+    elseif AType == 'Rect' then
+        return Rect.new(
+            A.Min:Lerp(B.Min, Alpha),
+            A.Max:Lerp(B.Max, Alpha)
+        ), true;
+    elseif AType == 'NumberRange' then
+        return NumberRange.new(
+            FluidLerpNumber(A.Min, B.Min, Alpha),
+            FluidLerpNumber(A.Max, B.Max, Alpha)
+        ), true;
+    end
+
+    return nil, false;
+end
+
+local function GetFluidity(Context)
+    local Manager = Library.MenuManager;
+    if Manager and Manager.GetMotionProfile then
+        local Success, Profile = pcall(
+            Manager.GetMotionProfile,
+            Manager,
+            Context
+        );
+        if Success and type(Profile) == 'table' then
+            return math.clamp(
+                tonumber(Profile.Fluidity) or 1,
+                0,
+                1
+            );
+        end
+    end
+    return 1;
+end
+
+local function GetFluidAlpha(Alpha, Context, ExplicitInfo)
+    local T = math.clamp(tonumber(Alpha) or 0, 0, 1);
+    if T <= 0 then return 0; end
+    if T >= 1 then return 1; end
+
+    if ExplicitInfo then
+        local SoftT = FluidSmootherStep(T);
+        local Fluidity = GetFluidity(Context);
+        local WarpedT = T + ((SoftT - T) * Fluidity);
+        local Success, Result = pcall(
+            TweenService.GetValue,
+            TweenService,
+            WarpedT,
+            ExplicitInfo.EasingStyle,
+            ExplicitInfo.EasingDirection
+        );
+        if Success and type(Result) == 'number' then
+            return Result;
+        end
+        return SoftT;
+    end
+
+    local Manager = Library.MenuManager;
+    if Manager and Manager.GetEasedAlpha then
+        local Success, Result = pcall(
+            Manager.GetEasedAlpha,
+            Manager,
+            T,
+            Context
+        );
+        if Success and type(Result) == 'number' then
+            return Result;
+        end
+    end
+
+    local SoftT = FluidSmootherStep(T);
+    local Success, Result = pcall(
+        TweenService.GetValue,
+        TweenService,
+        SoftT,
+        Enum.EasingStyle.Sine,
+        Enum.EasingDirection.Out
+    );
+    return Success and Result or SoftT;
+end
+
+local function GetFluidDuration(Duration, Context)
+    if typeof(Duration) == 'TweenInfo' then
+        return math.max(Duration.Time, 0.001), Duration;
+    end
+
+    local Manager = Library.MenuManager;
+    if Manager and Manager.GetDuration then
+        local Success, Result = pcall(
+            Manager.GetDuration,
+            Manager,
+            Duration,
+            Context
+        );
+        if Success and type(Result) == 'number' then
+            return math.max(Result, 0.001), nil;
+        end
+    end
+
+    return math.clamp(
+        tonumber(Duration) or 0.16,
+        0.035,
+        1.5
+    ), nil;
+end
+
+local function FinishFluidMotion(Token, State, SnapToTarget)
+    if not Token or Token.Done then return; end
+    Token.Done = true;
+    Library.ActiveFluidMotions[Token] = nil;
+
+    local Instance = Token.Instance;
+    local Motions = Instance and Library.PropertyTweens[Instance];
+
+    if SnapToTarget and Instance then
+        for Property, Value in next, Token.Targets do
+            pcall(function()
+                Instance[Property] = Value;
+            end);
+        end
+    end
+
+    if Motions then
+        for Property in next, Token.Properties do
+            if Motions[Property] == Token then
+                Motions[Property] = nil;
+            end
+        end
+    end
+
+    if Token.Handle then
+        Token.Handle.PlaybackState = State;
+    end
+
+    if Token.CompletedEvent then
+        Token.CompletedEvent:Fire(State);
+    end
+
+    for _, Callback in ipairs(Token.Callbacks or {}) do
+        pcall(Callback, State);
+    end
+    table.clear(Token.Callbacks);
+
+    if Token.CompletedEvent then
+        local Event = Token.CompletedEvent;
+        Token.CompletedEvent = nil;
+        task.defer(function()
+            pcall(function() Event:Destroy(); end);
+        end);
+    end
+end
+
+local function CreateFluidHandle(Token)
+    local Event = Instance.new('BindableEvent');
+    local Handle = {
+        Completed = Event.Event;
+        PlaybackState = Enum.PlaybackState.Playing;
+    };
+
+    function Handle:Cancel()
+        FinishFluidMotion(
+            Token,
+            Enum.PlaybackState.Cancelled,
+            false
+        );
+    end
+
+    function Handle:Play()
+        -- Compatibility with Tween callers. Fluid motions start immediately.
+    end
+
+    Token.CompletedEvent = Event;
+    Token.Handle = Handle;
+    Token.Tween = Handle;
+    return Handle;
+end
+
+local function CreateNativeMotion(
+    Instance,
+    Properties,
+    Duration,
+    Completed,
+    Context,
+    InstanceTweens
+)
+    local Info = typeof(Duration) == 'TweenInfo'
+        and Duration
+        or Library:GetMenuTweenInfo(Duration, Context);
+
+    local Tween;
+    local Success = pcall(function()
+        Tween = TweenService:Create(
+            Instance,
+            Info,
+            Properties
+        );
+    end);
+
+    if not Success or not Tween then
+        for Property, Value in next, Properties do
+            pcall(function() Instance[Property] = Value; end);
+        end
+        if Completed then
+            pcall(
+                Completed,
+                Enum.PlaybackState.Completed
+            );
+        end
+        return nil;
+    end
+
+    local Token = {
+        Tween = Tween;
+        Instance = Instance;
+        Properties = Properties;
+        Targets = table.clone(Properties);
+        Callbacks = {};
+        Native = true;
+    };
+
+    if Completed then
+        table.insert(Token.Callbacks, Completed);
+    end
+    for Property in next, Properties do
+        InstanceTweens[Property] = Token;
+    end
+
+    Tween.Completed:Connect(function(State)
+        for Property in next, Properties do
+            if InstanceTweens[Property] == Token then
+                InstanceTweens[Property] = nil;
+            end
+        end
+        for _, Callback in ipairs(Token.Callbacks) do
+            pcall(Callback, State);
+        end
+        table.clear(Token.Callbacks);
+    end);
+
+    Tween:Play();
+    return Tween;
+end
+
+if not Library.FluidMotionConnection then
+    Library.FluidMotionConnection = RenderStepped:Connect(function(Delta)
+        local Dt = math.min(
+            math.max(tonumber(Delta) or (1 / 60), 0),
+            0.05
+        );
+
+        for Token in next, Library.ActiveFluidMotions do
+            if Token.Done then
+                Library.ActiveFluidMotions[Token] = nil;
+            elseif not Token.Instance or not Token.Instance.Parent then
+                FinishFluidMotion(
+                    Token,
+                    Enum.PlaybackState.Cancelled,
+                    false
+                );
+            else
+                Token.Elapsed = Token.Elapsed + Dt;
+                local Raw = math.clamp(
+                    Token.Elapsed / Token.Duration,
+                    0,
+                    1
+                );
+                local Alpha = GetFluidAlpha(
+                    Raw,
+                    Token.Context,
+                    Token.ExplicitInfo
+                );
+
+                for Property, StartValue in next, Token.Starts do
+                    local TargetValue = Token.Targets[Property];
+                    local Value, Supported = FluidLerpValue(
+                        StartValue,
+                        TargetValue,
+                        Alpha
+                    );
+                    if Supported then
+                        pcall(function()
+                            Token.Instance[Property] = Value;
+                        end);
+                    end
+                end
+
+                if Raw >= 1 then
+                    FinishFluidMotion(
+                        Token,
+                        Enum.PlaybackState.Completed,
+                        true
+                    );
+                end
+            end
+        end
+    end);
+
+    Library:GiveSignal(Library.FluidMotionConnection);
+end
+
 function Library:CancelMotion(Instance, Property)
     local Motions = Instance and Library.PropertyTweens[Instance];
     if not Motions then return; end
@@ -632,31 +970,79 @@ function Library:CancelMotion(Instance, Property)
         if Token and not Cancelled[Token] then
             Cancelled[Token] = true;
             for TokenProperty in next, Token.Properties do
-                if Motions[TokenProperty] == Token then Motions[TokenProperty] = nil; end
+                if Motions[TokenProperty] == Token then
+                    Motions[TokenProperty] = nil;
+                end
             end
-            pcall(function() Token.Tween:Cancel(); end);
+            pcall(function()
+                Token.Tween:Cancel();
+            end);
         end
     end
 
     if Property then
         Cancel(Motions[Property]);
     else
-        for _, Token in next, Motions do Cancel(Token); end
+        for _, Token in next, Motions do
+            Cancel(Token);
+        end
     end
 end;
 
-function Library:Animate(Instance, Properties, Duration, Completed, Context)
-    if not Instance or type(Properties) ~= 'table' or next(Properties) == nil then return nil; end
+function Library:Animate(
+    Instance,
+    Properties,
+    Duration,
+    Completed,
+    Context
+)
+    if not Instance
+        or type(Properties) ~= 'table'
+        or next(Properties) == nil then
+        return nil;
+    end
 
-    Context = Library:ResolveMotionContext(Properties, Context);
+    Context = Library:ResolveMotionContext(
+        Properties,
+        Context
+    );
 
     local HasChange = false;
+    local Starts = {};
+    local FluidSupported = true;
+
     for Property, Value in next, Properties do
-        local Success, Current = pcall(function() return Instance[Property]; end);
-        if not Success or Current ~= Value then HasChange = true; break; end
+        local Success, Current = pcall(function()
+            return Instance[Property];
+        end);
+
+        if not Success then
+            FluidSupported = false;
+            HasChange = true;
+        else
+            Starts[Property] = Current;
+            if Current ~= Value then
+                HasChange = true;
+            end
+
+            local _, Supported = FluidLerpValue(
+                Current,
+                Value,
+                0.5
+            );
+            if not Supported then
+                FluidSupported = false;
+            end
+        end
     end
+
     if not HasChange then
-        if Completed then pcall(Completed, Enum.PlaybackState.Completed); end
+        if Completed then
+            pcall(
+                Completed,
+                Enum.PlaybackState.Completed
+            );
+        end
         return nil;
     end
 
@@ -666,21 +1052,28 @@ function Library:Animate(Instance, Properties, Duration, Completed, Context)
         Library.PropertyTweens[Instance] = InstanceTweens;
     end
 
-    -- Repeated layout/refresh events frequently ask for the same destination.
-    -- Reuse the in-flight tween instead of restarting its easing curve, which
-    -- otherwise creates the delayed, sticky feeling seen under rapid input.
+    -- Same-target refreshes share the existing motion instead of restarting
+    -- the curve. This is especially important for layout and hover updates.
     local SharedToken;
     local SameTarget = true;
     for Property, Value in next, Properties do
         local Previous = InstanceTweens[Property];
-        if not Previous or Previous.Targets[Property] ~= Value or (SharedToken and SharedToken ~= Previous) then
+        if not Previous
+            or Previous.Targets[Property] ~= Value
+            or (SharedToken and SharedToken ~= Previous) then
             SameTarget = false;
             break;
         end
         SharedToken = Previous;
     end
+
     if SameTarget and SharedToken then
-        if Completed then table.insert(SharedToken.Callbacks, Completed); end
+        if Completed then
+            table.insert(
+                SharedToken.Callbacks,
+                Completed
+            );
+        end
         return SharedToken.Tween;
     end
 
@@ -689,43 +1082,85 @@ function Library:Animate(Instance, Properties, Duration, Completed, Context)
         local Previous = InstanceTweens[Property];
         if Previous and not PreviousTokens[Previous] then
             PreviousTokens[Previous] = true;
-            pcall(function() Previous.Tween:Cancel(); end);
+            pcall(function()
+                Previous.Tween:Cancel();
+            end);
         end
     end
 
-    local Tween;
-    local Success = pcall(function()
-        local Info = typeof(Duration) == 'TweenInfo' and Duration or Library:GetMenuTweenInfo(Duration, Context);
-        Tween = TweenService:Create(Instance, Info, Properties);
-    end);
+    local ExplicitInfo = typeof(Duration) == 'TweenInfo'
+        and Duration
+        or nil;
 
-    if not Success or not Tween then
-        for Property, Value in next, Properties do
-            pcall(function() Instance[Property] = Value; end);
-        end
-        if Completed then pcall(Completed, Enum.PlaybackState.Completed); end
-        return nil;
+    -- Preserve native TweenService semantics only for unusual TweenInfo values
+    -- that request delay/repeat/reversal. Normal Forma UI motion runs through
+    -- the frame-driven fluid timeline below.
+    if ExplicitInfo
+        and (
+            ExplicitInfo.DelayTime > 0
+            or ExplicitInfo.RepeatCount ~= 0
+            or ExplicitInfo.Reverses
+        ) then
+        return CreateNativeMotion(
+            Instance,
+            Properties,
+            Duration,
+            Completed,
+            Context,
+            InstanceTweens
+        );
     end
+
+    if not FluidSupported then
+        return CreateNativeMotion(
+            Instance,
+            Properties,
+            Duration,
+            Completed,
+            Context,
+            InstanceTweens
+        );
+    end
+
+    -- Re-read after cancelling previous motion so a retarget starts from the
+    -- exact rendered state reached on the last frame, never from stale data.
+    for Property in next, Properties do
+        local Success, Current = pcall(function()
+            return Instance[Property];
+        end);
+        if Success then
+            Starts[Property] = Current;
+        end
+    end
+
+    local MotionDuration, ResolvedInfo =
+        GetFluidDuration(Duration, Context);
 
     local Token = {
-        Tween = Tween;
+        Instance = Instance;
         Properties = Properties;
         Targets = table.clone(Properties);
+        Starts = Starts;
         Callbacks = {};
+        Context = Context;
+        Duration = MotionDuration;
+        ExplicitInfo = ResolvedInfo;
+        Elapsed = 0;
+        Done = false;
+        Native = false;
     };
-    if Completed then table.insert(Token.Callbacks, Completed); end
-    for Property in next, Properties do InstanceTweens[Property] = Token; end
 
-    Tween.Completed:Connect(function(State)
-        for Property in next, Properties do
-            if InstanceTweens[Property] == Token then InstanceTweens[Property] = nil; end
-        end
-        for _, Callback in ipairs(Token.Callbacks) do pcall(Callback, State); end
-        table.clear(Token.Callbacks);
-    end);
+    if Completed then
+        table.insert(Token.Callbacks, Completed);
+    end
 
-    Tween:Play();
-    return Tween;
+    local Handle = CreateFluidHandle(Token);
+    for Property in next, Properties do
+        InstanceTweens[Property] = Token;
+    end
+
+    Library.ActiveFluidMotions[Token] = true;
+    return Handle;
 end;
 
 function Library:SmoothDampScalar(Current, Target, Velocity, SmoothTime, DeltaTime)
