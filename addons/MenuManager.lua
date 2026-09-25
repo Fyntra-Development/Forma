@@ -1,12 +1,19 @@
 local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
-	MenuManager.Version = '1.4.0+build.1'
+	MenuManager.Version = '1.5.0+build.1'
 	MenuManager.Library = nil
 	MenuManager.EasingStyle = 'Sine'
 	MenuManager.EasingDirection = 'Out'
 	MenuManager.TweenSpeed = 0.18
 	MenuManager.DefaultTweenSpeed = 0.18
+	MenuManager.Fluidity = 1.00
+
+	-- Keybind reveal motion is a physical follower, not a restartable tween.
+	MenuManager.KeybindRowSmoothTime = 0.105
+	MenuManager.KeybindFadeSmoothTime = 0.082
+	MenuManager.KeybindRowTravel = 14
+	MenuManager.KeybindRowStagger = 0.028
 
 	-- Direct-manipulation motion is intentionally physical rather than tweened.
 	-- These values are critically-damped response times in seconds. They feed
@@ -109,23 +116,43 @@ local MenuManager = {} do
 			Min = ContextProfile.Min or StyleProfile.Min or 0.06;
 			Max = ContextProfile.Max or StyleProfile.Max or 0.45;
 			Overshoot = StyleProfile.Overshoot or 0;
+			Fluidity = math.clamp(
+				tonumber(ContextProfile.Fluidity)
+					or tonumber(self.Fluidity)
+					or 1,
+				0,
+				1
+			);
 		}
+	end
+
+	local function SmootherStep(Value)
+		local T = math.clamp(tonumber(Value) or 0, 0, 1)
+		return T * T * T * (T * ((T * 6) - 15) + 10)
 	end
 
 	function MenuManager:GetEasedAlpha(Alpha, Context)
 		local T = math.clamp(tonumber(Alpha) or 0, 0, 1)
 		if T <= 0 then return 0 end
 		if T >= 1 then return 1 end
+
 		local Profile = self:GetMotionProfile(Context)
+
+		-- Pre-warp time through a C2-continuous smootherstep before applying
+		-- the selected easing style. This gives every UI animation genuinely
+		-- soft velocity/acceleration at both ends instead of relying on native
+		-- easing presets that can start or stop abruptly.
+		local SoftT = SmootherStep(T)
+		local WarpedT = T + ((SoftT - T) * Profile.Fluidity)
 
 		local Success, Raw = pcall(
 			TweenService.GetValue,
 			TweenService,
-			T,
+			WarpedT,
 			Profile.Style,
 			Profile.Direction
 		)
-		if not Success or type(Raw) ~= 'number' then return T end
+		if not Success or type(Raw) ~= 'number' then return SoftT end
 		return math.clamp(Raw, -Profile.Overshoot, 1 + Profile.Overshoot)
 	end
 
@@ -141,6 +168,38 @@ local MenuManager = {} do
 	function MenuManager:GetTweenInfo(Duration, Context)
 		local Profile = self:GetMotionProfile(Context)
 		return TweenInfo.new(self:GetDuration(Duration, Context), Profile.Style, Profile.Direction)
+	end
+
+	function MenuManager:GetKeybindMotionProfile()
+		local GlobalScale = math.clamp(
+			(tonumber(self.TweenSpeed) or self.DefaultTweenSpeed)
+				/ self.DefaultTweenSpeed,
+			0.60,
+			1.75
+		)
+
+		return {
+			SmoothTime = math.clamp(
+				self.KeybindRowSmoothTime * GlobalScale,
+				0.055,
+				0.18
+			);
+			FadeSmoothTime = math.clamp(
+				self.KeybindFadeSmoothTime * GlobalScale,
+				0.045,
+				0.15
+			);
+			Travel = math.clamp(
+				tonumber(self.KeybindRowTravel) or 14,
+				8,
+				24
+			);
+			Stagger = math.clamp(
+				(tonumber(self.KeybindRowStagger) or 0.028) * GlobalScale,
+				0.012,
+				0.055
+			);
+		}
 	end
 
 	function MenuManager:GetDirectManipulationProfile(Context)
@@ -235,6 +294,10 @@ local MenuManager = {} do
 		self.TweenSpeed = math.clamp(tonumber(Value) or self.DefaultTweenSpeed, 0.08, 0.45)
 	end
 
+	function MenuManager:SetFluidity(Value)
+		self.Fluidity = math.clamp(tonumber(Value) or 1, 0, 1)
+	end
+
 	function MenuManager:ResetMenuPositions()
 		if self.Library and self.Library.ResetMenuPositions then self.Library:ResetMenuPositions(true) end
 	end
@@ -247,6 +310,18 @@ local MenuManager = {} do
 		Options.MenuManager_EasingDirection:OnChanged(function() self:SetEasingDirection(Options.MenuManager_EasingDirection.Value) end)
 		Groupbox:AddSlider('MenuManager_TweenSpeed', { Text = 'Animation response'; Default = self.TweenSpeed; Min = 0.08; Max = 0.45; Rounding = 2; Step = 0.01; Suffix = 's'; })
 		Options.MenuManager_TweenSpeed:OnChanged(function() self:SetTweenSpeed(Options.MenuManager_TweenSpeed.Value) end)
+
+		Groupbox:AddSlider('MenuManager_Fluidity', {
+			Text = 'Easing smoothness';
+			Default = self.Fluidity;
+			Min = 0;
+			Max = 1;
+			Rounding = 2;
+			Step = 0.05;
+		})
+		Options.MenuManager_Fluidity:OnChanged(function()
+			self:SetFluidity(Options.MenuManager_Fluidity.Value)
+		end)
 
 		Groupbox:AddSlider('MenuManager_DragSmoothTime', {
 			Text = 'Drag smoothing';
