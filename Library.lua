@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.20.5+build.1';
+    Version = '1.20.6+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -6460,15 +6460,41 @@ do
             Parent = ModeSelectInner;
         });
 
+        local ContainerRow = Library:Create('Frame', {
+            Name = 'KeybindRow';
+            BackgroundColor3 = Library.MainColor;
+            BorderSizePixel = 0;
+            Size = UDim2.fromOffset(1, 18);
+            Visible = false;
+            ZIndex = 109;
+            Parent = Library.KeybindContainer;
+        });
+        Library:AddToRegistry(ContainerRow, {
+            BackgroundColor3 = 'MainColor';
+        }, true);
+
+        local ContainerRowStroke = Library:Create('UIStroke', {
+            Color = Library.OutlineColor;
+            Thickness = 1;
+            Transparency = 0.34;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            LineJoinMode = Enum.LineJoinMode.Miter;
+            Parent = ContainerRow;
+        });
+        Library:AddToRegistry(ContainerRowStroke, {
+            Color = 'OutlineColor';
+        }, true);
+
         local ContainerLabel = Library:CreateLabel({
             BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(5, 0);
             TextXAlignment = Enum.TextXAlignment.Left;
             TextYAlignment = Enum.TextYAlignment.Center;
-            Size = UDim2.fromOffset(1, 16);
-            TextSize = 11;
-            Visible = false;
+            Size = UDim2.fromOffset(1, 18);
+            TextSize = 13;
+            Visible = true;
             ZIndex = 110;
-            Parent = Library.KeybindContainer;
+            Parent = ContainerRow;
         }, true);
 
         Library:GiveSignal(
@@ -6539,6 +6565,7 @@ do
 
             ContainerLabel.Text = string.format('[%s] %s ~ (%s)', KeyPicker.Value, Info.Text, KeyPicker.Mode);
 
+            ContainerRow.Visible = true;
             ContainerLabel.Visible = true;
             ContainerLabel.TextColor3 = State and Library.AccentColor or Library.FontColor;
 
@@ -12704,24 +12731,24 @@ do
     Library.WatermarkAnimationId = 0;
     Library:MakeDraggable(Library.Watermark);
 
-    local KEYBIND_HEADER_HEIGHT = 17;
-    local KEYBIND_ROW_HEIGHT = 16;
+    local KEYBIND_HEADER_HEIGHT = 20;
+    local KEYBIND_ROW_HEIGHT = 18;
     local KEYBIND_HEADER_PAD_X = 5;
-    local KEYBIND_BODY_PAD_X = 6;
+    local KEYBIND_ROW_PAD_X = 5;
 
     local InitialKeybindHeaderWidth = math.max(
         math.ceil(select(
             1,
-            Library:GetTextBounds('Keybinds', Library.Font, 11)
+            Library:GetTextBounds('Keybinds', Library.Font, 13)
         )) + (KEYBIND_HEADER_PAD_X * 2),
         24
     );
 
     local KeybindOuter = Library:Create('Frame', {
         AnchorPoint = Vector2.new(0, 0);
-        BackgroundColor3 = Library.MainColor;
+        BackgroundTransparency = 1;
         BorderSizePixel = 0;
-        Position = UDim2.new(0, 10, 0.5, -9);
+        Position = UDim2.new(0, 10, 0.5, -10);
         Size = UDim2.fromOffset(
             InitialKeybindHeaderWidth,
             KEYBIND_HEADER_HEIGHT + 4
@@ -12732,7 +12759,7 @@ do
     });
 
     local KeybindInner = Library:Create('Frame', {
-        BackgroundColor3 = Library.MainColor;
+        BackgroundTransparency = 1;
         BorderSizePixel = 0;
         Position = UDim2.fromOffset(0, 0);
         Size = UDim2.fromScale(1, 1);
@@ -12741,18 +12768,12 @@ do
         Parent = KeybindOuter;
     });
 
-    Library:AddToRegistry(KeybindOuter, {
-        BackgroundColor3 = 'MainColor';
-    }, true);
-    Library:AddToRegistry(KeybindInner, {
-        BackgroundColor3 = 'MainColor';
-    }, true);
     Library:AddCorner(KeybindOuter, 1);
     Library:AddCorner(KeybindInner, 1);
 
     local KeybindHeader = Library:Create('Frame', {
         BorderSizePixel = 0;
-        Position = UDim2.fromOffset(4, 2);
+        Position = UDim2.fromOffset(0, 0);
         Size = UDim2.fromOffset(
             InitialKeybindHeaderWidth,
             KEYBIND_HEADER_HEIGHT
@@ -12818,7 +12839,7 @@ do
         BackgroundTransparency = 1;
         Position = UDim2.fromOffset(KEYBIND_HEADER_PAD_X, 0);
         Size = UDim2.fromOffset(1, KEYBIND_HEADER_HEIGHT);
-        TextSize = 11;
+        TextSize = 13;
         TextXAlignment = Enum.TextXAlignment.Left;
         TextYAlignment = Enum.TextYAlignment.Center;
         Text = 'Keybinds';
@@ -12832,11 +12853,11 @@ do
             1,
             0,
             1,
-            -(KEYBIND_HEADER_HEIGHT + 5)
+            -KEYBIND_HEADER_HEIGHT
         );
         Position = UDim2.fromOffset(
             0,
-            KEYBIND_HEADER_HEIGHT + 5
+            KEYBIND_HEADER_HEIGHT
         );
         ZIndex = 1;
         Parent = KeybindInner;
@@ -12848,12 +12869,6 @@ do
         Parent = KeybindContainer;
     });
 
-    Library:Create('UIPadding', {
-        PaddingLeft = UDim.new(0, KEYBIND_BODY_PAD_X);
-        PaddingRight = UDim.new(0, KEYBIND_BODY_PAD_X);
-        Parent = KeybindContainer;
-    });
-
     local function RefreshKeybindLayout()
         if not KeybindOuter.Parent then return; end
 
@@ -12862,7 +12877,7 @@ do
             Library:GetTextBounds(
                 KeybindLabel.Text,
                 Library.Font,
-                11
+                13
             )
         );
         local HeaderWidth = math.max(
@@ -12883,49 +12898,59 @@ do
         local RowCount = 0;
         local MaxRowWidth = 0;
 
-        for _, Label in ipairs(KeybindContainer:GetChildren()) do
-            if Label:IsA('TextLabel') and Label.Visible then
-                local TextWidth = select(
-                    1,
-                    Library:GetTextBounds(
-                        Label.Text,
-                        Library.Font,
-                        11
-                    )
-                );
-                local RowWidth = math.max(
-                    math.ceil(TextWidth),
-                    1
-                );
+        for _, Row in ipairs(KeybindContainer:GetChildren()) do
+            if Row:IsA('Frame')
+                and Row.Name == 'KeybindRow'
+                and Row.Visible then
 
-                -- Match the reference: each row's GuiObject is exactly as wide
-                -- as its text, while only the body grows to the longest row.
-                Label.Size = UDim2.fromOffset(
-                    RowWidth,
-                    KEYBIND_ROW_HEIGHT
-                );
+                local Label = Row:FindFirstChildOfClass('TextLabel');
+                if Label then
+                    local TextWidth = select(
+                        1,
+                        Library:GetTextBounds(
+                            Label.Text,
+                            Library.Font,
+                            13
+                        )
+                    );
+                    local LabelWidth = math.max(
+                        math.ceil(TextWidth),
+                        1
+                    );
+                    local RowWidth = LabelWidth
+                        + (KEYBIND_ROW_PAD_X * 2);
 
-                RowCount = RowCount + 1;
-                MaxRowWidth = math.max(
-                    MaxRowWidth,
-                    RowWidth
-                );
+                    Label.Position = UDim2.fromOffset(
+                        KEYBIND_ROW_PAD_X,
+                        0
+                    );
+                    Label.Size = UDim2.fromOffset(
+                        LabelWidth,
+                        KEYBIND_ROW_HEIGHT
+                    );
+                    Row.Size = UDim2.fromOffset(
+                        RowWidth,
+                        KEYBIND_ROW_HEIGHT
+                    );
+
+                    RowCount = RowCount + 1;
+                    MaxRowWidth = math.max(
+                        MaxRowWidth,
+                        RowWidth
+                    );
+                end
             end
         end
 
         local ContentWidth = math.max(
-            4 + HeaderWidth + 4,
-            KEYBIND_BODY_PAD_X
-                + MaxRowWidth
-                + KEYBIND_BODY_PAD_X
+            HeaderWidth,
+            MaxRowWidth
         );
 
         KeybindOuter.Size = UDim2.fromOffset(
             ContentWidth,
             KEYBIND_HEADER_HEIGHT
-                + 5
                 + (RowCount * KEYBIND_ROW_HEIGHT)
-                + 3
         );
     end
 
