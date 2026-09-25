@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.21.4+build.1';
+    Version = '1.21.5+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -4957,25 +4957,18 @@ do
 
         local PickerStroke = Library:Create('UIStroke', {
             Name = 'PickerOutline';
-            Color = Library.OutlineColor;
+            Color = Library.BackgroundColor;
             Thickness = 1;
             LineJoinMode = Enum.LineJoinMode.Round;
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Parent = PickerFrameInner;
         });
         Library:AddToRegistry(PickerStroke, {
-            Color = 'OutlineColor';
+            Color = 'BackgroundColor';
         });
 
-        local Highlight = Library:Create('Frame', {
-            BackgroundColor3 = Library.AccentColor;
-            BorderSizePixel = 0;
-            Size = UDim2.new(1, 0, 0, 2);
-            ZIndex = 17;
-            Parent = PickerFrameInner;
-        });
-        Library:AddCorner(Highlight, 2);
-        local HighlightGradient = Library:AddMovingAccentGradient(Highlight, 1.6);
+        local Highlight;
+        local HighlightGradient;
 
         local PickerTitleSection = Library:Create('Frame', {
             BackgroundColor3 = Library.MainColor;
@@ -5015,6 +5008,32 @@ do
             BackgroundColor3 = 'BackgroundColor';
         });
 
+        local PickerTabsStroke = Library:Create('UIStroke', {
+            Color = Library.OutlineColor;
+            Thickness = 1;
+            Transparency = 0.28;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            LineJoinMode = Enum.LineJoinMode.Round;
+            Parent = PickerTabsSection;
+        });
+        Library:AddToRegistry(PickerTabsStroke, {
+            Color = 'OutlineColor';
+        });
+
+        Highlight = Library:Create('Frame', {
+            BackgroundColor3 = Library.AccentColor;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(0, 0);
+            Size = UDim2.new(1, 0, 0, 2);
+            ZIndex = 25;
+            Parent = PickerTabsSection;
+        });
+        Library:AddCorner(Highlight, 2);
+        HighlightGradient = Library:AddMovingAccentGradient(
+            Highlight,
+            1.6
+        );
+
         local PickerContentSection = Library:Create('Frame', {
             BackgroundColor3 = Library.BackgroundColor;
             BorderSizePixel = 0;
@@ -5026,6 +5045,18 @@ do
         Library:AddCorner(PickerContentSection, 2);
         Library:AddToRegistry(PickerContentSection, {
             BackgroundColor3 = 'BackgroundColor';
+        });
+
+        local PickerContentStroke = Library:Create('UIStroke', {
+            Color = Library.OutlineColor;
+            Thickness = 1;
+            Transparency = 0.28;
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+            LineJoinMode = Enum.LineJoinMode.Round;
+            Parent = PickerContentSection;
+        });
+        Library:AddToRegistry(PickerContentStroke, {
+            Color = 'OutlineColor';
         });
 
         local SatVibMapOuter = Library:Create('Frame', {
@@ -5385,7 +5416,7 @@ do
 
         local TabBar = Library:Create('Frame', {
             BackgroundTransparency = 1;
-            Position = UDim2.fromOffset(4, 2);
+            Position = UDim2.fromOffset(4, 3);
             Size = UDim2.new(1, -8, 0, 18);
             ZIndex = 22;
             Parent = PickerTabsSection;
