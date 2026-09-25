@@ -7527,22 +7527,23 @@ do
                 KeyPicker:Update();
             end;
 
+            -- Only dismiss on a left click outside. The same right-click
+            -- event that opens this context menu also reaches InputService,
+            -- so treating MB2 as an outside dismiss would close it instantly.
             if Input.UserInputType == Enum.UserInputType.MouseButton1
-                or Input.UserInputType == Enum.UserInputType.MouseButton2 then
-                if ModeSelectOuter.Visible then
-                    local AbsPos =
-                        ModeSelectOuter.AbsolutePosition;
-                    local AbsSize =
-                        ModeSelectOuter.AbsoluteSize;
-                    local Inside =
-                        Mouse.X >= AbsPos.X
-                        and Mouse.X <= AbsPos.X + AbsSize.X
-                        and Mouse.Y >= AbsPos.Y
-                        and Mouse.Y <= AbsPos.Y + AbsSize.Y;
+                and ModeSelectOuter.Visible then
+                local AbsPos =
+                    ModeSelectOuter.AbsolutePosition;
+                local AbsSize =
+                    ModeSelectOuter.AbsoluteSize;
+                local Inside =
+                    Mouse.X >= AbsPos.X
+                    and Mouse.X <= AbsPos.X + AbsSize.X
+                    and Mouse.Y >= AbsPos.Y
+                    and Mouse.Y <= AbsPos.Y + AbsSize.Y;
 
-                    if not Inside then
-                        HideModeSelect();
-                    end
+                if not Inside then
+                    HideModeSelect();
                 end
             end;
         end))
