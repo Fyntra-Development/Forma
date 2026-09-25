@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.21.6+build.1';
+    Version = '1.21.7+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -7001,7 +7001,14 @@ do
                     if KeyPicker.DoClick then KeyPicker:DoClick(); end
                     if KeyPicker.Update then KeyPicker:Update(); end
                     Library:AttemptSave();
-                    HideModeSelect();
+
+                    -- Keep the keybind settings card open after choosing a
+                    -- mode. Only close the normal dropdown list; the card now
+                    -- stays available for another choice until the user clicks
+                    -- outside it or explicitly opens another keybind menu.
+                    if ModeDropdown and ModeDropdown.Opened then
+                        ModeDropdown:CloseDropdown();
+                    end
                 end;
             }
         );
