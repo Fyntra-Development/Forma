@@ -1053,7 +1053,7 @@ end)
 
 -- The keybind list, watermark, main window, and Target HUD use Forma's draggable
 -- motion path. Their accent outlines use the shared moving accent treatment.
-Library.KeybindFrame.Visible = true
+Library:SetKeybindVisibility(true)
 
 -- UI Settings
 local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
@@ -1077,7 +1077,7 @@ MenuGroup:AddToggle('ShowKeybindList', {
 })
 
 Toggles.ShowKeybindList:OnChanged(function()
-    Library.KeybindFrame.Visible = Toggles.ShowKeybindList.Value
+    Library:SetKeybindVisibility(Toggles.ShowKeybindList.Value)
 end)
 
 MenuGroup:AddToggle('ShowWatermark', {
