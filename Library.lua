@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.21.3+build.1';
+    Version = '1.21.4+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -7030,7 +7030,7 @@ do
             );
         end
 
-        ModeDropdown = Funcs.AddDropdown(
+        ModeDropdown = Library.CreateDropdownElement(
             ModeDropdownHost,
             '__KeybindModeInternal',
             {
@@ -12355,6 +12355,10 @@ do
         end
         Library:UpdateDependencyBoxes();
         return Dropdown;
+    end;
+
+    Library.CreateDropdownElement = function(Host, Idx, Info)
+        return Funcs.AddDropdown(Host, Idx, Info);
     end;
 
     function Funcs:AddDependencyBox()
