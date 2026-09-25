@@ -6897,14 +6897,25 @@ do
 
         local ContainerRow = Library:Create('Frame', {
             Name = 'KeybindRow';
-            BackgroundColor3 = Library.MainColor;
+            BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Size = UDim2.fromOffset(1, 18);
             Visible = false;
             ZIndex = 109;
             Parent = Library.KeybindContainer;
         });
-        Library:AddToRegistry(ContainerRow, {
+
+        local ContainerVisual = Library:Create('Frame', {
+            Name = 'KeybindRowVisual';
+            BackgroundColor3 = Library.MainColor;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(0, 0);
+            Size = UDim2.fromOffset(1, 18);
+            Visible = true;
+            ZIndex = 109;
+            Parent = ContainerRow;
+        });
+        Library:AddToRegistry(ContainerVisual, {
             BackgroundColor3 = 'MainColor';
         }, true);
 
@@ -6914,7 +6925,7 @@ do
             Transparency = 0.34;
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             LineJoinMode = Enum.LineJoinMode.Miter;
-            Parent = ContainerRow;
+            Parent = ContainerVisual;
         });
         Library:AddToRegistry(ContainerRowStroke, {
             Color = 'OutlineColor';
@@ -6929,8 +6940,15 @@ do
             TextSize = 13;
             Visible = true;
             ZIndex = 110;
-            Parent = ContainerRow;
+            Parent = ContainerVisual;
         }, true);
+
+        if Library.RegisterKeybindRow then
+            Library:RegisterKeybindRow(
+                ContainerRow,
+                ContainerVisual
+            );
+        end
 
         Library:GiveSignal(
             ContainerLabel:GetPropertyChangedSignal('TextBounds'):Connect(
@@ -7001,6 +7019,7 @@ do
             ContainerLabel.Text = string.format('[%s] %s ~ (%s)', KeyPicker.Value, Info.Text, KeyPicker.Mode);
 
             ContainerRow.Visible = true;
+            ContainerVisual.Visible = true;
             ContainerLabel.Visible = true;
             ContainerLabel.TextColor3 = State and Library.AccentColor or Library.FontColor;
 
@@ -13304,6 +13323,100 @@ do
         Parent = KeybindContainer;
     });
 
+    Library.KeybindRowStates = Library.KeybindRowStates
+        or setmetatable({}, { __mode = 'k' });
+
+    local KeybindMotion = {
+        TargetVisible = false;
+        Running = false;
+        HeaderAlpha = 0;
+        HeaderVelocity = 0;
+        TargetHeaderAlpha = 0;
+    };
+
+    local function GetKeybindMotionProfile()
+        local Fallback = {
+            SmoothTime = 0.105;
+            FadeSmoothTime = 0.082;
+            Travel = 14;
+            Stagger = 0.028;
+        };
+
+        local Manager = Library.MenuManager;
+        if Manager and Manager.GetKeybindMotionProfile then
+            local Success, Profile = pcall(
+                Manager.GetKeybindMotionProfile,
+                Manager
+            );
+            if Success and type(Profile) == 'table' then
+                for Name, Value in next, Profile do
+                    Fallback[Name] = Value;
+                end
+            end
+        end
+
+        return Fallback;
+    end
+
+    local function GetKeybindRows()
+        local Rows = {};
+        for Row, State in next, Library.KeybindRowStates do
+            if Row
+                and Row.Parent == KeybindContainer
+                and Row.Visible
+                and State
+                and State.Visual
+                and State.Visual.Parent then
+                table.insert(Rows, State);
+            end
+        end
+
+        table.sort(Rows, function(A, B)
+            return (A.Row.LayoutOrder or 0)
+                < (B.Row.LayoutOrder or 0);
+        end);
+        return Rows;
+    end
+
+    function Library:RegisterKeybindRow(Row, Visual)
+        if not Row or not Visual then return nil; end
+
+        local Existing = Library.KeybindRowStates[Row];
+        if Existing then
+            Existing.Visual = Visual;
+            return Existing;
+        end
+
+        local Profile = GetKeybindMotionProfile();
+        local State = {
+            Row = Row;
+            Visual = Visual;
+            Offset = -Profile.Travel;
+            OffsetVelocity = 0;
+            Alpha = 0;
+            AlphaVelocity = 0;
+            TargetOffset = -Profile.Travel;
+            TargetAlpha = 0;
+            DelayUntil = 0;
+        };
+        Library.KeybindRowStates[Row] = State;
+
+        Visual.Position = UDim2.fromOffset(
+            State.Offset,
+            0
+        );
+        Library:SetUnifiedFadeProgress(Visual, 0);
+
+        if Library.KeybindVisible then
+            State.TargetOffset = 0;
+            State.TargetAlpha = 1;
+            State.DelayUntil = os.clock();
+            KeybindMotion.Running = true;
+        end
+
+        return State;
+    end
+
     local function RefreshKeybindLayout()
         if not KeybindOuter.Parent then return; end
 
@@ -13338,7 +13451,9 @@ do
                 and Row.Name == 'KeybindRow'
                 and Row.Visible then
 
-                local Label = Row:FindFirstChildOfClass('TextLabel');
+                local Visual = Row:FindFirstChild('KeybindRowVisual');
+                local Label = Visual
+                    and Visual:FindFirstChildOfClass('TextLabel');
                 if Label then
                     local TextWidth = select(
                         1,
@@ -13364,6 +13479,10 @@ do
                         KEYBIND_ROW_HEIGHT
                     );
                     Row.Size = UDim2.fromOffset(
+                        RowWidth,
+                        KEYBIND_ROW_HEIGHT
+                    );
+                    Visual.Size = UDim2.fromOffset(
                         RowWidth,
                         KEYBIND_ROW_HEIGHT
                     );
@@ -13398,6 +13517,228 @@ do
     );
 
     task.defer(RefreshKeybindLayout);
+
+    Library.KeybindVisible = false;
+    Library:SetUnifiedFadeProgress(KeybindHeader, 0);
+
+    function Library:IsKeybindVisible()
+        return Library.KeybindVisible == true;
+    end
+
+    function Library:SetKeybindVisibility(Bool, Instant)
+        Bool = not not Bool;
+        Library.KeybindVisible = Bool;
+        KeybindMotion.TargetVisible = Bool;
+
+        RefreshKeybindLayout();
+
+        local Rows = GetKeybindRows();
+        local Profile = GetKeybindMotionProfile();
+        local Now = os.clock();
+
+        if Instant then
+            KeybindMotion.Running = false;
+            KeybindMotion.HeaderAlpha = Bool and 1 or 0;
+            KeybindMotion.HeaderVelocity = 0;
+            KeybindMotion.TargetHeaderAlpha =
+                KeybindMotion.HeaderAlpha;
+
+            Library:SetUnifiedFadeProgress(
+                KeybindHeader,
+                KeybindMotion.HeaderAlpha
+            );
+
+            for _, State in ipairs(Rows) do
+                State.Offset = Bool and 0 or -Profile.Travel;
+                State.OffsetVelocity = 0;
+                State.Alpha = Bool and 1 or 0;
+                State.AlphaVelocity = 0;
+                State.TargetOffset = State.Offset;
+                State.TargetAlpha = State.Alpha;
+                State.DelayUntil = 0;
+                State.Visual.Position = UDim2.fromOffset(
+                    State.Offset,
+                    0
+                );
+                Library:SetUnifiedFadeProgress(
+                    State.Visual,
+                    State.Alpha
+                );
+            end
+
+            KeybindOuter.Visible = Bool;
+            return;
+        end
+
+        if Bool and not KeybindOuter.Visible then
+            KeybindOuter.Visible = true;
+            KeybindMotion.HeaderAlpha = 0;
+            KeybindMotion.HeaderVelocity = 0;
+            Library:SetUnifiedFadeProgress(
+                KeybindHeader,
+                0
+            );
+
+            for _, State in ipairs(Rows) do
+                State.Offset = -Profile.Travel;
+                State.OffsetVelocity = 0;
+                State.Alpha = 0;
+                State.AlphaVelocity = 0;
+                State.Visual.Position = UDim2.fromOffset(
+                    State.Offset,
+                    0
+                );
+                Library:SetUnifiedFadeProgress(
+                    State.Visual,
+                    0
+                );
+            end
+        end
+
+        KeybindMotion.TargetHeaderAlpha = Bool and 1 or 0;
+
+        for Index, State in ipairs(Rows) do
+            State.TargetOffset = Bool and 0 or -Profile.Travel;
+            State.TargetAlpha = Bool and 1 or 0;
+
+            local StaggerIndex = Bool
+                and (Index - 1)
+                or (#Rows - Index);
+            State.DelayUntil = Now
+                + (StaggerIndex * Profile.Stagger);
+        end
+
+        KeybindMotion.Running = true;
+
+        if Bool
+            and Library.OptionWheel
+            and Library.OptionWheel.Open
+            and Library.OptionWheel.RefreshKeybindAvoidance then
+            Library.OptionWheel:RefreshKeybindAvoidance();
+        end
+    end
+
+    Library:GiveSignal(RenderStepped:Connect(function(Delta)
+        if not KeybindMotion.Running then return; end
+        if not KeybindOuter.Parent then return; end
+
+        local Dt = math.min(
+            math.max(tonumber(Delta) or (1 / 60), 0),
+            0.05
+        );
+        local Profile = GetKeybindMotionProfile();
+        local Now = os.clock();
+        local Settled = true;
+
+        KeybindMotion.HeaderAlpha,
+        KeybindMotion.HeaderVelocity =
+            Library:SmoothDampScalar(
+                KeybindMotion.HeaderAlpha,
+                KeybindMotion.TargetHeaderAlpha,
+                KeybindMotion.HeaderVelocity,
+                Profile.FadeSmoothTime,
+                Dt
+            );
+
+        KeybindMotion.HeaderAlpha = math.clamp(
+            KeybindMotion.HeaderAlpha,
+            0,
+            1
+        );
+        Library:SetCachedUnifiedFadeProgress(
+            KeybindHeader,
+            KeybindMotion.HeaderAlpha
+        );
+
+        if math.abs(
+            KeybindMotion.HeaderAlpha
+                - KeybindMotion.TargetHeaderAlpha
+        ) >= 0.0015
+            or math.abs(KeybindMotion.HeaderVelocity) >= 0.015 then
+            Settled = false;
+        end
+
+        for _, State in ipairs(GetKeybindRows()) do
+            if Now >= State.DelayUntil then
+                State.Offset,
+                State.OffsetVelocity =
+                    Library:SmoothDampScalar(
+                        State.Offset,
+                        State.TargetOffset,
+                        State.OffsetVelocity,
+                        Profile.SmoothTime,
+                        Dt
+                    );
+
+                State.Alpha,
+                State.AlphaVelocity =
+                    Library:SmoothDampScalar(
+                        State.Alpha,
+                        State.TargetAlpha,
+                        State.AlphaVelocity,
+                        Profile.FadeSmoothTime,
+                        Dt
+                    );
+            else
+                Settled = false;
+            end
+
+            State.Alpha = math.clamp(
+                State.Alpha,
+                0,
+                1
+            );
+            State.Visual.Position = UDim2.fromOffset(
+                State.Offset,
+                0
+            );
+            Library:SetCachedUnifiedFadeProgress(
+                State.Visual,
+                State.Alpha
+            );
+
+            local RowSettled =
+                math.abs(State.Offset - State.TargetOffset) < 0.025
+                and math.abs(State.OffsetVelocity) < 0.10
+                and math.abs(State.Alpha - State.TargetAlpha) < 0.0015
+                and math.abs(State.AlphaVelocity) < 0.015;
+
+            if not RowSettled then
+                Settled = false;
+            end
+        end
+
+        if Settled then
+            KeybindMotion.Running = false;
+            KeybindMotion.HeaderAlpha =
+                KeybindMotion.TargetHeaderAlpha;
+            KeybindMotion.HeaderVelocity = 0;
+
+            Library:SetCachedUnifiedFadeProgress(
+                KeybindHeader,
+                KeybindMotion.HeaderAlpha
+            );
+
+            for _, State in ipairs(GetKeybindRows()) do
+                State.Offset = State.TargetOffset;
+                State.OffsetVelocity = 0;
+                State.Alpha = State.TargetAlpha;
+                State.AlphaVelocity = 0;
+                State.Visual.Position = UDim2.fromOffset(
+                    State.Offset,
+                    0
+                );
+                Library:SetCachedUnifiedFadeProgress(
+                    State.Visual,
+                    State.Alpha
+                );
+            end
+
+            if not KeybindMotion.TargetVisible then
+                KeybindOuter.Visible = false;
+            end
+        end
+    end));
 
     Library.KeybindFrame = KeybindOuter;
     Library.KeybindContainer = KeybindContainer;
@@ -14755,10 +15096,9 @@ function Library:CreateOptionWheel(Config)
                 Text = 'Toggle Keybinds';
                 Callback = function()
                     if Library.KeybindFrame then
-                        Library.KeybindFrame.Visible = not Library.KeybindFrame.Visible;
-                        if Library.KeybindFrame.Visible and Wheel.Open and Wheel.RefreshKeybindAvoidance then
-                            Wheel:RefreshKeybindAvoidance();
-                        end
+                        Library:SetKeybindVisibility(
+                            not Library:IsKeybindVisible()
+                        );
                     end
                 end;
             });
