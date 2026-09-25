@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.21.5+build.1';
+    Version = '1.21.6+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -4859,7 +4859,7 @@ do
             SettingsEnabled = SettingsEnabled;
             EditingTarget = 'Solid';
             Type = 'ColorPicker';
-            Title = 'Color Picker',
+            Title = type(Info.Title) == 'string' and Info.Title or 'Color picker',
             Callback = Info.Callback or function(Color) end;
         };
 
@@ -4926,7 +4926,7 @@ do
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18),
-            Size = UDim2.fromOffset(230, Info.Transparency and 321 or 302);
+            Size = UDim2.fromOffset(230, Info.Transparency and 295 or 276);
             Visible = false;
             ZIndex = 15;
             Parent = ScreenGui,
@@ -4945,7 +4945,7 @@ do
         end)
 
         local PickerFrameInner = Library:Create('Frame', {
-            BackgroundColor3 = Library.MainColor;
+            BackgroundColor3 = Library.BackgroundColor;
             BorderSizePixel = 0;
             Size = UDim2.new(1, 0, 1, 0);
             ZIndex = 16;
@@ -4957,112 +4957,30 @@ do
 
         local PickerStroke = Library:Create('UIStroke', {
             Name = 'PickerOutline';
-            Color = Library.BackgroundColor;
+            Color = Library.OutlineColor;
             Thickness = 1;
             LineJoinMode = Enum.LineJoinMode.Round;
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
             Parent = PickerFrameInner;
         });
         Library:AddToRegistry(PickerStroke, {
-            Color = 'BackgroundColor';
-        });
-
-        local Highlight;
-        local HighlightGradient;
-
-        local PickerTitleSection = Library:Create('Frame', {
-            BackgroundColor3 = Library.MainColor;
-            BorderSizePixel = 0;
-            Position = UDim2.fromOffset(3, 3);
-            Size = UDim2.new(1, -6, 0, 20);
-            ZIndex = 17;
-            Parent = PickerFrameInner;
-        });
-        Library:AddCorner(PickerTitleSection, 2);
-        Library:AddToRegistry(PickerTitleSection, {
-            BackgroundColor3 = 'MainColor';
-        });
-
-        local PickerTitleLabel = Library:CreateLabel({
-            BackgroundTransparency = 1;
-            Position = UDim2.fromOffset(6, 0);
-            Size = UDim2.new(1, -12, 1, 0);
-            Text = ColorPicker.Title;
-            TextSize = 13;
-            TextXAlignment = Enum.TextXAlignment.Left;
-            TextYAlignment = Enum.TextYAlignment.Center;
-            ZIndex = 18;
-            Parent = PickerTitleSection;
-        });
-
-        local PickerTabsSection = Library:Create('Frame', {
-            BackgroundColor3 = Library.BackgroundColor;
-            BorderSizePixel = 0;
-            Position = UDim2.fromOffset(3, 26);
-            Size = UDim2.new(1, -6, 0, 21);
-            ZIndex = 17;
-            Parent = PickerFrameInner;
-        });
-        Library:AddCorner(PickerTabsSection, 2);
-        Library:AddToRegistry(PickerTabsSection, {
-            BackgroundColor3 = 'BackgroundColor';
-        });
-
-        local PickerTabsStroke = Library:Create('UIStroke', {
-            Color = Library.OutlineColor;
-            Thickness = 1;
-            Transparency = 0.28;
-            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-            LineJoinMode = Enum.LineJoinMode.Round;
-            Parent = PickerTabsSection;
-        });
-        Library:AddToRegistry(PickerTabsStroke, {
             Color = 'OutlineColor';
         });
 
-        Highlight = Library:Create('Frame', {
+        local Highlight = Library:Create('Frame', {
             BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
-            Position = UDim2.fromOffset(0, 0);
             Size = UDim2.new(1, 0, 0, 2);
-            ZIndex = 25;
-            Parent = PickerTabsSection;
-        });
-        Library:AddCorner(Highlight, 2);
-        HighlightGradient = Library:AddMovingAccentGradient(
-            Highlight,
-            1.6
-        );
-
-        local PickerContentSection = Library:Create('Frame', {
-            BackgroundColor3 = Library.BackgroundColor;
-            BorderSizePixel = 0;
-            Position = UDim2.fromOffset(3, 50);
-            Size = UDim2.new(1, -6, 1, -53);
-            ZIndex = 16;
+            ZIndex = 17;
             Parent = PickerFrameInner;
         });
-        Library:AddCorner(PickerContentSection, 2);
-        Library:AddToRegistry(PickerContentSection, {
-            BackgroundColor3 = 'BackgroundColor';
-        });
-
-        local PickerContentStroke = Library:Create('UIStroke', {
-            Color = Library.OutlineColor;
-            Thickness = 1;
-            Transparency = 0.28;
-            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-            LineJoinMode = Enum.LineJoinMode.Round;
-            Parent = PickerContentSection;
-        });
-        Library:AddToRegistry(PickerContentStroke, {
-            Color = 'OutlineColor';
-        });
+        Library:AddCorner(Highlight, 2);
+        local HighlightGradient = Library:AddMovingAccentGradient(Highlight, 1.6);
 
         local SatVibMapOuter = Library:Create('Frame', {
             BackgroundColor3 = Library.OutlineColor;
             BorderSizePixel = 0;
-            Position = UDim2.new(0, 4, 0, 51);
+            Position = UDim2.new(0, 4, 0, 25);
             Size = UDim2.new(0, 200, 0, 200);
             ZIndex = 17;
             Parent = PickerFrameInner;
@@ -5113,7 +5031,7 @@ do
         local HueSelectorOuter = Library:Create('Frame', {
             BackgroundColor3 = Library.OutlineColor;
             BorderSizePixel = 0;
-            Position = UDim2.new(0, 210, 0, 51);
+            Position = UDim2.new(0, 210, 0, 25);
             Size = UDim2.new(0, 14, 0, 200);
             ZIndex = 17;
             ClipsDescendants = false;
@@ -5148,7 +5066,7 @@ do
         local HueBoxOuter = Library:Create('Frame', {
             BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.OutlineColor;
-            Position = UDim2.fromOffset(4, 254),
+            Position = UDim2.fromOffset(4, 228),
             Size = UDim2.new(0.5, -6, 0, 20),
             ZIndex = 18,
             Parent = PickerFrameInner;
@@ -5190,7 +5108,7 @@ do
         });
 
         local RgbBoxBase = Library:Create(HueBoxOuter:Clone(), {
-            Position = UDim2.new(0.5, 2, 0, 254),
+            Position = UDim2.new(0.5, 2, 0, 228),
             Size = UDim2.new(0.5, -6, 0, 20),
             Parent = PickerFrameInner
         });
@@ -5214,7 +5132,7 @@ do
             TransparencyBoxOuter = Library:Create('Frame', {
                 BackgroundColor3 = Library.OutlineColor;
                 BorderSizePixel = 0;
-                Position = UDim2.fromOffset(4, 277);
+                Position = UDim2.fromOffset(4, 251);
                 Size = UDim2.new(1, -8, 0, 15);
                 ZIndex = 19;
                 Parent = PickerFrameInner;
@@ -5256,7 +5174,7 @@ do
         local CopyBtnOuter = Library:Create('Frame', {
             BackgroundColor3 = Library.OutlineColor;
             BorderSizePixel = 0;
-            Position = UDim2.fromOffset(4, Info.Transparency and 296 or 277);
+            Position = UDim2.fromOffset(4, Info.Transparency and 270 or 251);
             Size = UDim2.new(0.5, -6, 0, 20);
             ZIndex = 18;
             Parent = PickerFrameInner;
@@ -5303,7 +5221,7 @@ do
         local PasteBtnOuter = Library:Create('Frame', {
             BackgroundColor3 = Library.OutlineColor;
             BorderSizePixel = 0;
-            Position = UDim2.new(0.5, 2, 0, Info.Transparency and 296 or 277);
+            Position = UDim2.new(0.5, 2, 0, Info.Transparency and 270 or 251);
             Size = UDim2.new(0.5, -6, 0, 20);
             ZIndex = 18;
             Parent = PickerFrameInner;
@@ -5419,7 +5337,7 @@ do
             Position = UDim2.fromOffset(4, 3);
             Size = UDim2.new(1, -8, 0, 18);
             ZIndex = 22;
-            Parent = PickerTabsSection;
+            Parent = PickerFrameInner;
         });
         local ColorTab = Library:CreateLabel({
             Active = true;
@@ -5494,8 +5412,8 @@ do
         if SettingsEnabled then
             SettingsContent = Library:Create('Frame', {
                 BackgroundTransparency = 1;
-                Position = UDim2.fromOffset(0, 50);
-                Size = UDim2.new(1, 0, 1, -53);
+                Position = UDim2.fromOffset(0, 24);
+                Size = UDim2.new(1, 0, 1, -24);
                 Visible = false;
                 ZIndex = 18;
                 Parent = PickerFrameInner;
@@ -6032,7 +5950,7 @@ do
             end, 'copy')
         end
 
-        Library:AddToRegistry(PickerFrameInner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'OutlineColor'; });
+        Library:AddToRegistry(PickerFrameInner, { BackgroundColor3 = 'BackgroundColor'; BorderColor3 = 'OutlineColor'; });
         Library:AddToRegistry(Highlight, {
             BackgroundColor3 = function()
                 return PickerCurrentAccent or Library.AccentColor;
