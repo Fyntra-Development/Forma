@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.21.2+build.1';
+    Version = '1.21.3+build.1';
     Release = 'HF';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -4859,7 +4859,7 @@ do
             SettingsEnabled = SettingsEnabled;
             EditingTarget = 'Solid';
             Type = 'ColorPicker';
-            Title = type(Info.Title) == 'string' and Info.Title or 'Colorpicker',
+            Title = 'Color Picker',
             Callback = Info.Callback or function(Color) end;
         };
 
@@ -4945,7 +4945,7 @@ do
         end)
 
         local PickerFrameInner = Library:Create('Frame', {
-            BackgroundColor3 = Library.BackgroundColor;
+            BackgroundColor3 = Library.MainColor;
             BorderSizePixel = 0;
             Size = UDim2.new(1, 0, 1, 0);
             ZIndex = 16;
@@ -5003,7 +5003,7 @@ do
         });
 
         local PickerTabsSection = Library:Create('Frame', {
-            BackgroundColor3 = Library.Contrast;
+            BackgroundColor3 = Library.BackgroundColor;
             BorderSizePixel = 0;
             Position = UDim2.fromOffset(3, 26);
             Size = UDim2.new(1, -6, 0, 21);
@@ -5012,11 +5012,11 @@ do
         });
         Library:AddCorner(PickerTabsSection, 2);
         Library:AddToRegistry(PickerTabsSection, {
-            BackgroundColor3 = 'Contrast';
+            BackgroundColor3 = 'BackgroundColor';
         });
 
         local PickerContentSection = Library:Create('Frame', {
-            BackgroundColor3 = Library.MainColor;
+            BackgroundColor3 = Library.BackgroundColor;
             BorderSizePixel = 0;
             Position = UDim2.fromOffset(3, 50);
             Size = UDim2.new(1, -6, 1, -53);
@@ -5025,7 +5025,7 @@ do
         });
         Library:AddCorner(PickerContentSection, 2);
         Library:AddToRegistry(PickerContentSection, {
-            BackgroundColor3 = 'MainColor';
+            BackgroundColor3 = 'BackgroundColor';
         });
 
         local SatVibMapOuter = Library:Create('Frame', {
@@ -6001,7 +6001,7 @@ do
             end, 'copy')
         end
 
-        Library:AddToRegistry(PickerFrameInner, { BackgroundColor3 = 'BackgroundColor'; BorderColor3 = 'OutlineColor'; });
+        Library:AddToRegistry(PickerFrameInner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'OutlineColor'; });
         Library:AddToRegistry(Highlight, {
             BackgroundColor3 = function()
                 return PickerCurrentAccent or Library.AccentColor;
@@ -6877,33 +6877,21 @@ do
         DisplayLabel:GetPropertyChangedSignal('TextBounds'):Connect(ResizeKeyDisplay);
         SetKeyDisplay(Info.Default);
 
-        -- Lightweight keybind mode card. It deliberately does not look like
-        -- a separate window: right-clicking simply exposes a standard Forma
-        -- dropdown control for choosing the binding mode.
+        -- This popup only hosts the normal Forma Dropdown element.
         local MODE_CARD_WIDTH = 154;
-        local MODE_CARD_HEIGHT = 47;
-        local MODE_FIELD_HEIGHT = 20;
-        local MODE_LIST_PADDING = 5;
-        local MODE_LIST_HEIGHT =
-            (#Modes * MODE_FIELD_HEIGHT)
-            + (MODE_LIST_PADDING * 2);
+        local MODE_CARD_HEIGHT = 48;
 
         local ModeSelectOuter = Library:Create('Frame', {
-            BackgroundColor3 = Library.BackgroundColor;
+            BackgroundColor3 = Library.MainColor;
             BorderSizePixel = 0;
             Position = UDim2.fromOffset(0, 0);
-            Size = UDim2.fromOffset(
-                MODE_CARD_WIDTH,
-                MODE_CARD_HEIGHT
-            );
+            Size = UDim2.fromOffset(MODE_CARD_WIDTH, MODE_CARD_HEIGHT);
             Visible = false;
             ZIndex = 620;
             Parent = ScreenGui;
         });
         Library:AddCorner(ModeSelectOuter, 3);
-        Library:AddToRegistry(ModeSelectOuter, {
-            BackgroundColor3 = 'BackgroundColor';
-        });
+        Library:AddToRegistry(ModeSelectOuter, { BackgroundColor3 = 'MainColor'; });
 
         local ModeSelectStroke = Library:Create('UIStroke', {
             Color = Library.OutlineColor;
@@ -6913,11 +6901,9 @@ do
             LineJoinMode = Enum.LineJoinMode.Round;
             Parent = ModeSelectOuter;
         });
-        Library:AddToRegistry(ModeSelectStroke, {
-            Color = 'OutlineColor';
-        });
+        Library:AddToRegistry(ModeSelectStroke, { Color = 'OutlineColor'; });
 
-        local ModeFieldLabel = Library:CreateLabel({
+        Library:CreateLabel({
             BackgroundTransparency = 1;
             Position = UDim2.fromOffset(7, 4);
             Size = UDim2.new(1, -14, 0, 14);
@@ -6929,349 +6915,102 @@ do
             Parent = ModeSelectOuter;
         });
 
-        local ModeDropdownOuter = Library:Create('Frame', {
-            BackgroundColor3 = Library.OutlineColor;
+        local ModeDropdownHostFrame = Library:Create('Frame', {
+            BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Position = UDim2.fromOffset(6, 21);
-            Size = UDim2.new(1, -12, 0, MODE_FIELD_HEIGHT);
-            ZIndex = 622;
+            Size = UDim2.new(1, -8, 0, 20);
+            ZIndex = 621;
             Parent = ModeSelectOuter;
         });
-        Library:AddCorner(ModeDropdownOuter, 3);
-        Library:AddToRegistry(ModeDropdownOuter, {
-            BackgroundColor3 = 'OutlineColor';
-        });
 
-        local ModeDropdownInner = Library:Create('Frame', {
-            Active = true;
-            BackgroundColor3 = Library.Contrast;
-            BorderColor3 = Library.OutlineColor;
-            BorderMode = Enum.BorderMode.Inset;
-            BorderSizePixel = 1;
-            Position = UDim2.fromOffset(1, 1);
-            Size = UDim2.new(1, -2, 1, -2);
-            ZIndex = 623;
-            Parent = ModeDropdownOuter;
-        });
-        Library:AddCorner(ModeDropdownInner, 2);
-        Library:AddToRegistry(ModeDropdownInner, {
-            BackgroundColor3 = 'Contrast';
-            BorderColor3 = 'OutlineColor';
-        });
-        Library:AddControlBackgroundGradient(
-            ModeDropdownInner
-        );
-
-        local ModeValueLabel = Library:CreateLabel({
-            BackgroundTransparency = 1;
-            Position = UDim2.fromOffset(5, 0);
-            Size = UDim2.new(1, -24, 1, 0);
-            Text = KeyPicker.Mode;
-            TextSize = 12;
-            TextXAlignment = Enum.TextXAlignment.Left;
-            TextYAlignment = Enum.TextYAlignment.Center;
-            ZIndex = 625;
-            Parent = ModeDropdownInner;
-        });
-
-        local ModeArrow = Library:Create('ImageLabel', {
-            AnchorPoint = Vector2.new(0, 0.5);
-            BackgroundTransparency = 1;
-            Position = UDim2.new(1, -16, 0.5, 0);
-            Size = UDim2.fromOffset(11, 11);
-            Image = 'http://www.roblox.com/asset/?id=6282522798';
-            ZIndex = 625;
-            Parent = ModeDropdownInner;
-        });
-        Library:AddToRegistry(ModeArrow, {
-            ImageColor3 = 'FontColor';
-        });
-
-        local ModeListOuter = Library:Create('Frame', {
-            BackgroundColor3 = Library.Contrast;
-            BorderSizePixel = 0;
-            Size = UDim2.fromOffset(
-                MODE_CARD_WIDTH - 12,
-                MODE_LIST_HEIGHT
-            );
-            Visible = false;
-            ZIndex = 630;
-            Parent = ScreenGui;
-        });
-        Library:AddCorner(ModeListOuter, 3);
-        Library:AddToRegistry(ModeListOuter, {
-            BackgroundColor3 = 'Contrast';
-        });
-
-        local ModeListStroke = Library:Create('UIStroke', {
-            Color = Library.OutlineColor;
-            Thickness = 1;
-            Transparency = 0.08;
-            ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-            LineJoinMode = Enum.LineJoinMode.Round;
-            Parent = ModeListOuter;
-        });
-        Library:AddToRegistry(ModeListStroke, {
-            Color = 'OutlineColor';
-        });
-
-        local ModeListInner = Library:Create('Frame', {
-            BackgroundTransparency = 1;
-            BorderSizePixel = 0;
-            Position = UDim2.fromOffset(
-                MODE_LIST_PADDING,
-                MODE_LIST_PADDING
-            );
-            Size = UDim2.new(
-                1,
-                -(MODE_LIST_PADDING * 2),
-                1,
-                -(MODE_LIST_PADDING * 2)
-            );
-            ZIndex = 631;
-            Parent = ModeListOuter;
-        });
-
-        Library:Create('UIListLayout', {
-            FillDirection = Enum.FillDirection.Vertical;
-            SortOrder = Enum.SortOrder.LayoutOrder;
-            Parent = ModeListInner;
-        });
+        local ModeDropdownHost = { Container = ModeDropdownHostFrame; };
+        function ModeDropdownHost:AddBlank() end
+        function ModeDropdownHost:Resize() end
 
         local ModeAnimationId = 0;
-        local ModeTargetPosition =
-            UDim2.fromOffset(0, 0);
-        local ModeListOpen = false;
+        local ModeTargetPosition = UDim2.fromOffset(0, 0);
+        local ModeDropdown;
+        local SuppressModeDropdownCallback = false;
 
         local function ResolveModeMenuPosition()
             local Viewport = workspace.CurrentCamera
                 and workspace.CurrentCamera.ViewportSize
                 or Vector2.new(1920, 1080);
-
-            local X = Mouse.X + 9;
-            local Y = Mouse.Y + 7;
-
-            X = math.clamp(
-                X,
-                6,
-                math.max(
-                    6,
-                    Viewport.X - MODE_CARD_WIDTH - 6
-                )
-            );
-            Y = math.clamp(
-                Y,
-                6,
-                math.max(
-                    6,
-                    Viewport.Y
-                        - MODE_CARD_HEIGHT
-                        - MODE_LIST_HEIGHT
-                        - 12
-                )
-            );
-
+            local X = math.clamp(Mouse.X + 9, 6, math.max(6, Viewport.X - MODE_CARD_WIDTH - 6));
+            local Y = math.clamp(Mouse.Y + 7, 6, math.max(6, Viewport.Y - MODE_CARD_HEIGHT - 6));
             return UDim2.fromOffset(X, Y);
         end
 
-        local function PositionModeList()
-            ModeListOuter.Position = UDim2.fromOffset(
-                ModeSelectOuter.Position.X.Offset + 6,
-                ModeSelectOuter.Position.Y.Offset
-                    + MODE_CARD_HEIGHT
-                    + 4
-            );
-        end
-
-        local function SetModeListOpen(Open, Instant)
-            Open = not not Open;
-            ModeListOpen = Open;
-            PositionModeList();
-
-            if Open then
-                if not ModeListOuter.Visible then
-                    Library:SetUnifiedFadeProgress(
-                        ModeListOuter,
-                        0
-                    );
-                    ModeListOuter.Position =
-                        ModeListOuter.Position
-                        + UDim2.fromOffset(0, -3);
-                    ModeListOuter.Visible = true;
-                end
-
-                local Target =
-                    UDim2.fromOffset(
-                        ModeSelectOuter.Position.X.Offset + 6,
-                        ModeSelectOuter.Position.Y.Offset
-                            + MODE_CARD_HEIGHT
-                            + 4
-                    );
-
-                if Instant then
-                    ModeListOuter.Position = Target;
-                    Library:SetUnifiedFadeProgress(
-                        ModeListOuter,
-                        1
-                    );
-                else
-                    Library:Animate(
-                        ModeListOuter,
-                        { Position = Target; },
-                        0.16,
-                        nil,
-                        'Dropdown'
-                    );
-                    Library:TweenUnifiedFade(
-                        ModeListOuter,
-                        1,
-                        0.14,
-                        nil,
-                        'Fade'
-                    );
-                end
-            elseif ModeListOuter.Visible then
-                if Instant then
-                    Library:CancelMotion(
-                        ModeListOuter
-                    );
-                    Library:SetUnifiedFadeProgress(
-                        ModeListOuter,
-                        0
-                    );
-                    ModeListOuter.Visible = false;
-                else
-                    Library:Animate(
-                        ModeListOuter,
-                        {
-                            Position =
-                                ModeListOuter.Position
-                                + UDim2.fromOffset(0, -3);
-                        },
-                        0.13,
-                        nil,
-                        'DropdownExit'
-                    );
-                    Library:TweenUnifiedFade(
-                        ModeListOuter,
-                        0,
-                        0.12,
-                        function(State)
-                            if not ModeListOpen
-                                and State
-                                    ~= Enum.PlaybackState.Cancelled then
-                                ModeListOuter.Visible =
-                                    false;
-                            end
-                        end,
-                        'Fade'
-                    );
-                end
+        local function SyncModeDropdown()
+            if not ModeDropdown then return; end
+            if ModeDropdown.Value ~= KeyPicker.Mode then
+                ModeDropdown.Value = KeyPicker.Mode;
+                ModeDropdown:Display();
             end
         end
 
         local function ShowModeSelect()
             ModeAnimationId = ModeAnimationId + 1;
-
             if Library.ActiveKeybindModeMenu
                 and Library.ActiveKeybindModeMenu.Hide
-                and Library.ActiveKeybindModeMenu.Frame
-                    ~= ModeSelectOuter then
-                Library.ActiveKeybindModeMenu.Hide(
-                    true
-                );
+                and Library.ActiveKeybindModeMenu.Frame ~= ModeSelectOuter then
+                Library.ActiveKeybindModeMenu.Hide(true);
             end
 
-            ModeTargetPosition =
-                ResolveModeMenuPosition();
-            ModeValueLabel.Text =
-                tostring(KeyPicker.Mode);
+            ModeTargetPosition = ResolveModeMenuPosition();
+            SyncModeDropdown();
 
             if not ModeSelectOuter.Visible then
-                Library:SetUnifiedFadeProgress(
-                    ModeSelectOuter,
-                    0
-                );
-                ModeSelectOuter.Position =
-                    ModeTargetPosition
-                    + UDim2.fromOffset(0, 4);
+                Library:SetUnifiedFadeProgress(ModeSelectOuter, 0);
+                ModeSelectOuter.Position = ModeTargetPosition + UDim2.fromOffset(0, 4);
                 ModeSelectOuter.Visible = true;
             end
 
-            SetModeListOpen(false, true);
-
             Library.ActiveKeybindModeMenu = {
                 Frame = ModeSelectOuter;
-                List = ModeListOuter;
                 Hide = function(Instant)
-                    ModeAnimationId =
-                        ModeAnimationId + 1;
-                    SetModeListOpen(false, true);
-
+                    ModeAnimationId = ModeAnimationId + 1;
+                    if ModeDropdown and ModeDropdown.Opened then
+                        ModeDropdown:CloseDropdown();
+                    end
                     if Instant then
-                        Library:CancelMotion(
-                            ModeSelectOuter
-                        );
-                        Library:SetUnifiedFadeProgress(
-                            ModeSelectOuter,
-                            0
-                        );
+                        Library:CancelMotion(ModeSelectOuter);
+                        Library:SetUnifiedFadeProgress(ModeSelectOuter, 0);
                         ModeSelectOuter.Visible = false;
                     end
                 end;
             };
 
-            Library:Animate(
-                ModeSelectOuter,
-                { Position = ModeTargetPosition; },
-                0.18,
-                nil,
-                'Menu'
-            );
-            Library:TweenUnifiedFade(
-                ModeSelectOuter,
-                1,
-                0.16,
-                nil,
-                'Fade'
-            );
+            Library:Animate(ModeSelectOuter, { Position = ModeTargetPosition; }, 0.18, nil, 'Menu');
+            Library:TweenUnifiedFade(ModeSelectOuter, 1, 0.16, nil, 'Fade');
         end
 
         local function HideModeSelect(Instant)
-            if not ModeSelectOuter.Visible then
-                return;
-            end
+            if not ModeSelectOuter.Visible then return; end
 
             ModeAnimationId = ModeAnimationId + 1;
             local CurrentId = ModeAnimationId;
 
-            SetModeListOpen(false, Instant == true);
-
+            if ModeDropdown and ModeDropdown.Opened then
+                ModeDropdown:CloseDropdown();
+            end
             if Library.ActiveKeybindModeMenu
-                and Library.ActiveKeybindModeMenu.Frame
-                    == ModeSelectOuter then
+                and Library.ActiveKeybindModeMenu.Frame == ModeSelectOuter then
                 Library.ActiveKeybindModeMenu = nil;
             end
 
             if Instant then
                 Library:CancelMotion(ModeSelectOuter);
-                Library:SetUnifiedFadeProgress(
-                    ModeSelectOuter,
-                    0
-                );
+                Library:SetUnifiedFadeProgress(ModeSelectOuter, 0);
                 ModeSelectOuter.Visible = false;
-                ModeSelectOuter.Position =
-                    ModeTargetPosition;
+                ModeSelectOuter.Position = ModeTargetPosition;
                 return;
             end
 
             Library:Animate(
                 ModeSelectOuter,
-                {
-                    Position =
-                        ModeTargetPosition
-                        + UDim2.fromOffset(0, 3);
-                },
+                { Position = ModeTargetPosition + UDim2.fromOffset(0, 3); },
                 0.14,
                 nil,
                 'MenuExit'
@@ -7282,16 +7021,41 @@ do
                 0.13,
                 function(State)
                     if CurrentId == ModeAnimationId
-                        and State
-                            ~= Enum.PlaybackState.Cancelled then
+                        and State ~= Enum.PlaybackState.Cancelled then
                         ModeSelectOuter.Visible = false;
-                        ModeSelectOuter.Position =
-                            ModeTargetPosition;
+                        ModeSelectOuter.Position = ModeTargetPosition;
                     end
                 end,
                 'Fade'
             );
         end
+
+        ModeDropdown = Funcs.AddDropdown(
+            ModeDropdownHost,
+            '__KeybindModeInternal',
+            {
+                Values = Modes;
+                Default = KeyPicker.Mode;
+                AllowNull = false;
+                AllowDeselect = false;
+                RequireSelection = true;
+                Compact = true;
+                Searchable = false;
+                NoRegister = true;
+                BlankSize = 0;
+                ZIndex = 622;
+                PopupZIndex = 640;
+                Callback = function(Value)
+                    if SuppressModeDropdownCallback or not table.find(Modes, Value) then return; end
+                    KeyPicker.Mode = Value;
+                    KeyPicker.Held = false;
+                    if KeyPicker.DoClick then KeyPicker:DoClick(); end
+                    if KeyPicker.Update then KeyPicker:Update(); end
+                    Library:AttemptSave();
+                    HideModeSelect();
+                end;
+            }
+        );
 
         local ContainerRow = Library:Create('Frame', {
             Name = 'KeybindRow';
@@ -7358,133 +7122,6 @@ do
             )
         );
 
-        local ModeButtons = {};
-
-        local function RefreshModeDropdown()
-            ModeValueLabel.Text =
-                tostring(KeyPicker.Mode);
-
-            for ModeName, Button in next, ModeButtons do
-                local Selected =
-                    KeyPicker.Mode == ModeName;
-                Button.Label.TextColor3 =
-                    Selected
-                    and Library.AccentColor
-                    or Library.FontColor;
-                Button.Marker.BackgroundTransparency =
-                    Selected and 0 or 1;
-            end
-        end
-
-        for Idx, Mode in ipairs(Modes) do
-            local ModeButton = {};
-
-            local Row = Library:Create('TextButton', {
-                AutoButtonColor = false;
-                BackgroundTransparency = 1;
-                BorderSizePixel = 0;
-                LayoutOrder = Idx;
-                Size = UDim2.new(
-                    1,
-                    0,
-                    0,
-                    MODE_FIELD_HEIGHT
-                );
-                Text = '';
-                ZIndex = 632;
-                Parent = ModeListInner;
-            });
-
-            local Marker = Library:Create('Frame', {
-                BackgroundColor3 = Library.AccentColor;
-                BackgroundTransparency = 1;
-                BorderSizePixel = 0;
-                Position = UDim2.fromOffset(0, 5);
-                Size = UDim2.fromOffset(2, 10);
-                ZIndex = 634;
-                Parent = Row;
-            });
-            Library:AddCorner(Marker, 1);
-            Library:AddToRegistry(Marker, {
-                BackgroundColor3 = 'AccentColor';
-            });
-
-            local Label = Library:CreateLabel({
-                BackgroundTransparency = 1;
-                Position = UDim2.fromOffset(7, 0);
-                Size = UDim2.new(1, -12, 1, 0);
-                Text = Mode;
-                TextSize = 12;
-                TextXAlignment = Enum.TextXAlignment.Left;
-                TextYAlignment = Enum.TextYAlignment.Center;
-                ZIndex = 634;
-                Parent = Row;
-            });
-
-            ModeButton.Label = Label;
-            ModeButton.Marker = Marker;
-            ModeButton.Row = Row;
-
-            function ModeButton:Select()
-                KeyPicker.Mode = Mode;
-                KeyPicker.Held = false;
-                RefreshModeDropdown();
-                SetModeListOpen(false, false);
-                HideModeSelect();
-            end
-
-            function ModeButton:Deselect()
-                RefreshModeDropdown();
-            end
-
-            Row.MouseEnter:Connect(function()
-                if KeyPicker.Mode ~= Mode then
-                    Library:Animate(
-                        Label,
-                        {
-                            TextColor3 =
-                                Library.AccentColor:Lerp(
-                                    Library.FontColor,
-                                    0.30
-                                );
-                        },
-                        0.10,
-                        nil,
-                        'Color'
-                    );
-                end
-            end);
-
-            Row.MouseLeave:Connect(function()
-                RefreshModeDropdown();
-            end);
-
-            Row.MouseButton1Click:Connect(function()
-                ModeButton:Select();
-                if KeyPicker.DoClick then
-                    KeyPicker:DoClick();
-                end
-                if KeyPicker.Update then
-                    KeyPicker:Update();
-                end
-                Library:AttemptSave();
-            end);
-
-            ModeButtons[Mode] = ModeButton;
-        end
-
-        ModeDropdownInner.InputBegan:Connect(function(Input)
-            if Input.UserInputType
-                == Enum.UserInputType.MouseButton1 then
-                SetModeListOpen(
-                    not ModeListOpen,
-                    false
-                );
-            end
-        end);
-
-        RefreshModeDropdown();
-
         function KeyPicker:Update()
             if Info.NoUI then
                 return;
@@ -7493,7 +7130,7 @@ do
             local State = KeyPicker:GetState();
 
             ContainerLabel.Text = string.format('[%s] %s ~ (%s)', KeyPicker.Value, Info.Text, KeyPicker.Mode);
-            ModeValueLabel.Text = tostring(KeyPicker.Mode);
+            SyncModeDropdown();
 
             ContainerRow.Visible = true;
             ContainerVisual.Visible = true;
@@ -7521,8 +7158,16 @@ do
             local Key, Mode = Data[1], Data[2];
             SetKeyDisplay(Key);
             KeyPicker.Value = Key;
-            local Button = ModeButtons[Mode] or ModeButtons[KeyPicker.Mode] or ModeButtons[Modes[1]];
-            if Button then Button:Select(); end
+
+            if table.find(Modes, Mode) then
+                KeyPicker.Mode = Mode;
+                KeyPicker.Held = false;
+            end
+
+            SuppressModeDropdownCallback = true;
+            SyncModeDropdown();
+            SuppressModeDropdownCallback = false;
+
             KeyPicker:Update();
         end;
 
@@ -7642,11 +7287,10 @@ do
                     and Mouse.Y <= CardPos.Y + CardSize.Y;
 
                 local InList = false;
-                if ModeListOuter.Visible then
-                    local ListPos =
-                        ModeListOuter.AbsolutePosition;
-                    local ListSize =
-                        ModeListOuter.AbsoluteSize;
+                local ListFrame = ModeDropdown and ModeDropdown.ListFrame;
+                if ListFrame and ListFrame.Visible then
+                    local ListPos = ListFrame.AbsolutePosition;
+                    local ListSize = ListFrame.AbsoluteSize;
                     InList =
                         Mouse.X >= ListPos.X
                         and Mouse.X <= ListPos.X + ListSize.X
@@ -11603,6 +11247,9 @@ do
 
         local Groupbox = self;
         local Container = Groupbox.Container;
+        local ControlZ = tonumber(Info.ZIndex) or 5;
+        local PopupZ = tonumber(Info.PopupZIndex)
+            or math.max(20, ControlZ + 15);
 
         if not Info.Compact then
             Library:CreateLabel({
@@ -11611,7 +11258,7 @@ do
                 Text = Info.Text;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 TextYAlignment = Enum.TextYAlignment.Bottom;
-                ZIndex = 5;
+                ZIndex = ControlZ;
                 Parent = Container;
             });
             Groupbox:AddBlank(3);
@@ -11621,7 +11268,7 @@ do
             BackgroundColor3 = Library.OutlineColor;
             BorderSizePixel = 0;
             Size = UDim2.new(1, -4, 0, 20);
-            ZIndex = 5;
+            ZIndex = ControlZ;
             Parent = Container;
         });
 
@@ -11632,7 +11279,7 @@ do
             BorderSizePixel = 1;
             Position = UDim2.new(0, 1, 0, 1);
             Size = UDim2.new(1, -2, 1, -2);
-            ZIndex = 6;
+            ZIndex = ControlZ + 1;
             Parent = DropdownOuter;
         });
 
@@ -11654,7 +11301,7 @@ do
             Position = UDim2.new(1, -16, 0.5, 0);
             Size = UDim2.new(0, 12, 0, 12);
             Image = 'http://www.roblox.com/asset/?id=6282522798';
-            ZIndex = 8;
+            ZIndex = ControlZ + 3;
             Parent = DropdownInner;
         });
 
@@ -11667,7 +11314,7 @@ do
             TextYAlignment = Enum.TextYAlignment.Center;
             TextWrapped = false;
             TextTruncate = Enum.TextTruncate.AtEnd;
-            ZIndex = 7;
+            ZIndex = ControlZ + 2;
             Parent = DropdownInner;
         });
 
@@ -11697,7 +11344,7 @@ do
             BorderSizePixel = 0;
             ClipsDescendants = true;
             Size = UDim2.fromOffset(math.max(DropdownOuter.AbsoluteSize.X, 1), ROW_HEIGHT + (VALUES_PADDING * 2) + LIST_BOTTOM_GUARD);
-            ZIndex = 20;
+            ZIndex = PopupZ;
             Visible = false;
             Parent = ScreenGui;
         });
@@ -11723,7 +11370,7 @@ do
             BorderSizePixel = 0;
             ClipsDescendants = true;
             Size = UDim2.fromScale(1, 1);
-            ZIndex = 21;
+            ZIndex = PopupZ + 1;
             Parent = ListOuter;
         });
 
@@ -11737,7 +11384,7 @@ do
                 BackgroundColor3 = Library.OutlineColor;
                 BorderSizePixel = 0;
                 Size = UDim2.fromOffset(math.max(DropdownOuter.AbsoluteSize.X, 1), SEARCH_HEIGHT);
-                ZIndex = 26;
+                ZIndex = PopupZ + 6;
                 Visible = false;
                 Parent = ScreenGui;
             });
@@ -11749,7 +11396,7 @@ do
                 BorderSizePixel = 1;
                 Position = UDim2.new(0, 1, 0, 1);
                 Size = UDim2.new(1, -2, 1, -2);
-                ZIndex = 27;
+                ZIndex = PopupZ + 7;
                 Parent = SearchOuter;
             });
 
@@ -11776,7 +11423,7 @@ do
                 TextSize = 13;
                 TextStrokeTransparency = 0;
                 TextXAlignment = Enum.TextXAlignment.Left;
-                ZIndex = 28;
+                ZIndex = PopupZ + 8;
                 Parent = SearchInner;
             });
             Library:ApplyFont(SearchBox);
@@ -11798,7 +11445,7 @@ do
             ScrollBarThickness = 0;
             ScrollBarImageTransparency = 0;
             ScrollBarImageColor3 = Library.AccentColor;
-            ZIndex = 21;
+            ZIndex = PopupZ + 1;
             Parent = ListInner;
         });
         Library:AddToRegistry(Scrolling, { ScrollBarImageColor3 = 'AccentColor'; });
@@ -11809,7 +11456,7 @@ do
             BorderSizePixel = 0;
             Position = UDim2.new(1, -2, 0, VALUES_PADDING + 4);
             Size = UDim2.new(0, 3, 0, math.max(ListRowsHeight - 8, 1));
-            ZIndex = 24;
+            ZIndex = PopupZ + 4;
             Parent = ListInner;
         });
 
@@ -11820,7 +11467,7 @@ do
             BorderSizePixel = 0;
             Position = UDim2.new(0.5, 0, 0, 0);
             Size = UDim2.new(0, 2, 0, 18);
-            ZIndex = 25;
+            ZIndex = PopupZ + 5;
             Parent = ScrollTrack;
         });
         Library:AddCorner(ScrollThumb, 1);
@@ -11999,7 +11646,7 @@ do
                     Position = UDim2.fromOffset(0, (Index - 1) * ROW_HEIGHT);
                     Size = UDim2.new(1, -5, 0, ROW_HEIGHT);
                     Visible = true;
-                    ZIndex = 23;
+                    ZIndex = PopupZ + 3;
                     Parent = Scrolling;
                 });
 
@@ -12014,7 +11661,7 @@ do
                     TextYAlignment = Enum.TextYAlignment.Center;
                     TextWrapped = false;
                     TextTruncate = Enum.TextTruncate.AtEnd;
-                    ZIndex = 25;
+                    ZIndex = PopupZ + 5;
                     Parent = Button;
                 });
 
@@ -12702,7 +12349,10 @@ do
         Dropdown.SearchBox = SearchBox;
         Dropdown.SearchFrame = SearchOuter;
         Dropdown.ListFrame = ListOuter;
-        Options[Idx] = Dropdown;
+        Dropdown.ControlFrame = DropdownOuter;
+        if not Info.NoRegister then
+            Options[Idx] = Dropdown;
+        end
         Library:UpdateDependencyBoxes();
         return Dropdown;
     end;
