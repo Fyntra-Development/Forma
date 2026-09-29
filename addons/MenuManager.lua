@@ -1,7 +1,7 @@
 local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
-	MenuManager.Version = '1.6.0+build.1'
+	MenuManager.Version = '1.7.0+build.1'
 	MenuManager.Library = nil
 	MenuManager.EasingStyle = 'Sine'
 	MenuManager.EasingDirection = 'Out'
@@ -30,6 +30,8 @@ local MenuManager = {} do
 	MenuManager.AnchorSnapDistance = 18
 	MenuManager.AnchorSnapMargin = 10
 	MenuManager.AnchorSnapGuides = true
+	MenuManager.AnchorSnapWindows = true
+	MenuManager.AnchorSnapGlow = true
 
 	MenuManager.EasingStyles = {
 		'Linear', 'Sine', 'Quad', 'Cubic', 'Quart', 'Quint', 'Exponential', 'Circular', 'Back', 'Elastic', 'Bounce'
@@ -220,13 +222,17 @@ local MenuManager = {} do
 			ReleaseDistance = math.max(Distance + 10, Distance * 1.65);
 			Margin = math.clamp(tonumber(self.AnchorSnapMargin) or 10, 0, 32);
 			ShowGuides = self.AnchorSnapGuides == true;
+			SnapToWindows = self.AnchorSnapWindows == true;
+			GlowGuides = self.AnchorSnapGlow == true;
 		}
 	end
 
-	-- Position and Size are in screen-space pixels, as is Origin. Previous is
-	-- the previously held X/Y anchor pair. Snap each axis from the *raw*
-	-- pointer-derived position, never from a lagging animated window position.
-	function MenuManager:ResolveAnchorSnap(Position, Size, Viewport, Previous, Origin)
+	-- The moving window uses absolute screen coordinates; the same applies to
+	-- peer.Position. Candidates are rebuilt from visible windows on every
+	-- drag frame so moving or resized utilities stay valid snap targets.
+	-- X and Y hold their own match identities, allowing e.g. X alignment with
+	-- one utility and Y alignment with a different utility simultaneously.
+	function MenuManager:ResolveAnchorSnap(Position, Size, Viewport, Previous, Origin, Peers)
 		local Profile = self:GetAnchorSnapProfile()
 		if not Profile.Enabled then return Position, nil end
 		if typeof(Position) ~= 'Vector2'
@@ -238,51 +244,87 @@ local MenuManager = {} do
 		Origin = typeof(Origin) == 'Vector2' and Origin or Vector2.zero
 		Previous = type(Previous) == 'table' and Previous or {}
 		local Margin = Profile.Margin
+		local XCandidates, YCandidates = {}, {}
 
-		local Horizontal = {
-			Center = Origin.X + (Viewport.X - Size.X) * 0.5;
-		}
-		local Vertical = {
-			Center = Origin.Y + (Viewport.Y - Size.Y) * 0.5;
-		}
-		if Viewport.X >= Size.X + (Margin * 2) then
-			Horizontal.Left = Origin.X + Margin
-			Horizontal.Right = Origin.X + Viewport.X - Size.X - Margin
-		end
-		if Viewport.Y >= Size.Y + (Margin * 2) then
-			Vertical.Top = Origin.Y + Margin
-			Vertical.Bottom = Origin.Y + Viewport.Y - Size.Y - Margin
+		local function Add(Targets, Offset, Line, Kind, Reference, Match)
+			table.insert(Targets, {
+				Target = Offset;
+				Line = Line;
+				Kind = Kind;
+				Reference = Reference;
+				Match = Match;
+			})
 		end
 
-		local function PickAxis(Raw, Held, Candidates, Order)
-			local HeldPosition = Candidates[Held]
-			if HeldPosition ~= nil
-				and math.abs(Raw - HeldPosition) <= Profile.ReleaseDistance then
-				return HeldPosition, Held
+		local CenterX = Origin.X + (Viewport.X * 0.5)
+		local CenterY = Origin.Y + (Viewport.Y * 0.5)
+		Add(XCandidates, CenterX - Size.X * 0.5, CenterX, 'Screen', nil, 'Center')
+		Add(YCandidates, CenterY - Size.Y * 0.5, CenterY, 'Screen', nil, 'Center')
+		if Viewport.X >= Size.X + Margin * 2 then
+			Add(XCandidates, Origin.X + Margin, Origin.X + Margin, 'Screen', nil, 'Left')
+			Add(XCandidates, Origin.X + Viewport.X - Size.X - Margin,
+				Origin.X + Viewport.X - Margin, 'Screen', nil, 'Right')
+		end
+		if Viewport.Y >= Size.Y + Margin * 2 then
+			Add(YCandidates, Origin.Y + Margin, Origin.Y + Margin, 'Screen', nil, 'Top')
+			Add(YCandidates, Origin.Y + Viewport.Y - Size.Y - Margin,
+				Origin.Y + Viewport.Y - Margin, 'Screen', nil, 'Bottom')
+		end
+
+		if Profile.SnapToWindows and type(Peers) == 'table' then
+			for _, Peer in ipairs(Peers) do
+				local Rect = Peer.Position
+				local OtherSize = Peer.Size
+				local Reference = Peer.Instance
+				if Reference and Reference.Parent
+					and typeof(Rect) == 'Vector2'
+					and typeof(OtherSize) == 'Vector2'
+					and OtherSize.X > 0 and OtherSize.Y > 0 then
+					local L, R = Rect.X, Rect.X + OtherSize.X
+					local T, B = Rect.Y, Rect.Y + OtherSize.Y
+					local CX, CY = (L + R) * 0.5, (T + B) * 0.5
+					-- Matching edges and midlines.
+					Add(XCandidates, L, L, 'Window', Reference, 'LeftLeft')
+					Add(XCandidates, CX - Size.X * 0.5, CX, 'Window', Reference, 'CenterCenter')
+					Add(XCandidates, R - Size.X, R, 'Window', Reference, 'RightRight')
+					Add(YCandidates, T, T, 'Window', Reference, 'TopTop')
+					Add(YCandidates, CY - Size.Y * 0.5, CY, 'Window', Reference, 'CenterCenter')
+					Add(YCandidates, B - Size.Y, B, 'Window', Reference, 'BottomBottom')
+					-- Side-by-side docking with the configured inset as the gap.
+					Add(XCandidates, R + Margin, R, 'Window', Reference, 'LeftAfterRight')
+					Add(XCandidates, L - Margin - Size.X, L, 'Window', Reference, 'RightBeforeLeft')
+					Add(YCandidates, B + Margin, B, 'Window', Reference, 'TopAfterBottom')
+					Add(YCandidates, T - Margin - Size.Y, T, 'Window', Reference, 'BottomBeforeTop')
+				end
 			end
+		end
 
-			local BestPosition, BestName
-			local BestError = Profile.Distance
-			for _, Name in ipairs(Order) do
-				local Candidate = Candidates[Name]
-				if Candidate ~= nil then
-					local Error = math.abs(Raw - Candidate)
-					if Error <= BestError then
-						BestPosition = Candidate
-						BestName = Name
-						BestError = Error
+		local function Choose(Raw, Held, Candidates)
+			-- Hysteresis requires both the same reference instance and the same
+			-- anchor relation; otherwise jumping between nearby peers flickers.
+			if Held then
+				for _, Candidate in ipairs(Candidates) do
+					if Candidate.Kind == Held.Kind
+						and Candidate.Reference == Held.Reference
+						and Candidate.Match == Held.Match
+						and math.abs(Raw - Candidate.Target) <= Profile.ReleaseDistance then
+						return Candidate.Target, Candidate
 					end
 				end
 			end
-			return BestPosition or Raw, BestName
+
+			local Best, Error = nil, Profile.Distance
+			for _, Candidate in ipairs(Candidates) do
+				local Distance = math.abs(Raw - Candidate.Target)
+				if Distance <= Error then
+					Best, Error = Candidate, Distance
+				end
+			end
+			return Best and Best.Target or Raw, Best
 		end
 
-		local X, XAnchor = PickAxis(
-			Position.X, Previous.X, Horizontal, { 'Left', 'Center', 'Right' }
-		)
-		local Y, YAnchor = PickAxis(
-			Position.Y, Previous.Y, Vertical, { 'Top', 'Center', 'Bottom' }
-		)
+		local X, XAnchor = Choose(Position.X, Previous.X, XCandidates)
+		local Y, YAnchor = Choose(Position.Y, Previous.Y, YCandidates)
 		if not XAnchor and not YAnchor then return Position, nil end
 		return Vector2.new(X, Y), { X = XAnchor; Y = YAnchor; }
 	end
@@ -301,6 +343,14 @@ local MenuManager = {} do
 
 	function MenuManager:SetAnchorSnapGuides(Value)
 		self.AnchorSnapGuides = Value == true
+	end
+
+	function MenuManager:SetAnchorSnapWindows(Value)
+		self.AnchorSnapWindows = Value == true
+	end
+
+	function MenuManager:SetAnchorSnapGlow(Value)
+		self.AnchorSnapGlow = Value == true
 	end
 
 	function MenuManager:GetDirectManipulationProfile(Context)
@@ -490,6 +540,23 @@ local MenuManager = {} do
 		})
 		Toggles.MenuManager_AnchorSnapGuides:OnChanged(function()
 			self:SetAnchorSnapGuides(Toggles.MenuManager_AnchorSnapGuides.Value)
+		end)
+
+
+		Groupbox:AddToggle('MenuManager_AnchorSnapWindows', {
+			Text = 'Snap to other windows';
+			Default = self.AnchorSnapWindows;
+		})
+		Toggles.MenuManager_AnchorSnapWindows:OnChanged(function()
+			self:SetAnchorSnapWindows(Toggles.MenuManager_AnchorSnapWindows.Value)
+		end)
+
+		Groupbox:AddToggle('MenuManager_AnchorSnapGlow', {
+			Text = 'Glowing anchor guides';
+			Default = self.AnchorSnapGlow;
+		})
+		Toggles.MenuManager_AnchorSnapGlow:OnChanged(function()
+			self:SetAnchorSnapGlow(Toggles.MenuManager_AnchorSnapGlow.Value)
 		end)
 
 		Groupbox:AddButton('Reset menu positions', function() self:ResetMenuPositions() end)
