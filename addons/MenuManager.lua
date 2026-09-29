@@ -1,7 +1,7 @@
 local TweenService = game:GetService('TweenService')
 
 local MenuManager = {} do
-	MenuManager.Version = '1.5.0+build.1'
+	MenuManager.Version = '1.6.0+build.1'
 	MenuManager.Library = nil
 	MenuManager.EasingStyle = 'Sine'
 	MenuManager.EasingDirection = 'Out'
@@ -22,6 +22,14 @@ local MenuManager = {} do
 	MenuManager.ResizeSmoothTime = 0.065
 	MenuManager.DragCatchupDistance = 30
 	MenuManager.ResizeCatchupDistance = 34
+
+	-- Magnetic screen anchors, evaluated while the pointer is moving.
+	-- Independent X/Y snapping makes edges, center lines and all nine anchor
+	-- combinations available without changing a window's AnchorPoint.
+	MenuManager.AnchorSnapEnabled = true
+	MenuManager.AnchorSnapDistance = 18
+	MenuManager.AnchorSnapMargin = 10
+	MenuManager.AnchorSnapGuides = true
 
 	MenuManager.EasingStyles = {
 		'Linear', 'Sine', 'Quad', 'Cubic', 'Quart', 'Quint', 'Exponential', 'Circular', 'Back', 'Elastic', 'Bounce'
@@ -202,6 +210,99 @@ local MenuManager = {} do
 		}
 	end
 
+	function MenuManager:GetAnchorSnapProfile()
+		local Distance = math.clamp(tonumber(self.AnchorSnapDistance) or 18, 6, 40)
+		return {
+			Enabled = self.AnchorSnapEnabled == true;
+			Distance = Distance;
+			-- A larger exit radius prevents flicker when the pointer sits at the
+			-- boundary of a magnetic anchor.
+			ReleaseDistance = math.max(Distance + 10, Distance * 1.65);
+			Margin = math.clamp(tonumber(self.AnchorSnapMargin) or 10, 0, 32);
+			ShowGuides = self.AnchorSnapGuides == true;
+		}
+	end
+
+	-- Position and Size are in screen-space pixels, as is Origin. Previous is
+	-- the previously held X/Y anchor pair. Snap each axis from the *raw*
+	-- pointer-derived position, never from a lagging animated window position.
+	function MenuManager:ResolveAnchorSnap(Position, Size, Viewport, Previous, Origin)
+		local Profile = self:GetAnchorSnapProfile()
+		if not Profile.Enabled then return Position, nil end
+		if typeof(Position) ~= 'Vector2'
+			or typeof(Size) ~= 'Vector2'
+			or typeof(Viewport) ~= 'Vector2' then
+			return Position, nil
+		end
+
+		Origin = typeof(Origin) == 'Vector2' and Origin or Vector2.zero
+		Previous = type(Previous) == 'table' and Previous or {}
+		local Margin = Profile.Margin
+
+		local Horizontal = {
+			Center = Origin.X + (Viewport.X - Size.X) * 0.5;
+		}
+		local Vertical = {
+			Center = Origin.Y + (Viewport.Y - Size.Y) * 0.5;
+		}
+		if Viewport.X >= Size.X + (Margin * 2) then
+			Horizontal.Left = Origin.X + Margin
+			Horizontal.Right = Origin.X + Viewport.X - Size.X - Margin
+		end
+		if Viewport.Y >= Size.Y + (Margin * 2) then
+			Vertical.Top = Origin.Y + Margin
+			Vertical.Bottom = Origin.Y + Viewport.Y - Size.Y - Margin
+		end
+
+		local function PickAxis(Raw, Held, Candidates, Order)
+			local HeldPosition = Candidates[Held]
+			if HeldPosition ~= nil
+				and math.abs(Raw - HeldPosition) <= Profile.ReleaseDistance then
+				return HeldPosition, Held
+			end
+
+			local BestPosition, BestName
+			local BestError = Profile.Distance
+			for _, Name in ipairs(Order) do
+				local Candidate = Candidates[Name]
+				if Candidate ~= nil then
+					local Error = math.abs(Raw - Candidate)
+					if Error <= BestError then
+						BestPosition = Candidate
+						BestName = Name
+						BestError = Error
+					end
+				end
+			end
+			return BestPosition or Raw, BestName
+		end
+
+		local X, XAnchor = PickAxis(
+			Position.X, Previous.X, Horizontal, { 'Left', 'Center', 'Right' }
+		)
+		local Y, YAnchor = PickAxis(
+			Position.Y, Previous.Y, Vertical, { 'Top', 'Center', 'Bottom' }
+		)
+		if not XAnchor and not YAnchor then return Position, nil end
+		return Vector2.new(X, Y), { X = XAnchor; Y = YAnchor; }
+	end
+
+	function MenuManager:SetAnchorSnapEnabled(Value)
+		self.AnchorSnapEnabled = Value == true
+	end
+
+	function MenuManager:SetAnchorSnapDistance(Value)
+		self.AnchorSnapDistance = math.clamp(tonumber(Value) or 18, 6, 40)
+	end
+
+	function MenuManager:SetAnchorSnapMargin(Value)
+		self.AnchorSnapMargin = math.clamp(tonumber(Value) or 10, 0, 32)
+	end
+
+	function MenuManager:SetAnchorSnapGuides(Value)
+		self.AnchorSnapGuides = Value == true
+	end
+
 	function MenuManager:GetDirectManipulationProfile(Context)
 		local IsResize = tostring(Context or 'Drag') == 'Resize'
 		local BaseSmoothTime = IsResize
@@ -347,6 +448,48 @@ local MenuManager = {} do
 		})
 		Options.MenuManager_ResizeSmoothTime:OnChanged(function()
 			self:SetResizeSmoothTime(Options.MenuManager_ResizeSmoothTime.Value)
+		end)
+
+		Groupbox:AddToggle('MenuManager_AnchorSnap', {
+			Text = 'Real-time anchor snapping';
+			Default = self.AnchorSnapEnabled;
+		})
+		Toggles.MenuManager_AnchorSnap:OnChanged(function()
+			self:SetAnchorSnapEnabled(Toggles.MenuManager_AnchorSnap.Value)
+		end)
+
+		Groupbox:AddSlider('MenuManager_AnchorSnapDistance', {
+			Text = 'Snap distance';
+			Default = self.AnchorSnapDistance;
+			Min = 6;
+			Max = 40;
+			Rounding = 0;
+			Step = 1;
+			Suffix = ' px';
+		})
+		Options.MenuManager_AnchorSnapDistance:OnChanged(function()
+			self:SetAnchorSnapDistance(Options.MenuManager_AnchorSnapDistance.Value)
+		end)
+
+		Groupbox:AddSlider('MenuManager_AnchorSnapMargin', {
+			Text = 'Anchor inset';
+			Default = self.AnchorSnapMargin;
+			Min = 0;
+			Max = 32;
+			Rounding = 0;
+			Step = 1;
+			Suffix = ' px';
+		})
+		Options.MenuManager_AnchorSnapMargin:OnChanged(function()
+			self:SetAnchorSnapMargin(Options.MenuManager_AnchorSnapMargin.Value)
+		end)
+
+		Groupbox:AddToggle('MenuManager_AnchorSnapGuides', {
+			Text = 'Show anchor guides';
+			Default = self.AnchorSnapGuides;
+		})
+		Toggles.MenuManager_AnchorSnapGuides:OnChanged(function()
+			self:SetAnchorSnapGuides(Toggles.MenuManager_AnchorSnapGuides.Value)
 		end)
 
 		Groupbox:AddButton('Reset menu positions', function() self:ResetMenuPositions() end)
