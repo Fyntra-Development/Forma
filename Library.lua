@@ -307,7 +307,7 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.22.0+build.1';
+    Version = '1.23.0+build.1';
     Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
@@ -3299,9 +3299,88 @@ function Library:MakeDraggable(Instance, Cutoff, Config)
     local function HideSnapGuides()
         local Guides = State.SnapGuides;
         if Guides then
-            Guides.X.Visible = false;
-            Guides.Y.Visible = false;
+            Guides.X.Root.Visible = false;
+            Guides.Y.Root.Visible = false;
         end
+    end
+
+    local function GetSnapPeers()
+        local Peers = {};
+        for Other, OtherState in next, Library.DraggableStates do
+            if Other ~= Instance
+                and OtherState
+                and OtherState.AnchorSnapping
+                and Other.Parent
+                and Other.Visible then
+                local Size = Other.AbsoluteSize;
+                if Size.X > 0 and Size.Y > 0 then
+                    local Gui = Other:FindFirstAncestorWhichIsA('ScreenGui');
+                    if not Gui or Gui.Enabled then
+                        table.insert(Peers, {
+                            Instance = Other;
+                            Position = Other.AbsolutePosition;
+                            Size = Size;
+                        });
+                    end
+                end
+            end
+        end
+        return Peers;
+    end
+
+    local function GetOrCreateGuides()
+        if State.SnapGuides then return State.SnapGuides; end
+        local Parent = Instance.Parent;
+        if not Parent then return nil; end
+
+        local function CreateGuide(Vertical)
+            -- Four concentric theme-colored layers create a subtle bloom
+            -- without expensive BlurEffects, gradients, or per-frame objects.
+            local Root = Library:Create('Frame', {
+                Name = Vertical and 'AnchorGuideVertical' or 'AnchorGuideHorizontal';
+                Active = false;
+                BackgroundTransparency = 1;
+                BorderSizePixel = 0;
+                Visible = false;
+                ZIndex = 2000;
+                Parent = Parent;
+            });
+            local Layers = {};
+            for Index, LayerInfo in ipairs({
+                { 11, 0.965 };
+                { 7, 0.925 };
+                { 3, 0.74 };
+                { 1, 0.12 };
+            }) do
+                local Thickness, Transparency = LayerInfo[1], LayerInfo[2];
+                local Layer = Library:Create('Frame', {
+                    Name = Index == 4 and 'GuideCore' or 'GuideGlow';
+                    Active = false;
+                    BackgroundColor3 = Library.AccentColor;
+                    BackgroundTransparency = Transparency;
+                    BorderSizePixel = 0;
+                    Position = Vertical
+                        and UDim2.new(0.5, -Thickness * 0.5, 0, 0)
+                        or UDim2.new(0, 0, 0.5, -Thickness * 0.5);
+                    Size = Vertical
+                        and UDim2.new(0, Thickness, 1, 0)
+                        or UDim2.new(1, 0, 0, Thickness);
+                    ZIndex = 2000 + Index;
+                    Parent = Root;
+                });
+                Library:AddToRegistry(Layer, {
+                    BackgroundColor3 = 'AccentColor';
+                });
+                Layers[Index] = Layer;
+            end
+            return { Root = Root; Layers = Layers; };
+        end
+
+        State.SnapGuides = {
+            X = CreateGuide(true);
+            Y = CreateGuide(false);
+        };
+        return State.SnapGuides;
     end
 
     local function UpdateSnapGuides(Axes, Position, WindowSize, Origin, Viewport)
@@ -3314,69 +3393,73 @@ function Library:MakeDraggable(Instance, Cutoff, Config)
             return;
         end
 
-        if not State.SnapGuides then
-            local Parent = Instance.Parent;
-            if not Parent then return; end
-            local function MakeGuide()
-                local Guide = Library:Create('Frame', {
-                    Active = false;
-                    BackgroundColor3 = Library.AccentColor;
-                    BackgroundTransparency = 0.63;
-                    BorderSizePixel = 0;
-                    Size = UDim2.fromOffset(1, 1);
-                    Visible = false;
-                    ZIndex = 2000;
-                    Parent = Parent;
-                });
-                Library:AddToRegistry(Guide, {
-                    BackgroundColor3 = 'AccentColor';
-                });
-                return Guide;
+        local Guides = GetOrCreateGuides();
+        if not Guides then return; end
+
+        local function Draw(Guide, Match, Vertical)
+            if not Match then
+                Guide.Root.Visible = false;
+                return;
             end
-            State.SnapGuides = { X = MakeGuide(); Y = MakeGuide(); };
+
+            local Begin, Finish;
+            if Match.Kind == 'Window'
+                and Match.Reference
+                and Match.Reference.Parent then
+                local PeerPosition = Match.Reference.AbsolutePosition;
+                local PeerSize = Match.Reference.AbsoluteSize;
+                if Vertical then
+                    Begin = math.min(Position.Y, PeerPosition.Y) - 7;
+                    Finish = math.max(
+                        Position.Y + WindowSize.Y,
+                        PeerPosition.Y + PeerSize.Y
+                    ) + 7;
+                else
+                    Begin = math.min(Position.X, PeerPosition.X) - 7;
+                    Finish = math.max(
+                        Position.X + WindowSize.X,
+                        PeerPosition.X + PeerSize.X
+                    ) + 7;
+                end
+            else
+                if Vertical then
+                    Begin = Origin.Y + (Profile.Margin or 10);
+                    Finish = Origin.Y + Viewport.Y - (Profile.Margin or 10);
+                else
+                    Begin = Origin.X + (Profile.Margin or 10);
+                    Finish = Origin.X + Viewport.X - (Profile.Margin or 10);
+                end
+            end
+
+            local Line = math.floor(Match.Line + 0.5);
+            if Vertical then
+                Guide.Root.Position = UDim2.fromOffset(
+                    Line - Origin.X,
+                    math.floor(Begin - Origin.Y + 0.5)
+                );
+                Guide.Root.Size = UDim2.fromOffset(
+                    1,
+                    math.max(math.ceil(Finish - Begin), 1)
+                );
+            else
+                Guide.Root.Position = UDim2.fromOffset(
+                    math.floor(Begin - Origin.X + 0.5),
+                    Line - Origin.Y
+                );
+                Guide.Root.Size = UDim2.fromOffset(
+                    math.max(math.ceil(Finish - Begin), 1),
+                    1
+                );
+            end
+
+            for Index, Layer in ipairs(Guide.Layers) do
+                Layer.Visible = Index == 4 or Profile.GlowGuides;
+            end
+            Guide.Root.Visible = true;
         end
 
-        local Guides = State.SnapGuides;
-        local Inset = Profile.Margin or 10;
-        if Axes.X then
-            local AtX = Position.X;
-            if Axes.X == 'Center' then
-                AtX = AtX + (WindowSize.X * 0.5);
-            elseif Axes.X == 'Right' then
-                AtX = AtX + WindowSize.X;
-            end
-            Guides.X.Position = UDim2.fromOffset(
-                math.floor(AtX - Origin.X + 0.5),
-                Inset
-            );
-            Guides.X.Size = UDim2.fromOffset(
-                1,
-                math.max(Viewport.Y - (Inset * 2), 1)
-            );
-            Guides.X.Visible = true;
-        else
-            Guides.X.Visible = false;
-        end
-
-        if Axes.Y then
-            local AtY = Position.Y;
-            if Axes.Y == 'Center' then
-                AtY = AtY + (WindowSize.Y * 0.5);
-            elseif Axes.Y == 'Bottom' then
-                AtY = AtY + WindowSize.Y;
-            end
-            Guides.Y.Position = UDim2.fromOffset(
-                Inset,
-                math.floor(AtY - Origin.Y + 0.5)
-            );
-            Guides.Y.Size = UDim2.fromOffset(
-                math.max(Viewport.X - (Inset * 2), 1),
-                1
-            );
-            Guides.Y.Visible = true;
-        else
-            Guides.Y.Visible = false;
-        end
+        Draw(Guides.X, Axes.X, true);
+        Draw(Guides.Y, Axes.Y, false);
     end
 
     local function GetProfile()
@@ -3475,7 +3558,8 @@ function Library:MakeDraggable(Instance, Cutoff, Config)
                     Size,
                     Viewport,
                     State.SnapAxes,
-                    Origin
+                    Origin,
+                    GetSnapPeers()
                 );
                 TargetTopLeft = Snapped;
                 State.SnapAxes = Axes;
@@ -13445,7 +13529,9 @@ do
     Library.WatermarkDetails = nil;
     Library.UpdateWatermarkText = UpdateWatermarkText;
     Library.WatermarkAnimationId = 0;
-    Library:MakeDraggable(Library.Watermark);
+    Library:MakeDraggable(Library.Watermark, nil, {
+        AnchorSnapping = true;
+    });
 
     local KEYBIND_HEADER_HEIGHT = 20;
     local KEYBIND_ROW_HEIGHT = 18;
@@ -14009,7 +14095,9 @@ do
 
     Library.KeybindFrame = KeybindOuter;
     Library.KeybindContainer = KeybindContainer;
-    Library:MakeDraggable(KeybindOuter);
+    Library:MakeDraggable(KeybindOuter, nil, {
+        AnchorSnapping = true;
+    });
 end;
 
 function Library:SetWatermarkVisibility(Bool)
