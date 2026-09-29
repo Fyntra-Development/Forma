@@ -307,8 +307,8 @@ local Library = {
 
     -- Built-in update system. Component versions are compared against versions.json
     -- on the Forma repository whenever the library or a manager is opened.
-    Version = '1.21.7+build.1';
-    Release = 'HF';
+    Version = '1.22.0+build.1';
+    Release = 'GA';
     Build = 1;
     VersionStandard = 'SemVer 2.0.0';
     AutoUpdateVersion = 2;
@@ -3224,7 +3224,8 @@ function Library:IsPointOverResizeHandle(Point)
     return false;
 end;
 
-function Library:MakeDraggable(Instance, Cutoff)
+function Library:MakeDraggable(Instance, Cutoff, Config)
+    Config = type(Config) == 'table' and Config or {};
     if not Instance then
         return nil;
     end
@@ -3248,6 +3249,9 @@ function Library:MakeDraggable(Instance, Cutoff)
         TargetAnchor = nil;
         Velocity = Vector2.zero;
         Profile = nil;
+        AnchorSnapping = Config.AnchorSnapping == true;
+        SnapAxes = nil;
+        SnapGuides = nil;
     };
     Library.DraggableStates[Instance] = State;
 
@@ -3264,6 +3268,115 @@ function Library:MakeDraggable(Instance, Cutoff)
             return Vector2.new(Input.Position.X, Input.Position.Y);
         end
         return Vector2.new(Mouse.X, Mouse.Y);
+    end
+
+    local function GetViewportBounds()
+        local Camera = workspace.CurrentCamera;
+        local Size = Camera and Camera.ViewportSize or Vector2.new(1920, 1080);
+        local Origin = Vector2.zero;
+
+        -- ScreenGui and utility ScreenGuis can have different inset handling.
+        -- Use the actual drag parent's layout space, not a hard-coded top bar.
+        local Parent = Instance.Parent;
+        if Parent then
+            local Success, ParentPosition, ParentSize = pcall(function()
+                return Parent.AbsolutePosition, Parent.AbsoluteSize;
+            end);
+            if Success then
+                if typeof(ParentPosition) == 'Vector2' then
+                    Origin = ParentPosition;
+                end
+                if typeof(ParentSize) == 'Vector2'
+                    and ParentSize.X > 0
+                    and ParentSize.Y > 0 then
+                    Size = ParentSize;
+                end
+            end
+        end
+        return Origin, Size;
+    end
+
+    local function HideSnapGuides()
+        local Guides = State.SnapGuides;
+        if Guides then
+            Guides.X.Visible = false;
+            Guides.Y.Visible = false;
+        end
+    end
+
+    local function UpdateSnapGuides(Axes, Position, WindowSize, Origin, Viewport)
+        if not State.AnchorSnapping then return; end
+        local Manager = Library.MenuManager;
+        local Profile = Manager and Manager.GetAnchorSnapProfile
+            and Manager:GetAnchorSnapProfile();
+        if not Axes or not Profile or not Profile.ShowGuides then
+            HideSnapGuides();
+            return;
+        end
+
+        if not State.SnapGuides then
+            local Parent = Instance.Parent;
+            if not Parent then return; end
+            local function MakeGuide()
+                local Guide = Library:Create('Frame', {
+                    Active = false;
+                    BackgroundColor3 = Library.AccentColor;
+                    BackgroundTransparency = 0.63;
+                    BorderSizePixel = 0;
+                    Size = UDim2.fromOffset(1, 1);
+                    Visible = false;
+                    ZIndex = 2000;
+                    Parent = Parent;
+                });
+                Library:AddToRegistry(Guide, {
+                    BackgroundColor3 = 'AccentColor';
+                });
+                return Guide;
+            end
+            State.SnapGuides = { X = MakeGuide(); Y = MakeGuide(); };
+        end
+
+        local Guides = State.SnapGuides;
+        local Inset = Profile.Margin or 10;
+        if Axes.X then
+            local AtX = Position.X;
+            if Axes.X == 'Center' then
+                AtX = AtX + (WindowSize.X * 0.5);
+            elseif Axes.X == 'Right' then
+                AtX = AtX + WindowSize.X;
+            end
+            Guides.X.Position = UDim2.fromOffset(
+                math.floor(AtX - Origin.X + 0.5),
+                Inset
+            );
+            Guides.X.Size = UDim2.fromOffset(
+                1,
+                math.max(Viewport.Y - (Inset * 2), 1)
+            );
+            Guides.X.Visible = true;
+        else
+            Guides.X.Visible = false;
+        end
+
+        if Axes.Y then
+            local AtY = Position.Y;
+            if Axes.Y == 'Center' then
+                AtY = AtY + (WindowSize.Y * 0.5);
+            elseif Axes.Y == 'Bottom' then
+                AtY = AtY + WindowSize.Y;
+            end
+            Guides.Y.Position = UDim2.fromOffset(
+                Inset,
+                math.floor(AtY - Origin.Y + 0.5)
+            );
+            Guides.Y.Size = UDim2.fromOffset(
+                math.max(Viewport.X - (Inset * 2), 1),
+                1
+            );
+            Guides.Y.Visible = true;
+        else
+            Guides.Y.Visible = false;
+        end
     end
 
     local function GetProfile()
@@ -3309,9 +3422,14 @@ function Library:MakeDraggable(Instance, Cutoff)
 
     local function ApplyVisual()
         if not State.VisualAnchor or not Instance.Parent then return; end
+        -- Snapping-enabled windows work in absolute pointer coordinates but
+        -- their UDim2 position belongs to the local ScreenGui/parent space.
+        local Origin = State.AnchorSnapping
+            and select(1, GetViewportBounds())
+            or Vector2.zero;
         Instance.Position = UDim2.fromOffset(
-            State.VisualAnchor.X,
-            State.VisualAnchor.Y
+            State.VisualAnchor.X - Origin.X,
+            State.VisualAnchor.Y - Origin.Y
         );
     end
 
@@ -3330,6 +3448,8 @@ function Library:MakeDraggable(Instance, Cutoff)
         State.Input = nil;
         State.ObjectOffset = nil;
         State.Anchor = nil;
+        State.SnapAxes = nil;
+        HideSnapGuides();
     end
     State.CancelMotion = CancelMotion;
 
@@ -3342,13 +3462,39 @@ function Library:MakeDraggable(Instance, Cutoff)
         end
 
         local Pointer = GetPointer(State.Input);
+        local Size = Instance.AbsoluteSize;
+        local RawTopLeft = Pointer - State.ObjectOffset;
+        local TargetTopLeft = RawTopLeft;
+
+        if State.AnchorSnapping then
+            local Manager = Library.MenuManager;
+            if Manager and Manager.ResolveAnchorSnap then
+                local Origin, Viewport = GetViewportBounds();
+                local Snapped, Axes = Manager:ResolveAnchorSnap(
+                    RawTopLeft,
+                    Size,
+                    Viewport,
+                    State.SnapAxes,
+                    Origin
+                );
+                TargetTopLeft = Snapped;
+                State.SnapAxes = Axes;
+                UpdateSnapGuides(
+                    Axes,
+                    TargetTopLeft,
+                    Size,
+                    Origin,
+                    Viewport
+                );
+            else
+                State.SnapAxes = nil;
+                HideSnapGuides();
+            end
+        end
+
         State.TargetAnchor = Vector2.new(
-            Pointer.X
-                - State.ObjectOffset.X
-                + (Instance.AbsoluteSize.X * State.Anchor.X),
-            Pointer.Y
-                - State.ObjectOffset.Y
-                + (Instance.AbsoluteSize.Y * State.Anchor.Y)
+            TargetTopLeft.X + (Size.X * State.Anchor.X),
+            TargetTopLeft.Y + (Size.Y * State.Anchor.Y)
         );
     end
 
@@ -3440,6 +3586,8 @@ function Library:MakeDraggable(Instance, Cutoff)
         State.Input = nil;
         State.ObjectOffset = nil;
         State.Anchor = nil;
+        State.SnapAxes = nil;
+        HideSnapGuides();
 
         -- Keep the same physical state alive after mouse-up. There is no
         -- release tween and therefore no velocity discontinuity.
@@ -3472,6 +3620,8 @@ function Library:MakeDraggable(Instance, Cutoff)
 
         State.Dragging = true;
         State.Settling = false;
+        State.SnapAxes = nil;
+        HideSnapGuides();
         State.Profile = GetProfile();
 
         local Anchor = Instance.AnchorPoint;
@@ -12864,7 +13014,9 @@ function Library:CreateUtilityWindow(Config)
     Window.ContentHeight = math.max(Height - 36, 80);
 
     table.insert(Library.UtilityWindows, Window);
-    Window.DragState = Library:MakeDraggable(Outer, 24);
+    Window.DragState = Library:MakeDraggable(Outer, 24, {
+        AnchorSnapping = true;
+    });
 
     if Config.Resizable ~= false then
         Window.ResizeState = Library:MakeResizable(Outer, {
@@ -17234,7 +17386,9 @@ function Library:CreateWindow(...)
 
     Library:AddCorner(Outer, 4);
 
-    Window.DragState = Library:MakeDraggable(Outer, 25);
+    Window.DragState = Library:MakeDraggable(Outer, 25, {
+        AnchorSnapping = true;
+    });
     if Config.Resizable ~= false then
         Window.ResizeState = Library:MakeResizable(Outer, {
             MinSize = Config.MinSize or Vector2.new(420, 320);
