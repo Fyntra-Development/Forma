@@ -23,4 +23,5 @@
 - [`addons/SaveManager.lua`](./addons/SaveManager.lua)
 - [`assets/`](./assets/)
 - [`fonts/`](./fonts/)
+- [`fonts/LICENSES.md`](./fonts/LICENSES.md)
 - [`LICENSE`](./LICENSE)
