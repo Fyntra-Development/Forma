@@ -1,5 +1,3 @@
---!strict
-
 export type ThemeColors = {
     FontColor: Color3,
     MainColor: Color3,
