@@ -1,4 +1,4 @@
-# Font licenses
+# font licenses
 
 | File | Upstream family license |
 | --- | --- |
@@ -14,6 +14,4 @@
 | `Ubuntu.ttf` | [Ubuntu Font Licence 1.0](https://ubuntu.com/legal/font-licence) |
 | `SF-Pro.ttf` | [Apple proprietary terms](https://developer.apple.com/fonts/); redistribution permission not established |
 | `XP-Tahoma.ttf` | [Microsoft proprietary font](https://learn.microsoft.com/en-us/typography/font-list/tahoma); redistribution permission not established |
-| `Smallest-Pixel.ttf` | Source and license not verified |
-
-These are upstream family references, not verification of the exact bundled files. Review the original license notices and redistribution permissions before distributing the fonts. The repository's MIT license does **not** relicense third-party fonts.
+| `Smallest-Pixel.ttf` | source and license not verified |
