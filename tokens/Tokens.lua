@@ -1,15 +1,4 @@
 --!strict
--- Layered design tokens for Forma. The resolver reads active Library colors;
--- it never silently overwrites ThemeManager's theme settings.
---
--- Layer order:
---   Primitives: base scales and library default colors
---   Semantic:  intent-based aliases for live Library theme fields
---   Components: usage-specific references to semantic/foundation tokens
---
--- Example:
---   local Tokens = loadstring(game:HttpGet(repo .. "tokens/Tokens.lua"))()
---   local fill = Tokens.Resolve(Library, "Components.Window.Fill")
 
 local Tokens = {}
 
@@ -50,8 +39,6 @@ Tokens.Primitives = {
     },
 }
 
--- Values are *theme field names*, not copied Color3 values. This means
--- Tokens.Resolve always reflects custom themes and live appearance changes.
 Tokens.Semantic = {
     Surface = {
         Canvas = "BackgroundColor",
@@ -150,7 +137,6 @@ function Tokens.Resolve(Library: any, Path: string): any
         if Alias ~= nil then
             Value = Alias
         else
-            -- A bare key names one of Library's live theme fields.
             local Current = Library and Library[Value]
             if Current ~= nil then return Current end
             error("Unknown Forma token: " .. Value, 2)

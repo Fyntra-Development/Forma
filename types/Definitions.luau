@@ -1,10 +1,4 @@
 --!strict
--- Forma's public Luau type definitions.
--- Type-only reference: the runtime library is still loaded through Loader.lua.
--- Import types into a Luau script with:
---   local Types = require(path.To.Definitions)
---   type WindowOptions = Types.WindowOptions
--- No runtime UI is constructed by this module.
 
 export type ThemeColors = {
     FontColor: Color3,
@@ -257,5 +251,4 @@ export type Loader = {
     LoadAddon: (self: any, name: string) -> any,
 }
 
--- This module intentionally provides types only. It does not bootstrap Forma.
 return {}
