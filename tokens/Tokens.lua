@@ -1,5 +1,3 @@
---!strict
-
 local Tokens = {}
 
 Tokens.Primitives = {
