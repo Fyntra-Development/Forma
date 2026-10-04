@@ -1,8 +1,11 @@
 # Changelog
 
-Changes by commit date (UTC). Each entry links to its GitHub diff. Generic commit messages are not assigned unverified features.
-
 ## 2026-10-04
+- [`e423977f1`](https://github.com/Fyntra-Development/UiLibrary/commit/e423977f126e37399829eb992ad6405e69319750) — Added `fonts/LICENSES.md` to README file locations
+- [`3161e947d`](https://github.com/Fyntra-Development/UiLibrary/commit/3161e947d958a620a35855565a099cd1b26efd80) — Removed comments from `tokens/Tokens.lua`
+- [`1ad7cf0be`](https://github.com/Fyntra-Development/UiLibrary/commit/1ad7cf0be0bd185bab04892f3e9ecc4911ccb66f) — Removed comments from `types/Definitions.luau`
+- [`27fd2f4f8`](https://github.com/Fyntra-Development/UiLibrary/commit/27fd2f4f8e2a69742568287972c836685e9b484c) — Renamed the README heading to `UI`
+- [`cd727bac2`](https://github.com/Fyntra-Development/UiLibrary/commit/cd727bac274fa7d821fb0a62176cda0b8477635f) — Simplified `fonts/LICENSES.md`
 - [`d17aec122`](https://github.com/Fyntra-Development/UiLibrary/commit/d17aec1221c614df78eac66ff84461cd8dcbf47e) — Added font license references; stripped comments from token and definition files
 - [`e2324b783`](https://github.com/Fyntra-Development/UiLibrary/commit/e2324b783124caaf7d267d038f27e13c79a352b3) — Maintenance (Update print statement from 'Hello' to 'Goodbye')
 - [`ef7c1c333`](https://github.com/Fyntra-Development/UiLibrary/commit/ef7c1c3338140411dbf0ef7b7276e3a11896d33f) — Added Luau definitions, layered design tokens, and README file links
